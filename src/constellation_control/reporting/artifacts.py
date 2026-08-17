@@ -183,6 +183,7 @@ def _write_optional_table(output_dir: Path, name: str, frame: pd.DataFrame | Non
         return
     frame.to_csv(output_dir / f"{name}.csv", index=False)
     frame.to_parquet(output_dir / f"{name}.parquet", index=False)
+    frame.to_json(output_dir / f"{name}.json", orient="records", indent=2)
 
 
 def write_run_artifacts(
