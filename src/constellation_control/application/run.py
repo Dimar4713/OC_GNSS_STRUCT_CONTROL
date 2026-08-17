@@ -20,6 +20,7 @@ from constellation_control.domain.models import (
     ScenarioConfig,
     StabilityMetrics,
 )
+from constellation_control.domain.protocols import Propagator
 from constellation_control.dynamics.j2 import first_order_j2_rates, mean_motion
 from constellation_control.dynamics.orbits import mean_to_classical
 from constellation_control.mean_elements.roe import damico_roe
@@ -28,7 +29,24 @@ from constellation_control.reporting.artifacts import write_run_artifacts
 
 def load_scenario(path: Path) -> ScenarioConfig:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return ScenarioConfig.model_validate(payload)
+    scenario = ScenarioConfig.model_validate(payload)
+    fingerprint = scenario.force_model.fingerprint()
+    resolved_satellites = []
+    for satellite in scenario.constellation.satellites:
+        definition = satellite.mean_orbit.definition
+        declared = definition.force_model_fingerprint
+        if declared not in {"scenario", fingerprint}:
+            raise ValueError(
+                f"mean-element definition for {satellite.satellite_id} is bound to {declared}, "
+                f"but scenario force model is {fingerprint}"
+            )
+        if declared == "scenario":
+            definition = definition.model_copy(update={"force_model_fingerprint": fingerprint})
+            mean_orbit = satellite.mean_orbit.model_copy(update={"definition": definition})
+            satellite = satellite.model_copy(update={"mean_orbit": mean_orbit})
+        resolved_satellites.append(satellite)
+    constellation = scenario.constellation.model_copy(update={"satellites": tuple(resolved_satellites)})
+    return scenario.model_copy(update={"constellation": constellation})
 
 
 def _code_version() -> str:
@@ -38,7 +56,13 @@ def _code_version() -> str:
         return "0.1.0+source"
 
 
-def _ground_track_closure_error_m(r0: np.ndarray, r1: np.ndarray, duration_s: float, radius_m: float, omega: float) -> float:
+def _ground_track_closure_error_m(
+    r0: np.ndarray,
+    r1: np.ndarray,
+    duration_s: float,
+    radius_m: float,
+    omega: float,
+) -> float:
     theta = omega * duration_s
     c, s = np.cos(theta), np.sin(theta)
     rotation = np.array([[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]])
@@ -59,11 +83,14 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         integrator=scenario.integrator,
         seed=scenario.seed,
     )
+    propagator: Propagator
     if scenario.force_model.mode == ForceMode.SCREENING:
         propagator = SyntheticMeanPropagator()
     else:
         if not scenario.orekit_sidecar_url:
-            raise RuntimeError("design/validation modes require orekit_sidecar_url; no screening fallback is permitted")
+            raise RuntimeError(
+                "design/validation modes require orekit_sidecar_url; no screening fallback is permitted"
+            )
         propagator = OrekitSidecarPropagator(scenario.orekit_sidecar_url)
 
     result = propagator.propagate(request)
@@ -80,6 +107,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         dep_series = result.mean_orbits[deputy.satellite_id]
         roes = [damico_roe(ref, dep) for ref, dep in zip(ref_series, dep_series, strict=True)]
         phase = np.asarray([roe.delta_lambda_rad for roe in roes])
+        unwrapped_phase = np.unwrap(phase)
         initial_ref = mean_to_classical(reference.mean_orbit)
         orbital_period = 2.0 * pi / mean_motion(initial_ref.a_m, scenario.force_model.mu_m3_s2)
         fit = harmonic_regression(times, phase, default_harmonic_frequencies(orbital_period))
@@ -87,7 +115,10 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         ref_cart = result.cartesian_states[reference.satellite_id]
         dep_cart = result.cartesian_states[deputy.satellite_id]
         distances = np.asarray(
-            [np.linalg.norm(np.asarray(dep.r_m) - np.asarray(ref.r_m)) for ref, dep in zip(ref_cart, dep_cart, strict=True)]
+            [
+                np.linalg.norm(np.asarray(dep.r_m) - np.asarray(ref.r_m))
+                for ref, dep in zip(ref_cart, dep_cart, strict=True)
+            ]
         )
         closest_index = int(np.argmin(distances))
         r0 = np.asarray(dep_cart[0].r_m)
@@ -101,8 +132,14 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         )
         ref_rates = first_order_j2_rates(initial_ref, scenario.force_model)
         dep_rates = first_order_j2_rates(mean_to_classical(deputy.mean_orbit), scenario.force_model)
-        ex_rate = sqrt(linear_rate(times, np.asarray([roe.delta_ex for roe in roes])) ** 2 + linear_rate(times, np.asarray([roe.delta_ey for roe in roes])) ** 2)
-        ix_rate = sqrt(linear_rate(times, np.asarray([roe.delta_ix for roe in roes])) ** 2 + linear_rate(times, np.asarray([roe.delta_iy for roe in roes])) ** 2)
+        ex_rate = sqrt(
+            linear_rate(times, np.asarray([roe.delta_ex for roe in roes])) ** 2
+            + linear_rate(times, np.asarray([roe.delta_ey for roe in roes])) ** 2
+        )
+        ix_rate = sqrt(
+            linear_rate(times, np.asarray([roe.delta_ix for roe in roes])) ** 2
+            + linear_rate(times, np.asarray([roe.delta_iy for roe in roes])) ** 2
+        )
         pair_id = f"{deputy.satellite_id}/{reference.satellite_id}"
         metric = StabilityMetrics(
             pair_id=pair_id,
@@ -122,10 +159,10 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                 {
                     "pair_id": pair_id,
                     "time_s": float(time_s),
-                    "delta_lambda_rad": float(np.unwrap(phase)[index]),
+                    "delta_lambda_rad": float(unwrapped_phase[index]),
                     "trend_rad": float(fit.trend_rad[index]),
                     "harmonic_rad": float(fit.harmonic_rad[index]),
-                    "delta_a_mean_m": float((dep_series[index].a_m - ref_series[index].a_m)),
+                    "delta_a_mean_m": float(dep_series[index].a_m - ref_series[index].a_m),
                     "delta_ex": roe.delta_ex,
                     "delta_ey": roe.delta_ey,
                     "delta_ix": roe.delta_ix,
@@ -135,7 +172,12 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             )
 
     config_hash = scenario.config_hash()
-    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{scenario.scenario_id}:{config_hash}:{scenario.seed}:{_code_version()}"))
+    run_id = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{scenario.scenario_id}:{config_hash}:{scenario.seed}:{_code_version()}",
+        )
+    )
     manifest = ExperimentRunManifest(
         scenario_id=scenario.scenario_id,
         run_id=run_id,
@@ -147,16 +189,23 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         backend_version=result.backend_version,
         epoch=scenario.epoch,
         random_seed=scenario.seed,
-        algorithm_versions={"drift": "harmonic-lstsq-v1", "roe": "damico-v1", "screening": "j2-first-order-v1"},
+        algorithm_versions={
+            "drift": "harmonic-lstsq-v1",
+            "roe": "damico-v1",
+            "screening": "j2-first-order-v1",
+        },
     )
     summary = {
         "metrics": [metric.model_dump(mode="json") for metric in metrics],
         "constraints": scenario.constraints.model_dump(mode="json"),
-        "mean_element_rule": "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded",
+        "mean_element_rule": (
+            "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded"
+        ),
     }
     run_dir = output_root / scenario.scenario_id / run_id
     write_run_artifacts(run_dir, manifest, summary, pd.DataFrame(rows))
     (run_dir / "scenario.normalized.json").write_text(
-        json.dumps(scenario.model_dump(mode="json"), indent=2, sort_keys=True), encoding="utf-8"
+        json.dumps(scenario.model_dump(mode="json"), indent=2, sort_keys=True),
+        encoding="utf-8",
     )
     return run_dir
