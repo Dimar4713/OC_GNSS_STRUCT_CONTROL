@@ -14,7 +14,6 @@ import org.orekit.attitudes.LofOffset;
 import org.orekit.bodies.OneAxisEllipsoid;
 import org.orekit.forces.ForceModel;
 import org.orekit.forces.gravity.HolmesFeatherstoneAttractionModel;
-import org.orekit.forces.gravity.Relativity;
 import org.orekit.forces.gravity.ThirdBodyAttraction;
 import org.orekit.forces.gravity.potential.NormalizedSphericalHarmonicsProvider;
 import org.orekit.forces.gravity.potential.UnnormalizedSphericalHarmonicsProvider;
@@ -75,6 +74,7 @@ final class PropagationEngine {
 
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("orekit_version", OrekitRuntime.OREKIT_VERSION);
+        metadata.put("orekit_data_revision", runtime.dataRevision());
         metadata.put("orekit_data_sha256", runtime.dataSha256());
         metadata.put("frame", request.frame());
         metadata.put("time_scale", request.timeScale());
@@ -169,10 +169,12 @@ final class PropagationEngine {
 
     private List<DSSTForceModel> dsstForces(ApiModels.ForceModel config, SpacecraftModel spacecraft) {
         if (config.tides()) {
-            throw new UnsupportedOperationException("tides=true is not yet implemented in the DSST authority path");
+            throw new UnsupportedOperationException(
+                    "tides=true cannot yet produce force-model-consistent DSST mean elements");
         }
         if (config.relativity()) {
-            throw new UnsupportedOperationException("relativity=true is not supported by the DSST design authority");
+            throw new UnsupportedOperationException(
+                    "relativity=true cannot yet produce force-model-consistent DSST mean elements");
         }
         UnnormalizedSphericalHarmonicsProvider gravity = runtime.context().getGravityFields()
                 .getUnnormalizedProvider(config.gravityDegree(), config.gravityOrder());
@@ -201,8 +203,9 @@ final class PropagationEngine {
     }
 
     private List<ForceModel> numericalForces(ApiModels.ForceModel config, SpacecraftModel spacecraft) {
-        if (config.tides()) {
-            throw new UnsupportedOperationException("tides=true is not yet implemented in numerical validation");
+        if (config.tides() || config.relativity()) {
+            throw new UnsupportedOperationException(
+                    "numerical force configuration cannot yet be mapped to the same DSST mean-element definition");
         }
         NormalizedSphericalHarmonicsProvider gravity = runtime.context().getGravityFields()
                 .getNormalizedProvider(config.gravityDegree(), config.gravityOrder());
@@ -224,9 +227,6 @@ final class PropagationEngine {
                     runtime.context().getCelestialBodies().getSun(),
                     earth,
                     new IsotropicRadiationSingleCoefficient(spacecraft.areaM2(), spacecraft.cr())));
-        }
-        if (config.relativity()) {
-            forces.add(new Relativity(config.muM3S2()));
         }
         return forces;
     }
