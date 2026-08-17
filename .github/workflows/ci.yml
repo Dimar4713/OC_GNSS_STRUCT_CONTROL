@@ -64,7 +64,10 @@ jobs:
           git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
           test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
       - name: Compile and execute Orekit integration tests
-        run: mvn -B -f sidecar/orekit-service/pom.xml test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn -B -f sidecar/orekit-service/pom.xml test 2>&1 | tee /tmp/maven-integration.log
       - name: Build Orekit sidecar executable
         run: mvn -B -f sidecar/orekit-service/pom.xml -DskipTests package
       - uses: actions/setup-python@v5
@@ -173,8 +176,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
           path: |
+            /tmp/maven-integration.log
             /tmp/orekit-service.log
             /tmp/orekit-health.json
             /tmp/design-e2e.log
             /tmp/validation-e2e.log
+            sidecar/orekit-service/target/surefire-reports/
             .e2e-runs/
