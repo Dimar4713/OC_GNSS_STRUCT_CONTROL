@@ -406,7 +406,7 @@ class RecedingHorizonMPCController:
         dep_history = replay.mean_orbits[deputy.satellite_id]
         delta_a_low, delta_a_high = constraints.delta_a_bounds_m
         for ref_mean, dep_mean in zip(ref_history, dep_history, strict=True):
-            relative = damico_roe(ref_mean, dep_mean)
+            relative: RelativeOrbitalElements = damico_roe(ref_mean, dep_mean)
             delta_a_m = relative.delta_a * ref_mean.a_m
             if delta_a_m < delta_a_low or delta_a_m > delta_a_high:
                 return "replay-delta-a-corridor-violation", float("nan")
