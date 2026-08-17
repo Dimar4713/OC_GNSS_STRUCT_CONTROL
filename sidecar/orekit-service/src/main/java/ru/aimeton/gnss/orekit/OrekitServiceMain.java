@@ -2,7 +2,6 @@ package ru.aimeton.gnss.orekit;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -32,8 +31,11 @@ public final class OrekitServiceMain {
                 Math.max(2, Runtime.getRuntime().availableProcessors())));
         server.start();
         System.out.printf(
-                "orekit-service listening on :%d orekit=%s data_sha256=%s%n",
-                port, OrekitRuntime.OREKIT_VERSION, runtime.dataSha256());
+                "orekit-service listening on :%d orekit=%s data_revision=%s data_sha256=%s%n",
+                port,
+                OrekitRuntime.OREKIT_VERSION,
+                runtime.dataRevision(),
+                runtime.dataSha256());
     }
 
     static ObjectMapper mapper() {
@@ -50,6 +52,7 @@ public final class OrekitServiceMain {
         body.put("status", "ok");
         body.put("backend", "orekit");
         body.put("orekit_version", OrekitRuntime.OREKIT_VERSION);
+        body.put("orekit_data_revision", runtime.dataRevision());
         body.put("orekit_data_sha256", runtime.dataSha256());
         writeJson(exchange, mapper, 200, body);
     }
