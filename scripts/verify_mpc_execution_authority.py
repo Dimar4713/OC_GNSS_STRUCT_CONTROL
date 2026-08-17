@@ -9,10 +9,10 @@ import numpy as np
 from constellation_control.adapters.orekit.adapter import OrekitSidecarPropagator
 from constellation_control.application.run import load_scenario
 from constellation_control.control.execution import MPCExecutionPolicy, RecedingHorizonMPCController
-from constellation_control.domain.models import Maneuver, PropagationRequest
+from constellation_control.domain.models import Maneuver, PropagationRequest, ScenarioConfig
 
 
-def _request_from_scenario(path: Path) -> tuple[PropagationRequest, object]:
+def _request_from_scenario(path: Path) -> tuple[PropagationRequest, ScenarioConfig]:
     scenario = load_scenario(path)
     request = PropagationRequest(
         scenario_id=scenario.scenario_id,
@@ -41,8 +41,8 @@ def main() -> None:
     args = parser.parse_args()
 
     request, scenario = _request_from_scenario(args.scenario)
-    sidecar_url = getattr(scenario, "orekit_sidecar_url")
-    constraints = getattr(scenario, "constraints")
+    sidecar_url = scenario.orekit_sidecar_url
+    constraints = scenario.constraints
     if not sidecar_url:
         raise AssertionError("MPC authority acceptance requires orekit_sidecar_url")
 
