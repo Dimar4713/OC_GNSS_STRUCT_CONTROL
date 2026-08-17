@@ -20,7 +20,9 @@ f395924f27b6074c8db1432350f5917d722ff3e1
 
 Production deployments should pin an explicitly reviewed data revision suitable
 for the scenario epoch. Updating auxiliary data is a controlled model change,
-not a transparent maintenance action.
+not a transparent maintenance action. CI also logs the current official `main`
+revision so drift from the reviewed pin is visible without changing the run's
+physical-data authority.
 
 ## Build and test
 
@@ -35,8 +37,10 @@ The integration suite executes:
 - DSST design propagation;
 - numerical validation propagation;
 - force-model-consistent mean -> osculating -> mean round-trip;
+- zonal and tesseral gravity paths;
 - Moon/Sun/SRP paths;
-- RTN/QSW impulsive manoeuvres.
+- RTN/QSW impulsive manoeuvres, including an impulse exactly at the epoch;
+- fail-closed checks for force combinations that cannot yet preserve the mean-element invariant.
 
 ## Run
 
@@ -94,7 +98,10 @@ semi-major axis is never promoted to a secular-drift criterion.
 ## Explicit limitations
 
 - tides are currently rejected rather than silently ignored;
-- relativity is available in numerical validation but rejected in DSST design;
+- relativity is currently rejected in both authority modes because the numerical
+  force can be propagated but the current DSST mean converter cannot represent
+  the same relativity force; allowing it would violate the force-model-consistent
+  mean-element invariant;
 - ICRF is rejected as a barycentric frame for this Earth-centered service;
 - ITRF is rejected as a propagation frame; it is used internally as body-fixed
   Earth frame where required;

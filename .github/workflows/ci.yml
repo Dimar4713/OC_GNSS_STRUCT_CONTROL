@@ -39,6 +39,14 @@ jobs:
           java-version: '17'
           cache: maven
           cache-dependency-path: sidecar/orekit-service/pom.xml
+      - name: Report official Orekit data main revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(git ls-remote https://gitlab.orekit.org/orekit/orekit-data.git refs/heads/main | awk '{print $1}')"
+          test -n "$current"
+          echo "OREKIT_DATA_MAIN_REVISION=$current"
+          echo "OREKIT_DATA_PINNED_REVISION=$OREKIT_DATA_REVISION"
       - name: Fetch pinned official Orekit data
         shell: bash
         run: |

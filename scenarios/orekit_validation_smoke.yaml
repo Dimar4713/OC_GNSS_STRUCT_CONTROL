@@ -19,7 +19,7 @@ force_model:
   sun: true
   srp: true
   tides: false
-  relativity: true
+  relativity: false
 integrator:
   min_step_s: 0.1
   max_step_s: 120.0

@@ -84,12 +84,10 @@ final class PropagationEngineIntegrationTest {
     }
 
     @Test
-    void relativityExecutesOnlyInNumericalAuthority() {
-        PropagationResult validation = engine.propagate(
-                request("validation", false, false, false, List.of(), 0, true));
-        assertEquals("orekit-numerical-validation", validation.backend());
-        assertFalse(validation.cartesianStates().get("SYNTH-1").isEmpty());
-
+    void relativityFailsClosedUntilMeanTransformationSupportsIt() {
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> engine.propagate(request("validation", false, false, false, List.of(), 0, true)));
         assertThrows(
                 UnsupportedOperationException.class,
                 () -> engine.propagate(request("design", false, false, false, List.of(), 0, true)));

@@ -27,6 +27,8 @@ Scenarios are YAML validated by pydantic v2 `ScenarioConfig`. No operational con
 
 The gravity field loaded by Orekit carries its own reference sphere radius `Ae` and gravitational parameter. The runtime records these provider constants separately from the configured Earth ellipsoid.
 
+`tides: true` and `relativity: true` are currently fail-closed high-fidelity configurations. They remain schema-visible extension points, but are not accepted until the mean-element conversion authority can represent the same enabled force set. This prevents numerical propagation with one force model from being reported in mean elements defined by another.
+
 ## Integrator and constraints
 
 `integrator` declares minimum/maximum step and absolute/relative tolerances. The schema rejects `max_step_s < min_step_s`.

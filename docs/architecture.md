@@ -16,17 +16,19 @@ The platform uses clean/hexagonal architecture. `domain` owns immutable schemas 
 
 ### Design
 
-`OrekitSidecarPropagator` calls the Java service at `POST /v1/propagate`. In `design` mode the Java authority uses Orekit 13.1.7 DSST and returns DSST-consistent mean equinoctial states plus corresponding osculating Cartesian states.
+`OrekitSidecarPropagator` calls the Java service at `POST /v1/propagate`. In `design` mode the Java authority uses Orekit 13.1.7 DSST and returns DSST-consistent mean equinoctial states plus corresponding osculating Cartesian states. Zonal/tesseral gravity, Moon, Sun and SRP are represented when enabled.
 
 ### Validation
 
 In `validation` mode the Java authority numerically propagates Cartesian osculating states and derives output mean elements through the same DSST mean-element family used to define the initial condition. The Python adapter rejects a response unless the backend identity is Orekit, the exact force-model fingerprint matches, a backend version is present and an `orekit_data_sha256` fingerprint is present.
 
+Relativity and tides are currently rejected in validation because the numerical force alone is insufficient: a compatible mean-element conversion must represent the same force model before secular metrics may be claimed. This is a deliberate fail-closed boundary, not a numerical limitation hidden by fallback.
+
 There is no silent design/validation fallback to screening.
 
 ## Orekit service boundary
 
-The Java sidecar lives under `sidecar/orekit-service` and is independently buildable/containerizable. It requires a mounted `OREKIT_DATA_PATH` and refuses to start without usable time/EOP data. CI pins the official data repository to a concrete revision and the runtime hashes the entire loaded data directory.
+The Java sidecar lives under `sidecar/orekit-service` and is independently buildable/containerizable. It requires a mounted `OREKIT_DATA_PATH` and refuses to start without usable time/EOP data. CI pins the official data repository to a concrete revision, reports the current official main revision for drift visibility, and the runtime hashes the entire loaded data directory.
 
 The sidecar keeps code identity, Orekit library identity and auxiliary physical-data identity separate. Its result metadata records frame, time scale, gravity degree/order, gravity provider constants and Earth ellipsoid parameters.
 
