@@ -80,6 +80,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         frame=scenario.frame,
         time_scale=scenario.time_scale,
         satellites=scenario.constellation.satellites,
+        maneuvers=scenario.maneuvers,
         duration_s=scenario.duration_s,
         output_step_s=scenario.output_step_s,
         force_model=scenario.force_model,
@@ -218,6 +219,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             "gravity_order": scenario.force_model.gravity_order,
             "integrator": scenario.integrator.model_dump(mode="json"),
             "backend_metadata": result.backend_metadata,
+            "maneuver_count": len(scenario.maneuvers),
         },
         "mean_element_rule": (
             "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded"
