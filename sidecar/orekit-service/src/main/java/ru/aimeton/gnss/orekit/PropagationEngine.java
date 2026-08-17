@@ -1,0 +1,304 @@
+package ru.aimeton.gnss.orekit;
+
+import static ru.aimeton.gnss.orekit.ApiModels.*;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.hipparchus.geometry.euclidean.threed.Vector3D;
+import org.hipparchus.ode.nonstiff.DormandPrince853Integrator;
+import org.orekit.attitudes.AttitudeProvider;
+import org.orekit.attitudes.LofOffset;
+import org.orekit.bodies.OneAxisEllipsoid;
+import org.orekit.forces.ForceModel;
+import org.orekit.forces.gravity.HolmesFeatherstoneAttractionModel;
+import org.orekit.forces.gravity.Relativity;
+import org.orekit.forces.gravity.ThirdBodyAttraction;
+import org.orekit.forces.gravity.potential.NormalizedSphericalHarmonicsProvider;
+import org.orekit.forces.gravity.potential.UnnormalizedSphericalHarmonicsProvider;
+import org.orekit.forces.maneuvers.ImpulseManeuver;
+import org.orekit.forces.radiation.IsotropicRadiationSingleCoefficient;
+import org.orekit.forces.radiation.SolarRadiationPressure;
+import org.orekit.frames.Frame;
+import org.orekit.frames.LOFType;
+import org.orekit.orbits.EquinoctialOrbit;
+import org.orekit.orbits.Orbit;
+import org.orekit.orbits.PositionAngleType;
+import org.orekit.propagation.PropagationType;
+import org.orekit.propagation.SpacecraftState;
+import org.orekit.propagation.events.DateDetector;
+import org.orekit.propagation.numerical.NumericalPropagator;
+import org.orekit.propagation.semianalytical.dsst.DSSTPropagator;
+import org.orekit.propagation.semianalytical.dsst.forces.DSSTForceModel;
+import org.orekit.propagation.semianalytical.dsst.forces.DSSTSolarRadiationPressure;
+import org.orekit.propagation.semianalytical.dsst.forces.DSSTTesseral;
+import org.orekit.propagation.semianalytical.dsst.forces.DSSTThirdBody;
+import org.orekit.propagation.semianalytical.dsst.forces.DSSTZonal;
+import org.orekit.time.AbsoluteDate;
+import org.orekit.utils.TimeStampedPVCoordinates;
+
+final class PropagationEngine {
+    private final OrekitRuntime runtime;
+
+    PropagationEngine(OrekitRuntime runtime) {
+        this.runtime = runtime;
+    }
+
+    PropagationResult propagate(PropagationRequest request) {
+        validateRequest(request);
+        List<Double> times = outputTimes(request.durationS(), request.outputStepS());
+        Map<String, List<MeanOrbit>> mean = new LinkedHashMap<>();
+        Map<String, List<OsculatingState>> cartesian = new LinkedHashMap<>();
+
+        for (SatelliteSpec satellite : request.satellites()) {
+            SatelliteHistory history = switch (request.forceModel().mode()) {
+                case "design" -> propagateDesign(request, satellite, times);
+                case "validation" -> propagateValidation(request, satellite, times);
+                default -> throw new IllegalArgumentException(
+                        "Orekit sidecar accepts only design or validation mode, got: " + request.forceModel().mode());
+            };
+            mean.put(satellite.satelliteId(), history.mean());
+            cartesian.put(satellite.satelliteId(), history.cartesian());
+        }
+
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("orekit_version", OrekitRuntime.OREKIT_VERSION);
+        metadata.put("orekit_data_sha256", runtime.dataSha256());
+        metadata.put("frame", request.frame());
+        metadata.put("time_scale", request.timeScale());
+        metadata.put("gravity_degree", Integer.toString(request.forceModel().gravityDegree()));
+        metadata.put("gravity_order", Integer.toString(request.forceModel().gravityOrder()));
+        metadata.put("mean_definition", "DSST force-model-consistent mean equinoctial elements");
+        metadata.put("propagation_type", request.forceModel().mode());
+        metadata.put("maneuver_frame", "QSW/RTN");
+
+        String backend = request.forceModel().mode().equals("design")
+                ? "orekit-dsst-design"
+                : "orekit-numerical-validation";
+        return new PropagationResult(
+                backend,
+                OrekitRuntime.OREKIT_VERSION,
+                request.forceModelFingerprint(),
+                metadata,
+                times,
+                mean,
+                cartesian);
+    }
+
+    private SatelliteHistory propagateDesign(
+            PropagationRequest request, SatelliteSpec satellite, List<Double> times) {
+        Frame frame = runtime.propagationFrame(request.frame());
+        AbsoluteDate epoch = runtime.date(request.epoch(), request.timeScale());
+        AttitudeProvider attitude = new LofOffset(frame, LOFType.QSW);
+        List<DSSTForceModel> forces = dsstForces(request.forceModel(), satellite.spacecraft());
+        SpacecraftState initialMean = new SpacecraftState(toOrekitOrbit(satellite.meanOrbit(), frame, epoch,
+                request.forceModel().muM3S2())).withMass(satellite.spacecraft().initialMassKg());
+
+        DSSTPropagator propagator = new DSSTPropagator(integrator(request.integrator()), PropagationType.MEAN, attitude);
+        propagator.setMu(request.forceModel().muM3S2());
+        for (DSSTForceModel force : forces) {
+            propagator.addForceModel(force);
+        }
+        propagator.setInitialState(initialMean, PropagationType.MEAN);
+        addImpulses(propagator, request, satellite, frame, epoch);
+
+        List<MeanOrbit> mean = new ArrayList<>(times.size());
+        List<OsculatingState> cartesian = new ArrayList<>(times.size());
+        for (double time : times) {
+            SpacecraftState meanState = propagator.propagate(epoch.shiftedBy(time));
+            SpacecraftState osculating = DSSTPropagator.computeOsculatingState(meanState, attitude, forces);
+            mean.add(toApiMean(meanState.getOrbit(), request.forceModelFingerprint(), "orekit-dsst-13.1.7-design"));
+            cartesian.add(toApiCartesian(time, osculating));
+        }
+        return new SatelliteHistory(mean, cartesian);
+    }
+
+    private SatelliteHistory propagateValidation(
+            PropagationRequest request, SatelliteSpec satellite, List<Double> times) {
+        Frame frame = runtime.propagationFrame(request.frame());
+        AbsoluteDate epoch = runtime.date(request.epoch(), request.timeScale());
+        AttitudeProvider attitude = new LofOffset(frame, LOFType.QSW);
+        List<DSSTForceModel> meanForces = dsstForces(request.forceModel(), satellite.spacecraft());
+        SpacecraftState initialMean = new SpacecraftState(toOrekitOrbit(satellite.meanOrbit(), frame, epoch,
+                request.forceModel().muM3S2())).withMass(satellite.spacecraft().initialMassKg());
+        SpacecraftState initialOsculating = DSSTPropagator.computeOsculatingState(initialMean, attitude, meanForces);
+
+        NumericalPropagator propagator = new NumericalPropagator(integrator(request.integrator()), attitude);
+        propagator.setInitialState(initialOsculating);
+        for (ForceModel force : numericalForces(request.forceModel(), satellite.spacecraft())) {
+            propagator.addForceModel(force);
+        }
+        addImpulses(propagator, request, satellite, frame, epoch);
+
+        List<MeanOrbit> mean = new ArrayList<>(times.size());
+        List<OsculatingState> cartesian = new ArrayList<>(times.size());
+        for (double time : times) {
+            SpacecraftState osculating = propagator.propagate(epoch.shiftedBy(time));
+            SpacecraftState meanState = DSSTPropagator.computeMeanState(osculating, attitude, meanForces);
+            mean.add(toApiMean(meanState.getOrbit(), request.forceModelFingerprint(),
+                    "orekit-dsst-13.1.7-from-numerical"));
+            cartesian.add(toApiCartesian(time, osculating));
+        }
+        return new SatelliteHistory(mean, cartesian);
+    }
+
+    private List<DSSTForceModel> dsstForces(ApiModels.ForceModel config, SpacecraftModel spacecraft) {
+        if (config.tides()) {
+            throw new UnsupportedOperationException("tides=true is not yet implemented in the DSST authority path");
+        }
+        if (config.relativity()) {
+            throw new UnsupportedOperationException("relativity=true is not supported by the DSST design authority");
+        }
+        UnnormalizedSphericalHarmonicsProvider gravity = runtime.context().getGravityFields()
+                .getUnnormalizedProvider(config.gravityDegree(), config.gravityOrder());
+        validateGravityIdentity(config, gravity.getMu(), gravity.getAe());
+        Frame bodyFixed = runtime.bodyFixedFrame();
+        OneAxisEllipsoid earth = new OneAxisEllipsoid(config.referenceRadiusM(), config.flattening(), bodyFixed);
+        List<DSSTForceModel> forces = new ArrayList<>();
+        if (config.gravityDegree() >= 2) {
+            forces.add(new DSSTZonal(bodyFixed, gravity));
+        }
+        if (config.gravityOrder() > 0) {
+            forces.add(new DSSTTesseral(bodyFixed, config.earthRotationRateRadS(), gravity));
+        }
+        if (config.moon()) {
+            forces.add(new DSSTThirdBody(runtime.context().getCelestialBodies().getMoon(), config.muM3S2()));
+        }
+        if (config.sun()) {
+            forces.add(new DSSTThirdBody(runtime.context().getCelestialBodies().getSun(), config.muM3S2()));
+        }
+        if (config.srp()) {
+            forces.add(new DSSTSolarRadiationPressure(
+                    spacecraft.cr(), spacecraft.areaM2(), runtime.context().getCelestialBodies().getSun(), earth,
+                    config.muM3S2()));
+        }
+        return forces;
+    }
+
+    private List<ForceModel> numericalForces(ApiModels.ForceModel config, SpacecraftModel spacecraft) {
+        if (config.tides()) {
+            throw new UnsupportedOperationException("tides=true is not yet implemented in numerical validation");
+        }
+        NormalizedSphericalHarmonicsProvider gravity = runtime.context().getGravityFields()
+                .getNormalizedProvider(config.gravityDegree(), config.gravityOrder());
+        validateGravityIdentity(config, gravity.getMu(), gravity.getAe());
+        Frame bodyFixed = runtime.bodyFixedFrame();
+        OneAxisEllipsoid earth = new OneAxisEllipsoid(config.referenceRadiusM(), config.flattening(), bodyFixed);
+        List<ForceModel> forces = new ArrayList<>();
+        if (config.gravityDegree() >= 2) {
+            forces.add(new HolmesFeatherstoneAttractionModel(bodyFixed, gravity));
+        }
+        if (config.moon()) {
+            forces.add(new ThirdBodyAttraction(runtime.context().getCelestialBodies().getMoon()));
+        }
+        if (config.sun()) {
+            forces.add(new ThirdBodyAttraction(runtime.context().getCelestialBodies().getSun()));
+        }
+        if (config.srp()) {
+            forces.add(new SolarRadiationPressure(
+                    runtime.context().getCelestialBodies().getSun(),
+                    earth,
+                    new IsotropicRadiationSingleCoefficient(spacecraft.areaM2(), spacecraft.cr())));
+        }
+        if (config.relativity()) {
+            forces.add(new Relativity(config.muM3S2()));
+        }
+        return forces;
+    }
+
+    private static DormandPrince853Integrator integrator(Integrator config) {
+        return new DormandPrince853Integrator(
+                config.minStepS(), config.maxStepS(), config.absTolerance(), config.relTolerance());
+    }
+
+    private void addImpulses(
+            org.orekit.propagation.Propagator propagator,
+            PropagationRequest request,
+            SatelliteSpec satellite,
+            Frame frame,
+            AbsoluteDate epoch) {
+        for (Maneuver maneuver : request.maneuvers()) {
+            if (!maneuver.satelliteId().equals(satellite.satelliteId())) {
+                continue;
+            }
+            if (maneuver.dvRtnMS() == null || maneuver.dvRtnMS().size() != 3) {
+                throw new IllegalArgumentException("dv_rtn_m_s must have exactly three components");
+            }
+            Vector3D deltaV = new Vector3D(
+                    maneuver.dvRtnMS().get(0), maneuver.dvRtnMS().get(1), maneuver.dvRtnMS().get(2));
+            DateDetector trigger = new DateDetector(epoch.shiftedBy(maneuver.timeS()));
+            ImpulseManeuver impulse = new ImpulseManeuver(
+                    trigger,
+                    new LofOffset(frame, LOFType.QSW),
+                    deltaV,
+                    satellite.spacecraft().ispS());
+            propagator.addEventDetector(impulse);
+        }
+    }
+
+    private static EquinoctialOrbit toOrekitOrbit(
+            MeanOrbit orbit, Frame frame, AbsoluteDate epoch, double mu) {
+        return new EquinoctialOrbit(
+                orbit.aM(), orbit.ex(), orbit.ey(), orbit.ix(), orbit.iy(), orbit.lambdaRad(),
+                PositionAngleType.MEAN, frame, epoch, mu);
+    }
+
+    private static MeanOrbit toApiMean(Orbit orbit, String fingerprint, String theory) {
+        EquinoctialOrbit equinoctial = new EquinoctialOrbit(orbit);
+        return new MeanOrbit(
+                equinoctial.getA(),
+                equinoctial.getEquinoctialEx(),
+                equinoctial.getEquinoctialEy(),
+                equinoctial.getHx(),
+                equinoctial.getHy(),
+                equinoctial.getLM(),
+                new MeanElementDefinition("equinoctial", theory, fingerprint));
+    }
+
+    private static OsculatingState toApiCartesian(double time, SpacecraftState state) {
+        TimeStampedPVCoordinates pv = state.getPVCoordinates();
+        return new OsculatingState(
+                time,
+                List.of(pv.getPosition().getX(), pv.getPosition().getY(), pv.getPosition().getZ()),
+                List.of(pv.getVelocity().getX(), pv.getVelocity().getY(), pv.getVelocity().getZ()));
+    }
+
+    private static List<Double> outputTimes(double duration, double step) {
+        List<Double> times = new ArrayList<>();
+        double time = 0.0;
+        while (time < duration) {
+            times.add(time);
+            time += step;
+        }
+        if (times.isEmpty() || Math.abs(times.get(times.size() - 1) - duration) > 1.0e-12) {
+            times.add(duration);
+        }
+        return times;
+    }
+
+    private static void validateRequest(PropagationRequest request) {
+        if (request.forceModelFingerprint() == null || request.forceModelFingerprint().isBlank()) {
+            throw new IllegalArgumentException("force_model_fingerprint is mandatory");
+        }
+        if (request.satellites() == null || request.satellites().isEmpty()) {
+            throw new IllegalArgumentException("at least one satellite is required");
+        }
+        if (request.maneuvers() == null) {
+            throw new IllegalArgumentException("maneuvers must be an array, possibly empty");
+        }
+    }
+
+    private static void validateGravityIdentity(ApiModels.ForceModel config, double providerMu, double providerAe) {
+        double muRelative = Math.abs(providerMu - config.muM3S2()) / config.muM3S2();
+        double aeRelative = Math.abs(providerAe - config.referenceRadiusM()) / config.referenceRadiusM();
+        if (muRelative > 1.0e-8 || aeRelative > 1.0e-8) {
+            throw new IllegalArgumentException(
+                    "configured central-body constants disagree with loaded gravity field: mu_rel="
+                            + muRelative + ", ae_rel=" + aeRelative);
+        }
+    }
+
+    private record SatelliteHistory(List<MeanOrbit> mean, List<OsculatingState> cartesian) {}
+}
