@@ -10,7 +10,6 @@ from constellation_control.domain.models import (
     ForceMode,
     FrameName,
     IntegratorConfig,
-    Maneuver,
     MeanElementDefinition,
     MeanOrbit,
     OsculatingState,
