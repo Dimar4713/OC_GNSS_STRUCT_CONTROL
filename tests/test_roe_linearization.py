@@ -9,6 +9,7 @@ from constellation_control.domain.models import (
     ForceModelConfig,
     ForceMode,
     FrameName,
+    GravityModelName,
     IntegratorConfig,
     MeanElementDefinition,
     MeanOrbit,
@@ -43,6 +44,7 @@ D_TRUE = np.asarray([1.0e-7, -2.0e-6, 3.0e-7, -4.0e-7, 2.0e-7, 5.0e-7])
 def _force() -> ForceModelConfig:
     return ForceModelConfig(
         mode=ForceMode.VALIDATION,
+        gravity_model=GravityModelName.EIGEN_6S,
         mu_m3_s2=3.986004418e14,
         reference_radius_m=6_378_137.0,
         flattening=1.0 / 298.257223563,
