@@ -41,8 +41,8 @@ class SyntheticMeanPropagator:
                 sat_cart.append(
                     OsculatingState(
                         epoch_s=float(time_s),
-                        r_m=tuple(float(value) for value in r_m),
-                        v_m_s=tuple(float(value) for value in v_m_s),
+                        r_m=(float(r_m[0]), float(r_m[1]), float(r_m[2])),
+                        v_m_s=(float(v_m_s[0]), float(v_m_s[1]), float(v_m_s[2])),
                     )
                 )
             mean_orbits[sat.satellite_id] = tuple(sat_mean)
