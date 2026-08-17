@@ -38,7 +38,11 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
 
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    ground_track = json.loads((run_dir / "ground_track.json").read_text(encoding="utf-8"))
+    resources = json.loads((run_dir / "resources.json").read_text(encoding="utf-8"))
     assert manifest["force_model_mode"] == "screening"
+    assert ground_track
+    assert resources
     assert summary["mean_element_rule"] == (
         "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded"
     )
