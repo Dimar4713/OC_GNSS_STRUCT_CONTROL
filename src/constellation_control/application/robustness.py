@@ -24,6 +24,7 @@ from constellation_control.domain.models import (
 )
 from constellation_control.mean_elements.roe import damico_roe
 from constellation_control.uncertainty.campaign import (
+    DistributionKind,
     RobustnessCampaignConfig,
     RobustnessCampaignResult,
     campaign_config_hash,
@@ -63,6 +64,61 @@ class AppliedUncertainty:
 
 def load_robustness_application_config(path: Path) -> RobustnessApplicationConfig:
     return RobustnessApplicationConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+
+
+def _allowed_uncertainty_names(scenario: ScenarioConfig, config: RobustnessApplicationConfig) -> set[str]:
+    allowed: set[str] = set()
+    mean_components = (
+        "delta_a_m",
+        "delta_ex",
+        "delta_ey",
+        "delta_ix",
+        "delta_iy",
+        "delta_lambda_rad",
+    )
+    for satellite in scenario.constellation.satellites:
+        for source in ("initial", "od"):
+            allowed.update(f"{source}.{satellite.satellite_id}.{component}" for component in mean_components)
+        allowed.add(f"slot.{satellite.satellite_id}.delta_lambda_rad")
+        allowed.add(f"spacecraft.{satellite.satellite_id}.cr_area_over_mass_fraction")
+    for index, _ in enumerate(config.baseline_maneuvers):
+        allowed.update(
+            {
+                f"maneuver.{index}.magnitude_fraction",
+                f"maneuver.{index}.direction_r_rad",
+                f"maneuver.{index}.direction_t_rad",
+                f"maneuver.{index}.direction_n_rad",
+                f"maneuver.{index}.timing_error_s",
+                f"window.{index}.unavailable",
+            }
+        )
+    return allowed
+
+
+def validate_uncertainty_contract(scenario: ScenarioConfig, config: RobustnessApplicationConfig) -> None:
+    """Reject unknown or incorrectly typed uncertainty variables before sampling.
+
+    This prevents a typo in a YAML variable name from silently becoming an
+    un-applied uncertainty and producing falsely optimistic robustness evidence.
+    """
+
+    allowed = _allowed_uncertainty_names(scenario, config)
+    configured: list[str] = []
+    for item in config.campaign.scalar_uncertainties:
+        configured.append(item.name)
+        is_window = item.name.startswith("window.") and item.name.endswith(".unavailable")
+        if is_window and item.distribution != DistributionKind.BERNOULLI:
+            raise ValueError(f"maneuver-window availability must be Bernoulli: {item.name}")
+        if not is_window and item.distribution == DistributionKind.BERNOULLI:
+            raise ValueError(f"Bernoulli uncertainty is reserved for window availability: {item.name}")
+    for group in config.campaign.correlated_normal_groups:
+        for name in group.names:
+            configured.append(name)
+            if name.startswith("window.") and name.endswith(".unavailable"):
+                raise ValueError("window availability cannot be part of a correlated normal group")
+    unknown = sorted(set(configured) - allowed)
+    if unknown:
+        raise ValueError(f"unknown robustness uncertainty variable(s): {unknown}")
 
 
 def _number(sample: dict[str, object], name: str) -> float:
@@ -224,9 +280,11 @@ def _evaluate_trajectory(
         "propellant_reserve": False,
         "maneuver_window_unavailable": bool(applied.dropped_maneuver_indices),
     }
+    controlled_pairs = 0
     for deputy in applied.request.satellites:
         if deputy.role != "additional" or deputy.reference_id is None:
             continue
+        controlled_pairs += 1
         reference = by_id[deputy.reference_id]
         for ref_mean, dep_mean in zip(
             result.mean_orbits[reference.satellite_id],
@@ -243,6 +301,8 @@ def _evaluate_trajectory(
             violations["phase_corridor"] |= abs(roe.delta_lambda_rad) > scenario.constraints.phase_corridor_rad
             violations["eccentricity_corridor"] |= hypot(roe.delta_ex, roe.delta_ey) > scenario.constraints.delta_e_max
             violations["inclination_corridor"] |= hypot(roe.delta_ix, roe.delta_iy) > scenario.constraints.delta_i_max_rad
+    if controlled_pairs == 0 or not np.isfinite(min_delta_a_margin):
+        raise RuntimeError("robustness trajectory requires at least one additional/reference pair")
 
     satellite_ids = tuple(by_id)
     minimum_distance = _pair_minimum_distance(result, satellite_ids)
@@ -310,11 +370,14 @@ def run_robustness_application(
     if not scenario.orekit_sidecar_url:
         raise ValueError("final robustness campaign requires orekit_sidecar_url")
     known_satellites = {sat.satellite_id for sat in scenario.constellation.satellites}
+    if not any(sat.role == "additional" and sat.reference_id is not None for sat in scenario.constellation.satellites):
+        raise ValueError("robustness campaign requires at least one additional/reference pair")
     for maneuver in config.baseline_maneuvers:
         if maneuver.satellite_id not in known_satellites:
             raise ValueError(f"baseline maneuver targets unknown satellite: {maneuver.satellite_id}")
         if maneuver.time_s > scenario.duration_s:
             raise ValueError("baseline maneuver lies outside scenario horizon")
+    validate_uncertainty_contract(scenario, config)
 
     propagator = OrekitSidecarPropagator(scenario.orekit_sidecar_url, timeout_s=300.0)
 
