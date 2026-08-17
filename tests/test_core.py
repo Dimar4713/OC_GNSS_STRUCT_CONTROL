@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from math import isclose, pi
 
 import numpy as np
@@ -10,12 +11,14 @@ from constellation_control.control.controllers import DeadbandCandidate, Deadban
 from constellation_control.domain.models import (
     ForceModelConfig,
     ForceMode,
+    FrameName,
     IntegratorConfig,
     MeanElementDefinition,
     MeanOrbit,
     PropagationRequest,
     SatelliteSpec,
     SpacecraftModel,
+    TimeScaleName,
 )
 from constellation_control.dynamics.j2 import first_order_j2_rates, mean_motion
 from constellation_control.dynamics.orbits import (
@@ -32,6 +35,7 @@ def force(j2: float = 0.00108262668) -> ForceModelConfig:
         mode=ForceMode.SCREENING,
         mu_m3_s2=3.986004418e14,
         reference_radius_m=6378137.0,
+        flattening=1.0 / 298.257223563,
         j2=j2,
         earth_rotation_rate_rad_s=7.292115e-5,
         gravity_degree=2,
@@ -91,6 +95,9 @@ def test_identical_mean_orbits_with_phase_offset_have_zero_relative_secular_drif
     )
     request = PropagationRequest(
         scenario_id="test",
+        epoch=datetime(2026, 1, 1, tzinfo=UTC),
+        frame=FrameName.EME2000,
+        time_scale=TimeScaleName.UTC,
         satellites=(ref, dep),
         duration_s=86400.0,
         output_step_s=600.0,

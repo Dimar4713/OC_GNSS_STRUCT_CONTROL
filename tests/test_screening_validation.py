@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from math import isclose, pi
 from pathlib import Path
 
@@ -9,12 +10,14 @@ from constellation_control.application.run import load_scenario
 from constellation_control.domain.models import (
     ForceModelConfig,
     ForceMode,
+    FrameName,
     IntegratorConfig,
     MeanElementDefinition,
     MeanOrbit,
     PropagationRequest,
     SatelliteSpec,
     SpacecraftModel,
+    TimeScaleName,
 )
 from constellation_control.dynamics.j2 import first_order_j2_rates
 from constellation_control.dynamics.orbits import mean_to_classical
@@ -26,6 +29,7 @@ def _force() -> ForceModelConfig:
         mode=ForceMode.SCREENING,
         mu_m3_s2=3.986004418e14,
         reference_radius_m=6378137.0,
+        flattening=1.0 / 298.257223563,
         j2=0.00108262668,
         earth_rotation_rate_rad_s=7.292115e-5,
         gravity_degree=2,
@@ -65,6 +69,9 @@ def _spacecraft() -> SpacecraftModel:
 def _request(satellites: tuple[SatelliteSpec, ...]) -> PropagationRequest:
     return PropagationRequest(
         scenario_id="screening-validation",
+        epoch=datetime(2026, 1, 1, tzinfo=UTC),
+        frame=FrameName.EME2000,
+        time_scale=TimeScaleName.UTC,
         satellites=satellites,
         duration_s=2.0 * 86400.0,
         output_step_s=600.0,
@@ -182,6 +189,8 @@ def test_scenario_mean_element_definition_is_bound_to_force_model() -> None:
     scenario_path = Path(__file__).parents[1] / "scenarios" / "mvp_45deg.yaml"
     scenario = load_scenario(scenario_path)
     fingerprint = scenario.force_model.fingerprint()
+    assert scenario.frame == FrameName.EME2000
+    assert scenario.time_scale == TimeScaleName.UTC
     assert all(
         satellite.mean_orbit.definition.force_model_fingerprint == fingerprint
         for satellite in scenario.constellation.satellites

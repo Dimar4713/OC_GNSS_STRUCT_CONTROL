@@ -1,27 +1,30 @@
-scenario_id: synthetic-mvp-45deg
+scenario_id: synthetic-orekit-dsst-smoke
 seed: 4713
 epoch: '2026-01-01T00:00:00Z'
 frame: EME2000
 time_scale: UTC
-duration_s: 172800.0
-output_step_s: 1800.0
-orekit_sidecar_url: null
+duration_s: 21600.0
+output_step_s: 900.0
+orekit_sidecar_url: http://127.0.0.1:8081
 force_model:
-  mode: screening
+  mode: design
+  gravity_model: EIGEN-6S
   mu_m3_s2: 3.986004418e14
   reference_radius_m: 6378137.0
   flattening: 0.0033528106647474805
   j2: 0.00108262668
   earth_rotation_rate_rad_s: 7.2921150e-5
-  gravity_degree: 2
-  gravity_order: 0
-  moon: false
-  sun: false
-  srp: false
+  gravity_degree: 8
+  gravity_order: 8
+  moon: true
+  sun: true
+  srp: true
+  tides: false
+  relativity: false
 integrator:
   min_step_s: 0.1
   max_step_s: 300.0
-  abs_tolerance: 1.0e-9
+  abs_tolerance: 1.0e-6
   rel_tolerance: 1.0e-12
 constraints:
   min_pair_distance_m: 1000.0
@@ -31,7 +34,7 @@ constraints:
   phase_corridor_rad: 0.2
   propellant_reserve_fraction: 0.1
 monte_carlo:
-  samples: 32
+  samples: 16
   workers: 2
   seed: 4713
   perturbation_sigmas:
@@ -39,8 +42,8 @@ monte_carlo:
     delta_lambda_rad: 0.0001
 constellation:
   satellites:
-    - satellite_id: DEMO-REF
-      plane_id: P1
+    - satellite_id: SYNTH-REF
+      plane_id: SYNTH-P1
       role: reference
       mean_orbit:
         a_m: 26560000.0
@@ -50,7 +53,7 @@ constellation:
         iy: 0.0
         lambda_rad: 0.0
         definition:
-          theory: screening-j2-first-order
+          theory: orekit-dsst-mean-input
           force_model_fingerprint: scenario
       spacecraft:
         dry_mass_kg: 500.0
@@ -58,10 +61,10 @@ constellation:
         isp_s: 220.0
         area_m2: 8.0
         cr: 1.3
-    - satellite_id: DEMO-ADD-45
-      plane_id: P1
+    - satellite_id: SYNTH-ADD-45
+      plane_id: SYNTH-P1
       role: additional
-      reference_id: DEMO-REF
+      reference_id: SYNTH-REF
       mean_orbit:
         a_m: 26560000.0
         ex: 0.001
@@ -70,7 +73,7 @@ constellation:
         iy: 0.0
         lambda_rad: 0.7853981633974483
         definition:
-          theory: screening-j2-first-order
+          theory: orekit-dsst-mean-input
           force_model_fingerprint: scenario
       spacecraft:
         dry_mass_kg: 500.0
@@ -78,3 +81,4 @@ constellation:
         isp_s: 220.0
         area_m2: 8.0
         cr: 1.3
+maneuvers: []

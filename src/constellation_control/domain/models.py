@@ -15,6 +15,24 @@ class ForceMode(StrEnum):
     VALIDATION = "validation"
 
 
+class GravityModelName(StrEnum):
+    EIGEN_6S = "EIGEN-6S"
+
+
+class FrameName(StrEnum):
+    EME2000 = "EME2000"
+    GCRF = "GCRF"
+    ICRF = "ICRF"
+    ITRF = "ITRF"
+
+
+class TimeScaleName(StrEnum):
+    UTC = "UTC"
+    TAI = "TAI"
+    TT = "TT"
+    GPS = "GPS"
+
+
 class MeanElementDefinition(BaseModel):
     model_config = ConfigDict(frozen=True)
     representation: Literal["equinoctial"] = "equinoctial"
@@ -95,8 +113,10 @@ class ConstellationSpec(BaseModel):
 class ForceModelConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
     mode: ForceMode
+    gravity_model: GravityModelName | None = None
     mu_m3_s2: float = Field(gt=0.0)
     reference_radius_m: float = Field(gt=0.0)
+    flattening: float = Field(ge=0.0, lt=1.0)
     j2: float
     earth_rotation_rate_rad_s: float = Field(gt=0.0)
     gravity_degree: int = Field(ge=0)
@@ -108,9 +128,11 @@ class ForceModelConfig(BaseModel):
     relativity: bool = False
 
     @model_validator(mode="after")
-    def validate_gravity_order(self) -> ForceModelConfig:
+    def validate_gravity_configuration(self) -> ForceModelConfig:
         if self.gravity_order > self.gravity_degree:
             raise ValueError("gravity_order must not exceed gravity_degree")
+        if self.mode in (ForceMode.DESIGN, ForceMode.VALIDATION) and self.gravity_model is None:
+            raise ValueError("high-fidelity force model requires explicit gravity_model")
         return self
 
     def fingerprint(self) -> str:
@@ -124,6 +146,12 @@ class IntegratorConfig(BaseModel):
     max_step_s: float = Field(gt=0.0)
     abs_tolerance: float = Field(gt=0.0)
     rel_tolerance: float = Field(gt=0.0)
+
+    @model_validator(mode="after")
+    def validate_steps(self) -> IntegratorConfig:
+        if self.max_step_s < self.min_step_s:
+            raise ValueError("max_step_s must be greater than or equal to min_step_s")
+        return self
 
 
 class ConstraintConfig(BaseModel):
@@ -159,7 +187,11 @@ class ManeuverPlan(BaseModel):
 class PropagationRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
     scenario_id: str
+    epoch: datetime
+    frame: FrameName
+    time_scale: TimeScaleName
     satellites: tuple[SatelliteSpec, ...]
+    maneuvers: tuple[Maneuver, ...] = ()
     duration_s: float = Field(gt=0.0)
     output_step_s: float = Field(gt=0.0)
     force_model: ForceModelConfig
@@ -172,6 +204,7 @@ class PropagationResult(BaseModel):
     backend: str
     backend_version: str
     force_model_fingerprint: str
+    backend_metadata: dict[str, str] = Field(default_factory=dict)
     times_s: tuple[float, ...]
     mean_orbits: dict[str, tuple[MeanOrbit, ...]]
     cartesian_states: dict[str, tuple[OsculatingState, ...]]
@@ -209,8 +242,15 @@ class ExperimentRunManifest(BaseModel):
     code_version: str
     force_model_fingerprint: str
     force_model_mode: ForceMode
+    force_model: ForceModelConfig
+    integrator: IntegratorConfig
+    constraints: ConstraintConfig
+    frame: FrameName
+    time_scale: TimeScaleName
+    mean_element_definitions: dict[str, MeanElementDefinition]
     backend: str
     backend_version: str
+    backend_metadata: dict[str, str]
     epoch: datetime
     random_seed: int
     algorithm_versions: dict[str, str]
@@ -221,6 +261,8 @@ class ScenarioConfig(BaseModel):
     scenario_id: str
     seed: int
     epoch: datetime
+    frame: FrameName
+    time_scale: TimeScaleName
     duration_s: float = Field(gt=0.0)
     output_step_s: float = Field(gt=0.0)
     orekit_sidecar_url: str | None = None
@@ -229,6 +271,17 @@ class ScenarioConfig(BaseModel):
     constraints: ConstraintConfig
     monte_carlo: MonteCarloConfig
     constellation: ConstellationSpec
+    maneuvers: tuple[Maneuver, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_maneuver_targets(self) -> ScenarioConfig:
+        known = {sat.satellite_id for sat in self.constellation.satellites}
+        for maneuver in self.maneuvers:
+            if maneuver.satellite_id not in known:
+                raise ValueError(f"unknown maneuver satellite_id: {maneuver.satellite_id}")
+            if maneuver.time_s > self.duration_s:
+                raise ValueError("maneuver time_s must lie inside scenario duration")
+        return self
 
     def config_hash(self) -> str:
         raw = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
