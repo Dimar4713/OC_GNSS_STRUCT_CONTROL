@@ -10,6 +10,7 @@ from constellation_control.analysis.navigation_geometry import (
     geodetic_to_ecef_m,
     inertial_to_ecef_m,
 )
+from constellation_control.application.run import _ground_track_closure_error_m
 from constellation_control.domain.navigation import NavigationSiteConfig
 
 
@@ -82,3 +83,21 @@ def test_insufficient_or_rank_deficient_geometry_is_unavailable() -> None:
     assert not rank_deficient.available
     assert rank_deficient.gdop is None
     assert rank_deficient.reason == "rank-deficient-geometry"
+
+
+def test_repeat_ground_track_closure_is_deterministic() -> None:
+    radius_m = 10.0
+    duration_s = pi / 2.0
+    omega = 1.0
+    initial = np.asarray([radius_m, 0.0, 0.0])
+
+    # A +90 degree inertial advance is cancelled by the explicit Earth-fixed
+    # -90 degree reporting rotation, so the sub-satellite point repeats exactly.
+    repeated = np.asarray([0.0, radius_m, 0.0])
+    closure = _ground_track_closure_error_m(initial, repeated, duration_s, radius_m, omega)
+    assert closure == pytest.approx(0.0, abs=1.0e-12)
+
+    # With no matching inertial advance, the Earth-fixed point moves by 90 degrees.
+    non_repeated = np.asarray([radius_m, 0.0, 0.0])
+    quarter_turn = _ground_track_closure_error_m(initial, non_repeated, duration_s, radius_m, omega)
+    assert quarter_turn == pytest.approx(radius_m * pi / 2.0, abs=1.0e-12)
