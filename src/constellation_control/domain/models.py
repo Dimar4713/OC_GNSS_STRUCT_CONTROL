@@ -183,6 +183,7 @@ class PropagationRequest(BaseModel):
     frame: FrameName
     time_scale: TimeScaleName
     satellites: tuple[SatelliteSpec, ...]
+    maneuvers: tuple[Maneuver, ...] = ()
     duration_s: float = Field(gt=0.0)
     output_step_s: float = Field(gt=0.0)
     force_model: ForceModelConfig
@@ -262,6 +263,17 @@ class ScenarioConfig(BaseModel):
     constraints: ConstraintConfig
     monte_carlo: MonteCarloConfig
     constellation: ConstellationSpec
+    maneuvers: tuple[Maneuver, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_maneuver_targets(self) -> ScenarioConfig:
+        known = {sat.satellite_id for sat in self.constellation.satellites}
+        for maneuver in self.maneuvers:
+            if maneuver.satellite_id not in known:
+                raise ValueError(f"unknown maneuver satellite_id: {maneuver.satellite_id}")
+            if maneuver.time_s > self.duration_s:
+                raise ValueError("maneuver time_s must lie inside scenario duration")
+        return self
 
     def config_hash(self) -> str:
         raw = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
