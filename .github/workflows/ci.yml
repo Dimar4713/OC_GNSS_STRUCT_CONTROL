@@ -270,6 +270,7 @@ jobs:
           name: high-fidelity-diagnostics
           if-no-files-found: ignore
           retention-days: 7
+          include-hidden-files: true
           path: |
             /tmp/maven-integration.log
             /tmp/orekit-service.log
