@@ -23,7 +23,7 @@ import org.orekit.utils.IERSConventions;
 final class OrekitRuntime {
     static final String OREKIT_VERSION = "13.1.7";
     static final String GRAVITY_MODEL = "EIGEN-6S";
-    private static final String GRAVITY_MODEL_FILE_PATTERN = "^eigen-6s-truncated$";
+    private static final String GRAVITY_MODEL_FILE_PATTERN = "^eigen-6s\\.gfc$";
 
     private final LazyLoadedDataContext context;
     private final String dataSha256;

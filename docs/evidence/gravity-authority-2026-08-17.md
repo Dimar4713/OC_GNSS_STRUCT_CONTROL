@@ -14,7 +14,7 @@ The reviewed Orekit auxiliary-data directory contains multiple potential-coeffic
 
 - high-fidelity scenarios declare `gravity_model: EIGEN-6S`;
 - the value participates in the normalized force-model SHA-256;
-- the Java runtime clears automatic potential-coefficient readers and installs only the ICGEM reader matching `^eigen-6s-truncated$`;
+- the Java runtime clears automatic potential-coefficient readers and installs only the ICGEM reader matching the actual reviewed `orekit-data` file `^eigen-6s\.gfc$`;
 - Java rejects a request whose declared model does not equal the runtime authority;
 - Python rejects a result whose metadata authority does not equal the request;
 - health/result/run evidence carries `gravity_model` separately from `orekit_data_revision` and `orekit_data_sha256`;

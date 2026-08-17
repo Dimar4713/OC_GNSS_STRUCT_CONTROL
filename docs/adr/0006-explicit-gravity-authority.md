@@ -14,7 +14,7 @@ The same code and the same auxiliary-data revision therefore produced a differen
 
 1. High-fidelity force models (`design`, `validation`) must declare `gravity_model` explicitly.
 2. The first supported authority is `EIGEN-6S`.
-3. The Orekit runtime clears automatically configured potential-coefficient readers and installs only an `ICGEMFormatReader` matching `^eigen-6s-truncated$`.
+3. The Orekit runtime clears automatically configured potential-coefficient readers and installs only an `ICGEMFormatReader` matching the actual reviewed `orekit-data` file `^eigen-6s\.gfc$`.
 4. `gravity_model` is part of the normalized pydantic force-model payload and therefore part of the SHA-256 force-model fingerprint.
 5. The Java service rejects a request whose declared gravity authority differs from the runtime authority.
 6. Result metadata repeats `gravity_model`, gravity-provider `mu`, gravity-provider reference radius `Ae`, and the separately configured Earth ellipsoid radius/flattening.
