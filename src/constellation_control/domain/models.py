@@ -15,6 +15,20 @@ class ForceMode(StrEnum):
     VALIDATION = "validation"
 
 
+class FrameName(StrEnum):
+    EME2000 = "EME2000"
+    GCRF = "GCRF"
+    ICRF = "ICRF"
+    ITRF = "ITRF"
+
+
+class TimeScaleName(StrEnum):
+    UTC = "UTC"
+    TAI = "TAI"
+    TT = "TT"
+    GPS = "GPS"
+
+
 class MeanElementDefinition(BaseModel):
     model_config = ConfigDict(frozen=True)
     representation: Literal["equinoctial"] = "equinoctial"
@@ -125,6 +139,12 @@ class IntegratorConfig(BaseModel):
     abs_tolerance: float = Field(gt=0.0)
     rel_tolerance: float = Field(gt=0.0)
 
+    @model_validator(mode="after")
+    def validate_steps(self) -> IntegratorConfig:
+        if self.max_step_s < self.min_step_s:
+            raise ValueError("max_step_s must be greater than or equal to min_step_s")
+        return self
+
 
 class ConstraintConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -159,6 +179,9 @@ class ManeuverPlan(BaseModel):
 class PropagationRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
     scenario_id: str
+    epoch: datetime
+    frame: FrameName
+    time_scale: TimeScaleName
     satellites: tuple[SatelliteSpec, ...]
     duration_s: float = Field(gt=0.0)
     output_step_s: float = Field(gt=0.0)
@@ -172,6 +195,7 @@ class PropagationResult(BaseModel):
     backend: str
     backend_version: str
     force_model_fingerprint: str
+    backend_metadata: dict[str, str] = Field(default_factory=dict)
     times_s: tuple[float, ...]
     mean_orbits: dict[str, tuple[MeanOrbit, ...]]
     cartesian_states: dict[str, tuple[OsculatingState, ...]]
@@ -209,8 +233,15 @@ class ExperimentRunManifest(BaseModel):
     code_version: str
     force_model_fingerprint: str
     force_model_mode: ForceMode
+    force_model: ForceModelConfig
+    integrator: IntegratorConfig
+    constraints: ConstraintConfig
+    frame: FrameName
+    time_scale: TimeScaleName
+    mean_element_definitions: dict[str, MeanElementDefinition]
     backend: str
     backend_version: str
+    backend_metadata: dict[str, str]
     epoch: datetime
     random_seed: int
     algorithm_versions: dict[str, str]
@@ -221,6 +252,8 @@ class ScenarioConfig(BaseModel):
     scenario_id: str
     seed: int
     epoch: datetime
+    frame: FrameName
+    time_scale: TimeScaleName
     duration_s: float = Field(gt=0.0)
     output_step_s: float = Field(gt=0.0)
     orekit_sidecar_url: str | None = None
