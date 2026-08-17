@@ -37,7 +37,12 @@ def geodetic_to_ecef_m(
     )
 
 
-def inertial_to_ecef_m(r_inertial_m: Sequence[float], *, time_s: float, earth_rotation_rate_rad_s: float) -> np.ndarray:
+def inertial_to_ecef_m(
+    r_inertial_m: Sequence[float],
+    *,
+    time_s: float,
+    earth_rotation_rate_rad_s: float,
+) -> np.ndarray:
     """Apply the explicit simple z-axis Earth rotation used by the reporting geometry layer.
 
     This is intentionally a named low-order transform, not a claim to replace an
@@ -170,14 +175,16 @@ def evaluate_navigation_geometry(
         reference_radius_m=reference_radius_m,
         flattening=flattening,
     )
-    visible: dict[str, np.ndarray] = {}
+    visible: dict[str, Sequence[float]] = {}
     for satellite_id, inertial_position in sorted(satellite_inertial_positions_m.items()):
         satellite_ecef = inertial_to_ecef_m(
             inertial_position,
             time_s=time_s,
             earth_rotation_rate_rad_s=earth_rotation_rate_rad_s,
         )
-        enu = ecef_delta_to_enu(satellite_ecef - receiver_ecef, site)
-        if elevation_rad(enu) >= site.elevation_mask_rad:
-            visible[satellite_id] = enu / np.linalg.norm(enu)
+        enu = ecef_delta_to_enu((satellite_ecef - receiver_ecef).tolist(), site)
+        enu_sequence = enu.tolist()
+        if elevation_rad(enu_sequence) >= site.elevation_mask_rad:
+            unit = enu / np.linalg.norm(enu)
+            visible[satellite_id] = [float(unit[0]), float(unit[1]), float(unit[2])]
     return dop_from_enu_unit_vectors(visible)
