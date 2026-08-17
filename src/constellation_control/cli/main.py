@@ -4,6 +4,7 @@ from typing import Annotated
 import typer
 
 from constellation_control.application.design_pipeline import run_design_application
+from constellation_control.application.robustness import run_robustness_application
 from constellation_control.application.run import run_scenario
 
 app = typer.Typer(help="Constellation Control CLI", no_args_is_help=True)
@@ -41,6 +42,21 @@ def design(
     """Search, rank and numerically validate constellation design candidates."""
     output_root = output if output is not None else Path("runs")
     run_dir = run_design_application(screening, validation, pipeline, output_root)
+    typer.echo(run_dir)
+
+
+@app.command()
+def robustness(
+    scenario: Annotated[Path, typer.Argument(help="Numerical Orekit validation YAML scenario")],
+    campaign: Annotated[Path, typer.Argument(help="Robustness campaign YAML configuration")],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Root directory for robustness evidence artifacts"),
+    ] = None,
+) -> None:
+    """Run a resumable high-fidelity robustness campaign for an accepted candidate."""
+    output_root = output if output is not None else Path("runs")
+    run_dir = run_robustness_application(scenario, campaign, output_root)
     typer.echo(run_dir)
 
 
