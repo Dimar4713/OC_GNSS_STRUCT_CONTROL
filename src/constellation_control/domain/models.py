@@ -111,6 +111,7 @@ class ForceModelConfig(BaseModel):
     mode: ForceMode
     mu_m3_s2: float = Field(gt=0.0)
     reference_radius_m: float = Field(gt=0.0)
+    flattening: float = Field(ge=0.0, lt=1.0)
     j2: float
     earth_rotation_rate_rad_s: float = Field(gt=0.0)
     gravity_degree: int = Field(ge=0)
