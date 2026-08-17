@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -40,7 +41,7 @@ def generate_engineering_plots(timeseries: pd.DataFrame, output_dir: Path) -> No
 def write_run_artifacts(
     output_dir: Path,
     manifest: ExperimentRunManifest,
-    summary: dict[str, object],
+    summary: Mapping[str, object],
     timeseries: pd.DataFrame,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
