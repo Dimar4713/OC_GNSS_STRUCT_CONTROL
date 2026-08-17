@@ -48,6 +48,10 @@ def _orbit(lambda_rad: float) -> MeanOrbit:
     )
 
 
+def _circular_orbit(lambda_rad: float) -> MeanOrbit:
+    return _orbit(lambda_rad).model_copy(update={"ex": 0.0, "ey": 0.0})
+
+
 def _spacecraft() -> SpacecraftModel:
     return SpacecraftModel(
         dry_mass_kg=500.0,
@@ -108,7 +112,7 @@ def test_phase_symmetric_spacecraft_have_symmetric_screening_metrics() -> None:
         satellite_id="REF",
         plane_id="P",
         role="reference",
-        mean_orbit=_orbit(0.0),
+        mean_orbit=_circular_orbit(0.0),
         spacecraft=_spacecraft(),
     )
     plus = SatelliteSpec(
@@ -116,7 +120,7 @@ def test_phase_symmetric_spacecraft_have_symmetric_screening_metrics() -> None:
         plane_id="P",
         role="additional",
         reference_id="REF",
-        mean_orbit=_orbit(pi / 4.0),
+        mean_orbit=_circular_orbit(pi / 4.0),
         spacecraft=_spacecraft(),
     )
     minus = SatelliteSpec(
@@ -124,7 +128,7 @@ def test_phase_symmetric_spacecraft_have_symmetric_screening_metrics() -> None:
         plane_id="P",
         role="additional",
         reference_id="REF",
-        mean_orbit=_orbit(-pi / 4.0),
+        mean_orbit=_circular_orbit(-pi / 4.0),
         spacecraft=_spacecraft(),
     )
     result = SyntheticMeanPropagator().propagate(_request((reference, plus, minus)))
