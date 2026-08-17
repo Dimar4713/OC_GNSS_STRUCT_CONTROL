@@ -6,6 +6,7 @@ from constellation_control.optimization.pipeline import (
     CandidateEvaluation,
     DesignPipelineConfig,
     RecommendationPolicyConfig,
+    nondominated_mask,
     run_design_pipeline,
 )
 from constellation_control.optimization.validation import ValidationOutcome
@@ -68,6 +69,18 @@ def test_local_optimizer_enforces_hard_margin() -> None:
     assert result.success
     assert result.x[0] <= 0.50001
     assert result.x[0] >= 0.49
+
+
+def test_nondominated_mask_rejects_strictly_dominated_candidate() -> None:
+    objectives = np.asarray(
+        [
+            [1.0, 1.0, 1.0],
+            [2.0, 2.0, 2.0],
+            [0.5, 2.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ]
+    )
+    assert nondominated_mask(objectives).tolist() == [True, False, True, True]
 
 
 def test_pipeline_is_deterministic_and_pareto_set_is_feasible() -> None:
