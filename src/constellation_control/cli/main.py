@@ -60,5 +60,34 @@ def robustness(
     typer.echo(run_dir)
 
 
+@app.command()
+def preview(
+    scenarios: Annotated[
+        Path,
+        typer.Option("--scenarios", help="Directory containing expert YAML scenarios"),
+    ] = Path("scenarios"),
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Root directory for preview run artifacts"),
+    ] = Path("runs"),
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Preview bind address; localhost is the safe default"),
+    ] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Preview HTTP port")] = 8765,
+) -> None:
+    """Start the local Engineering Preview web shell."""
+    try:
+        import uvicorn
+
+        from constellation_control.preview.app import create_preview_app
+    except ImportError as exc:
+        raise typer.BadParameter("Preview dependencies are missing; install with .[preview]") from exc
+
+    application = create_preview_app(scenarios, output)
+    typer.echo(f"Engineering Preview: http://{host}:{port}")
+    uvicorn.run(application, host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
