@@ -33,7 +33,7 @@ jobs:
       OREKIT_DATA_REVISION: f395924f27b6074c8db1432350f5917d722ff3e1
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
