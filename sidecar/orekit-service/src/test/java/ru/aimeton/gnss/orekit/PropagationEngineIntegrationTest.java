@@ -84,6 +84,19 @@ final class PropagationEngineIntegrationTest {
     }
 
     @Test
+    void eightByEightSmokeForceModelExecutesForDesignAndValidation() {
+        PropagationResult design = engine.propagate(smokeRequest("design"));
+        PropagationResult validation = engine.propagate(smokeRequest("validation"));
+
+        assertEquals("8", design.backendMetadata().get("gravity_degree"));
+        assertEquals("8", design.backendMetadata().get("gravity_order"));
+        assertEquals("8", validation.backendMetadata().get("gravity_degree"));
+        assertEquals("8", validation.backendMetadata().get("gravity_order"));
+        assertEquals(25, design.timesS().size());
+        assertEquals(25, validation.timesS().size());
+    }
+
+    @Test
     void relativityFailsClosedUntilMeanTransformationSupportsIt() {
         assertThrows(
                 UnsupportedOperationException.class,
@@ -162,6 +175,44 @@ final class PropagationEngineIntegrationTest {
                 maneuvers,
                 600.0,
                 300.0,
+                forceModel,
+                integrator,
+                4713,
+                fingerprint);
+    }
+
+    private static PropagationRequest smokeRequest(String mode) {
+        String fingerprint = "integration-smoke-force-model-sha256";
+        MeanElementDefinition definition = new MeanElementDefinition(
+                "equinoctial", "synthetic-integration-smoke-input", fingerprint);
+        MeanOrbit orbit = new MeanOrbit(26_560_000.0, 0.001, 0.0, 0.2, 0.0, 0.3, definition);
+        SpacecraftModel spacecraft = new SpacecraftModel(500.0, 50.0, 220.0, 8.0, 1.3);
+        SatelliteSpec satellite = new SatelliteSpec("SYNTH-SMOKE", "P-SYNTH", "reference", null, orbit, spacecraft);
+        ForceModel forceModel = new ForceModel(
+                mode,
+                3.986004418e14,
+                6_378_137.0,
+                1.0 / 298.257223563,
+                0.00108262668,
+                7.2921150e-5,
+                8,
+                8,
+                true,
+                true,
+                true,
+                false,
+                false);
+        double maxStep = mode.equals("design") ? 300.0 : 120.0;
+        Integrator integrator = new Integrator(0.1, maxStep, 1.0e-6, 1.0e-12);
+        return new PropagationRequest(
+                "synthetic-orekit-smoke",
+                "2026-01-01T00:00:00Z",
+                "EME2000",
+                "UTC",
+                List.of(satellite),
+                List.of(),
+                21_600.0,
+                900.0,
                 forceModel,
                 integrator,
                 4713,

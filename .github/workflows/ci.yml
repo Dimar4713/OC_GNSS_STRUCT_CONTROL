@@ -110,8 +110,17 @@ jobs:
       - name: Execute DSST design via Python CLI and HTTP
         shell: bash
         run: |
-          set -euo pipefail
-          constellation-control run scenarios/orekit_design_smoke.yaml --output .e2e-runs/design
+          set -uo pipefail
+          set +e
+          constellation-control run scenarios/orekit_design_smoke.yaml --output .e2e-runs/design \
+            > /tmp/design-e2e.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/design-e2e.log
+          if test "$status" -ne 0; then
+            cat /tmp/orekit-service.log 2>/dev/null || true
+            exit "$status"
+          fi
           design_dir="$(find .e2e-runs/design/synthetic-orekit-dsst-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
           test -n "$design_dir"
           echo "DESIGN_RUN_DIR=$design_dir" >> "$GITHUB_ENV"
@@ -126,8 +135,17 @@ jobs:
       - name: Execute numerical validation via Python CLI and HTTP
         shell: bash
         run: |
-          set -euo pipefail
-          constellation-control run scenarios/orekit_validation_smoke.yaml --output .e2e-runs/validation
+          set -uo pipefail
+          set +e
+          constellation-control run scenarios/orekit_validation_smoke.yaml --output .e2e-runs/validation \
+            > /tmp/validation-e2e.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/validation-e2e.log
+          if test "$status" -ne 0; then
+            cat /tmp/orekit-service.log 2>/dev/null || true
+            exit "$status"
+          fi
           validation_dir="$(find .e2e-runs/validation/synthetic-orekit-validation-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
           test -n "$validation_dir"
           echo "VALIDATION_RUN_DIR=$validation_dir" >> "$GITHUB_ENV"
@@ -147,3 +165,16 @@ jobs:
             kill "$(cat /tmp/orekit-service.pid)" 2>/dev/null || true
           fi
           cat /tmp/orekit-service.log 2>/dev/null || true
+      - name: Upload high-fidelity diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: high-fidelity-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            /tmp/orekit-service.log
+            /tmp/orekit-health.json
+            /tmp/design-e2e.log
+            /tmp/validation-e2e.log
+            .e2e-runs/
