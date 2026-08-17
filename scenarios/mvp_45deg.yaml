@@ -10,6 +10,7 @@ force_model:
   mode: screening
   mu_m3_s2: 3.986004418e14
   reference_radius_m: 6378137.0
+  flattening: 0.0033528106647474805
   j2: 0.00108262668
   earth_rotation_rate_rad_s: 7.2921150e-5
   gravity_degree: 2
