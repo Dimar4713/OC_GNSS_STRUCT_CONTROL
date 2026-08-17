@@ -75,10 +75,7 @@ def _ground_track_closure_error_m(
     return radius_m * acos(float(np.clip(u0 @ u1, -1.0, 1.0)))
 
 
-def _build_ground_track(
-    scenario: ScenarioConfig,
-    result: PropagationResult,
-) -> pd.DataFrame:
+def _build_ground_track(scenario: ScenarioConfig, result: PropagationResult) -> pd.DataFrame:
     rows: list[dict[str, float | str]] = []
     radius = scenario.force_model.reference_radius_m
     omega = scenario.force_model.earth_rotation_rate_rad_s
@@ -157,11 +154,7 @@ def _build_navigation_geometry(
 
 def _navigation_summary(frame: pd.DataFrame | None) -> dict[str, object]:
     if frame is None:
-        return {
-            "requested": False,
-            "transform": "not-requested",
-            "sites": {},
-        }
+        return {"requested": False, "transform": "not-requested", "sites": {}}
     sites: dict[str, object] = {}
     for site_id, site_frame in frame.groupby("site_id", sort=True):
         finite_pdop = site_frame["pdop"].dropna().astype(float)
@@ -199,39 +192,76 @@ def _representative_pdop(frame: pd.DataFrame | None) -> float | None:
     return float(finite.max())
 
 
+def _resource_row(
+    scenario: ScenarioConfig,
+    satellite_id: str,
+    initial_mass_kg: float,
+    propellant_mass_kg: float,
+    isp_s: float,
+    reserve_kg: float,
+    time_s: float,
+    cumulative_delta_v_m_s: float,
+) -> dict[str, float | str]:
+    used = propellant_used_kg(initial_mass_kg, cumulative_delta_v_m_s, isp_s)
+    return {
+        "satellite_id": satellite_id,
+        "time_s": float(time_s),
+        "cumulative_delta_v_m_s": float(cumulative_delta_v_m_s),
+        "propellant_used_kg": float(used),
+        "residual_propellant_kg": float(propellant_mass_kg - used),
+        "required_reserve_kg": float(reserve_kg),
+    }
+
+
 def _build_resource_history(scenario: ScenarioConfig) -> pd.DataFrame:
     rows: list[dict[str, float | str]] = []
     for satellite in scenario.constellation.satellites:
+        spacecraft = satellite.spacecraft
         maneuvers = sorted(
             (item for item in scenario.maneuvers if item.satellite_id == satellite.satellite_id),
             key=lambda item: item.time_s,
         )
+        reserve = spacecraft.propellant_mass_kg * scenario.constraints.propellant_reserve_fraction
         cumulative_delta_v = 0.0
-        reserve = satellite.spacecraft.propellant_mass_kg * scenario.constraints.propellant_reserve_fraction
-
-        def append_row(time_s: float) -> None:
-            used = propellant_used_kg(
-                satellite.spacecraft.initial_mass_kg,
+        rows.append(
+            _resource_row(
+                scenario,
+                satellite.satellite_id,
+                spacecraft.initial_mass_kg,
+                spacecraft.propellant_mass_kg,
+                spacecraft.isp_s,
+                reserve,
+                0.0,
                 cumulative_delta_v,
-                satellite.spacecraft.isp_s,
             )
-            rows.append(
-                {
-                    "satellite_id": satellite.satellite_id,
-                    "time_s": float(time_s),
-                    "cumulative_delta_v_m_s": float(cumulative_delta_v),
-                    "propellant_used_kg": float(used),
-                    "residual_propellant_kg": float(satellite.spacecraft.propellant_mass_kg - used),
-                    "required_reserve_kg": float(reserve),
-                }
-            )
-
-        append_row(0.0)
+        )
         for maneuver in maneuvers:
             cumulative_delta_v += float(np.linalg.norm(np.asarray(maneuver.dv_rtn_m_s, dtype=float)))
-            append_row(maneuver.time_s)
+            rows.append(
+                _resource_row(
+                    scenario,
+                    satellite.satellite_id,
+                    spacecraft.initial_mass_kg,
+                    spacecraft.propellant_mass_kg,
+                    spacecraft.isp_s,
+                    reserve,
+                    maneuver.time_s,
+                    cumulative_delta_v,
+                )
+            )
         if scenario.duration_s > 0.0 and (not maneuvers or maneuvers[-1].time_s != scenario.duration_s):
-            append_row(scenario.duration_s)
+            rows.append(
+                _resource_row(
+                    scenario,
+                    satellite.satellite_id,
+                    spacecraft.initial_mass_kg,
+                    spacecraft.propellant_mass_kg,
+                    spacecraft.isp_s,
+                    reserve,
+                    scenario.duration_s,
+                    cumulative_delta_v,
+                )
+            )
     return pd.DataFrame(rows)
 
 
@@ -407,7 +437,9 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             "backend_metadata": result.backend_metadata,
             "maneuver_count": len(scenario.maneuvers),
             "navigation_sites": [site.model_dump(mode="json") for site in scenario.navigation_sites],
-            "navigation_geometry_transform": "simple-earth-rotation-z-v1 + ellipsoid-site-ecef + local-enu-v1",
+            "navigation_geometry_transform": (
+                "simple-earth-rotation-z-v1 + ellipsoid-site-ecef + local-enu-v1"
+            ),
             "ground_track_transform": "simple-earth-rotation-z-v1 + geocentric-subpoint-v1",
         },
         "mean_element_rule": (
