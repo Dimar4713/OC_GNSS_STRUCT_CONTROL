@@ -52,7 +52,7 @@ jobs:
           set -uo pipefail
           echo "OREKIT_DATA_PINNED_REVISION=$OREKIT_DATA_REVISION"
           for attempt in 1 2 3; do
-            if current="$(git ls-remote https://gitlab.orekit.org/orekit/orekit-data.git refs/heads/main 2>/tmp/orekit-data-main.err | awk '{print $1}')" && test -n "$current"; then
+            if current="$(timeout 10s git ls-remote https://gitlab.orekit.org/orekit/orekit-data.git refs/heads/main 2>/tmp/orekit-data-main.err | awk '{print $1}')" && test -n "$current"; then
               echo "OREKIT_DATA_MAIN_REVISION=$current"
               exit 0
             fi
@@ -70,7 +70,7 @@ jobs:
           git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
           fetched=false
           for attempt in 1 2 3 4; do
-            if git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
+            if timeout 30s git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
               fetched=true
               break
             fi
