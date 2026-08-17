@@ -13,10 +13,13 @@ import yaml
 from constellation_control.adapters.orekit.adapter import OrekitSidecarPropagator
 from constellation_control.adapters.synthetic.propagator import SyntheticMeanPropagator
 from constellation_control.analysis.drift import default_harmonic_frequencies, harmonic_regression, linear_rate
+from constellation_control.analysis.fuel import propellant_used_kg
+from constellation_control.analysis.navigation_geometry import evaluate_navigation_geometry, inertial_to_ecef_m
 from constellation_control.domain.models import (
     ExperimentRunManifest,
     ForceMode,
     PropagationRequest,
+    PropagationResult,
     ScenarioConfig,
     StabilityMetrics,
 )
@@ -72,6 +75,166 @@ def _ground_track_closure_error_m(
     return radius_m * acos(float(np.clip(u0 @ u1, -1.0, 1.0)))
 
 
+def _build_ground_track(
+    scenario: ScenarioConfig,
+    result: PropagationResult,
+) -> pd.DataFrame:
+    rows: list[dict[str, float | str]] = []
+    radius = scenario.force_model.reference_radius_m
+    omega = scenario.force_model.earth_rotation_rate_rad_s
+    for satellite_id in sorted(result.cartesian_states):
+        states = result.cartesian_states[satellite_id]
+        initial_ecef: np.ndarray | None = None
+        for time_s, state in zip(result.times_s, states, strict=True):
+            ecef = inertial_to_ecef_m(
+                state.r_m,
+                time_s=float(time_s),
+                earth_rotation_rate_rad_s=omega,
+            )
+            if initial_ecef is None:
+                initial_ecef = ecef
+            norm = float(np.linalg.norm(ecef))
+            if norm <= 0.0:
+                raise RuntimeError("ground-track state has zero position norm")
+            longitude = float(np.arctan2(ecef[1], ecef[0]))
+            latitude = float(np.arctan2(ecef[2], np.hypot(ecef[0], ecef[1])))
+            u0 = initial_ecef / np.linalg.norm(initial_ecef)
+            u = ecef / norm
+            closure = radius * acos(float(np.clip(u0 @ u, -1.0, 1.0)))
+            rows.append(
+                {
+                    "satellite_id": satellite_id,
+                    "time_s": float(time_s),
+                    "ecef_x_m": float(ecef[0]),
+                    "ecef_y_m": float(ecef[1]),
+                    "ecef_z_m": float(ecef[2]),
+                    "longitude_rad": longitude,
+                    "geocentric_latitude_rad": latitude,
+                    "closure_from_initial_m": float(closure),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _build_navigation_geometry(
+    scenario: ScenarioConfig,
+    result: PropagationResult,
+) -> pd.DataFrame | None:
+    if not scenario.navigation_sites:
+        return None
+    rows: list[dict[str, object]] = []
+    satellite_ids = tuple(sorted(result.cartesian_states))
+    for index, time_s in enumerate(result.times_s):
+        positions = {
+            satellite_id: result.cartesian_states[satellite_id][index].r_m
+            for satellite_id in satellite_ids
+        }
+        for site in scenario.navigation_sites:
+            metrics = evaluate_navigation_geometry(
+                positions,
+                time_s=float(time_s),
+                site=site,
+                reference_radius_m=scenario.force_model.reference_radius_m,
+                flattening=scenario.force_model.flattening,
+                earth_rotation_rate_rad_s=scenario.force_model.earth_rotation_rate_rad_s,
+            )
+            rows.append(
+                {
+                    "site_id": site.site_id,
+                    "time_s": float(time_s),
+                    "available": metrics.available,
+                    "visible_count": len(metrics.visible_satellite_ids),
+                    "visible_satellite_ids": ";".join(metrics.visible_satellite_ids),
+                    "gdop": metrics.gdop,
+                    "pdop": metrics.pdop,
+                    "hdop": metrics.hdop,
+                    "vdop": metrics.vdop,
+                    "unavailable_reason": metrics.reason,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _navigation_summary(frame: pd.DataFrame | None) -> dict[str, object]:
+    if frame is None:
+        return {
+            "requested": False,
+            "transform": "not-requested",
+            "sites": {},
+        }
+    sites: dict[str, object] = {}
+    for site_id, site_frame in frame.groupby("site_id", sort=True):
+        finite_pdop = site_frame["pdop"].dropna().astype(float)
+        statistics: dict[str, float | int] | None
+        if finite_pdop.empty:
+            statistics = None
+        else:
+            values = finite_pdop.to_numpy(dtype=float)
+            statistics = {
+                "count": int(values.size),
+                "p50": float(np.percentile(values, 50)),
+                "p95": float(np.percentile(values, 95)),
+                "p99": float(np.percentile(values, 99)),
+                "worst": float(np.max(values)),
+            }
+        sites[str(site_id)] = {
+            "samples": int(len(site_frame)),
+            "available_samples": int(site_frame["available"].astype(bool).sum()),
+            "availability_fraction": float(site_frame["available"].astype(bool).mean()),
+            "pdop": statistics,
+        }
+    return {
+        "requested": True,
+        "transform": "simple-earth-rotation-z-v1 + ellipsoid-site-ecef + local-enu-v1",
+        "sites": sites,
+    }
+
+
+def _representative_pdop(frame: pd.DataFrame | None) -> float | None:
+    if frame is None:
+        return None
+    finite = frame["pdop"].dropna().astype(float)
+    if finite.empty:
+        return None
+    return float(finite.max())
+
+
+def _build_resource_history(scenario: ScenarioConfig) -> pd.DataFrame:
+    rows: list[dict[str, float | str]] = []
+    for satellite in scenario.constellation.satellites:
+        maneuvers = sorted(
+            (item for item in scenario.maneuvers if item.satellite_id == satellite.satellite_id),
+            key=lambda item: item.time_s,
+        )
+        cumulative_delta_v = 0.0
+        reserve = satellite.spacecraft.propellant_mass_kg * scenario.constraints.propellant_reserve_fraction
+
+        def append_row(time_s: float) -> None:
+            used = propellant_used_kg(
+                satellite.spacecraft.initial_mass_kg,
+                cumulative_delta_v,
+                satellite.spacecraft.isp_s,
+            )
+            rows.append(
+                {
+                    "satellite_id": satellite.satellite_id,
+                    "time_s": float(time_s),
+                    "cumulative_delta_v_m_s": float(cumulative_delta_v),
+                    "propellant_used_kg": float(used),
+                    "residual_propellant_kg": float(satellite.spacecraft.propellant_mass_kg - used),
+                    "required_reserve_kg": float(reserve),
+                }
+            )
+
+        append_row(0.0)
+        for maneuver in maneuvers:
+            cumulative_delta_v += float(np.linalg.norm(np.asarray(maneuver.dv_rtn_m_s, dtype=float)))
+            append_row(maneuver.time_s)
+        if scenario.duration_s > 0.0 and (not maneuvers or maneuvers[-1].time_s != scenario.duration_s):
+            append_row(scenario.duration_s)
+    return pd.DataFrame(rows)
+
+
 def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     scenario = load_scenario(scenario_path)
     request = PropagationRequest(
@@ -99,6 +262,12 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
 
     result = propagator.propagate(request)
     times = np.asarray(result.times_s, dtype=float)
+    ground_track = _build_ground_track(scenario, result)
+    navigation_geometry = _build_navigation_geometry(scenario, result)
+    navigation_summary = _navigation_summary(navigation_geometry)
+    representative_pdop = _representative_pdop(navigation_geometry)
+    resources = _build_resource_history(scenario)
+
     satellite_by_id = {sat.satellite_id: sat for sat in scenario.constellation.satellites}
     metrics = []
     rows: list[dict[str, float | str]] = []
@@ -166,7 +335,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             minimum_pair_distance_m=float(distances[closest_index]),
             time_of_closest_approach_s=float(times[closest_index]),
             ground_track_closure_error_m=float(closure),
-            pdop=None,
+            pdop=representative_pdop,
         )
         metrics.append(metric)
         for index, (time_s, roe) in enumerate(zip(times, roes, strict=True)):
@@ -219,11 +388,15 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             "raan_drift": "harmonic-lstsq-v1",
             "roe": "damico-v1",
             "screening": "j2-first-order-v1",
+            "navigation_geometry": "ellipsoid-ecef-enu-dop-v1",
+            "earth_fixed_reporting": "simple-earth-rotation-z-v1",
+            "resource_accounting": "tsiolkovsky-v1",
         },
     )
     summary = {
         "metrics": [metric.model_dump(mode="json") for metric in metrics],
         "constraints": scenario.constraints.model_dump(mode="json"),
+        "navigation_geometry": navigation_summary,
         "provenance": {
             "epoch": scenario.epoch.isoformat(),
             "frame": scenario.frame.value,
@@ -233,13 +406,24 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             "integrator": scenario.integrator.model_dump(mode="json"),
             "backend_metadata": result.backend_metadata,
             "maneuver_count": len(scenario.maneuvers),
+            "navigation_sites": [site.model_dump(mode="json") for site in scenario.navigation_sites],
+            "navigation_geometry_transform": "simple-earth-rotation-z-v1 + ellipsoid-site-ecef + local-enu-v1",
+            "ground_track_transform": "simple-earth-rotation-z-v1 + geocentric-subpoint-v1",
         },
         "mean_element_rule": (
             "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded"
         ),
     }
     run_dir = output_root / scenario.scenario_id / run_id
-    write_run_artifacts(run_dir, manifest, summary, pd.DataFrame(rows))
+    write_run_artifacts(
+        run_dir,
+        manifest,
+        summary,
+        pd.DataFrame(rows),
+        ground_track=ground_track,
+        navigation_geometry=navigation_geometry,
+        resources=resources,
+    )
     (run_dir / "scenario.normalized.json").write_text(
         json.dumps(scenario.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
