@@ -149,11 +149,14 @@ def generate_campaign_samples(config: RobustnessCampaignConfig) -> tuple[dict[st
         }
         for item in scalar:
             if item.distribution == DistributionKind.NORMAL:
+                assert item.sigma is not None
                 sample[item.name] = float(rng.normal(item.mean, item.sigma))
             elif item.distribution == DistributionKind.UNIFORM:
+                assert item.low is not None and item.high is not None
                 sample[item.name] = float(rng.uniform(item.low, item.high))
             else:
-                sample[item.name] = bool(rng.random() < float(item.probability_true))
+                assert item.probability_true is not None
+                sample[item.name] = bool(rng.random() < item.probability_true)
         for group in groups:
             mean = np.zeros(len(group.names), dtype=float) if not group.mean else np.asarray(group.mean, dtype=float)
             values = rng.multivariate_normal(mean, np.asarray(group.covariance, dtype=float), check_valid="raise")
