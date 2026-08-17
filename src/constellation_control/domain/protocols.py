@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 import numpy as np
 
 from constellation_control.domain.models import ManeuverPlan, PropagationRequest, PropagationResult
+from constellation_control.domain.navigation import DopMetrics, NavigationSiteConfig
 
 
 class Propagator(Protocol):
@@ -16,7 +18,13 @@ class LinearizationProvider(Protocol):
 
 
 class NavigationGeometryProvider(Protocol):
-    def pdop(self, time_s: float, satellite_ids: tuple[str, ...]) -> float | None: ...
+    def evaluate(
+        self,
+        satellite_inertial_positions_m: Mapping[str, Sequence[float]],
+        *,
+        time_s: float,
+        site: NavigationSiteConfig,
+    ) -> DopMetrics: ...
 
 
 class PlanSafetyValidator(Protocol):
