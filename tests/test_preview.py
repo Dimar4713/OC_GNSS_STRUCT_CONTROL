@@ -51,7 +51,14 @@ def test_preview_result_access_stays_inside_output_root(tmp_path: Path) -> None:
     report.parent.mkdir(parents=True)
     report.write_text("ok", encoding="utf-8")
     assert _safe_result_file(tmp_path, "scenario", "run", "report.html") == report.resolve()
+
+    # Explicit path components are rejected before resolution.
     with pytest.raises(ValueError, match="invalid components"):
+        _safe_result_file(tmp_path, "../scenario", "run", "report.html")
+
+    # A bare parent component also cannot escape because the resolved artifact
+    # must remain under output_root and exist there.
+    with pytest.raises(ValueError):
         _safe_result_file(tmp_path, "..", "run", "report.html")
 
 
