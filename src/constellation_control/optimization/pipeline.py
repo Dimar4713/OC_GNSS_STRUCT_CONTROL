@@ -202,7 +202,10 @@ def run_design_pipeline(
         raise ValueError("recommendation policy objective count mismatch")
     initial_objectives = np.asarray([record.objectives for record in feasible_initial], dtype=float)
     seed_scores = normalized_weighted_scores(initial_objectives, config.recommendation.weights)
-    seed_order = sorted(range(len(feasible_initial)), key=lambda index: (float(seed_scores[index]), feasible_initial[index].candidate_id))
+    seed_order = sorted(
+        range(len(feasible_initial)),
+        key=lambda index: (float(seed_scores[index]), feasible_initial[index].candidate_id),
+    )
 
     ideal = initial_objectives.min(axis=0)
     span = initial_objectives.max(axis=0) - ideal
@@ -215,10 +218,14 @@ def run_design_pipeline(
         return float(normalized @ policy_weights)
 
     margin_count = len(feasible_initial[0].constraint_margins)
-    hard_constraints = tuple(
-        (lambda index: lambda vector: float(evaluate(vector).constraint_margins[index]))(index)
-        for index in range(margin_count)
-    )
+
+    def constraint_at(index: int) -> Callable[[np.ndarray], float]:
+        def margin(vector: np.ndarray) -> float:
+            return float(evaluate(vector).constraint_margins[index])
+
+        return margin
+
+    hard_constraints = tuple(constraint_at(index) for index in range(margin_count))
 
     for seed_index in seed_order[: min(config.local_seeds, len(seed_order))]:
         parent = feasible_initial[seed_index]
@@ -253,7 +260,11 @@ def run_design_pipeline(
     for vector in nsga_x:
         records.append(_record("nsga2", vector, evaluate(vector)))
 
-    feasible_final = [record for record in records if record.stage in {"local", "nsga2"} and record.feasible]
+    unique_final: dict[tuple[float, ...], CandidateRecord] = {}
+    for record in records:
+        if record.stage in {"local", "nsga2"} and record.feasible:
+            unique_final.setdefault(record.vector, record)
+    feasible_final = list(unique_final.values())
     if not feasible_final:
         raise RuntimeError("local/NSGA-II search produced no feasible candidates")
     final_objectives = np.asarray([record.objectives for record in feasible_final], dtype=float)
@@ -269,8 +280,6 @@ def run_design_pipeline(
     ranked_x = np.asarray([record.vector for record in ranked_records], dtype=float)
     ranked_f = np.asarray([record.objectives for record in ranked_records], dtype=float)
 
-    # Preserve the explicit Pareto ranking in the generic replay helper by using
-    # the already-computed normalized weighted score as the policy result.
     score_by_vector = {
         tuple(record.vector): float(scores[index])
         for index, record in enumerate(pareto_records)
