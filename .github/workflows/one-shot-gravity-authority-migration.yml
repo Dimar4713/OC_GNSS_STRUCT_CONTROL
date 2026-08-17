@@ -1,0 +1,127 @@
+name: one-shot gravity authority migration
+
+on:
+  push:
+    branches: [feat/orekit-dsst-validation]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/orekit-dsst-validation
+      - name: Synchronize gravity authority contracts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f"migration anchor missing in {path}: {old!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Toy validation fixture remains explicit rather than weakening ForceModelConfig.
+          replace_once(
+              "tests/test_roe_linearization.py",
+              "    FrameName,\n    IntegratorConfig,",
+              "    FrameName,\n    GravityModelName,\n    IntegratorConfig,",
+          )
+          replace_once(
+              "tests/test_roe_linearization.py",
+              "        mode=ForceMode.VALIDATION,\n        mu_m3_s2=",
+              "        mode=ForceMode.VALIDATION,\n        gravity_model=GravityModelName.EIGEN_6S,\n        mu_m3_s2=",
+          )
+
+          # Health proves the same gravity authority before any propagation call.
+          replace_once(
+              "sidecar/orekit-service/src/main/java/ru/aimeton/gnss/orekit/OrekitServiceMain.java",
+              '        body.put("orekit_data_sha256", runtime.dataSha256());\n',
+              '        body.put("orekit_data_sha256", runtime.dataSha256());\n'
+              '        body.put("gravity_model", runtime.gravityModel());\n',
+          )
+
+          # Artifact verifier locks YAML -> HTTP -> manifest authority identity.
+          replace_once(
+              "scripts/verify_high_fidelity_run.py",
+              '    assert manifest["force_model"]["gravity_degree"] == 8\n',
+              '    assert manifest["force_model"]["gravity_model"] == "EIGEN-6S"\n'
+              '    assert manifest["force_model"]["gravity_degree"] == 8\n',
+          )
+          replace_once(
+              "scripts/verify_high_fidelity_run.py",
+              '    assert metadata["orekit_version"] == "13.1.7"\n',
+              '    assert metadata["orekit_version"] == "13.1.7"\n'
+              '    assert metadata["gravity_model"] == "EIGEN-6S"\n',
+          )
+          replace_once(
+              "scripts/verify_high_fidelity_run.py",
+              '    assert scenario["force_model"]["mode"] == expected_mode\n',
+              '    assert scenario["force_model"]["mode"] == expected_mode\n'
+              '    assert scenario["force_model"]["gravity_model"] == "EIGEN-6S"\n',
+          )
+
+          # CI health check fails before E2E if a clean sidecar chooses another model.
+          replace_once(
+              ".github/workflows/ci.yml",
+              "          assert health['orekit_version'] == '13.1.7'\n",
+              "          assert health['orekit_version'] == '13.1.7'\n"
+              "          assert health['gravity_model'] == 'EIGEN-6S'\n",
+          )
+
+          # Fresh-runtime diagnostic becomes a regression assertion, not just logging.
+          replace_once(
+              "sidecar/orekit-service/src/test/java/ru/aimeton/gnss/orekit/FreshGravityAuthorityTest.java",
+              "import static org.junit.jupiter.api.Assertions.assertTrue;\n",
+              "import static org.junit.jupiter.api.Assertions.assertEquals;\n"
+              "import static org.junit.jupiter.api.Assertions.assertTrue;\n",
+          )
+          replace_once(
+              "sidecar/orekit-service/src/test/java/ru/aimeton/gnss/orekit/FreshGravityAuthorityTest.java",
+              "        assertTrue(Double.isFinite(provider.getMu()) && provider.getMu() > 0.0);\n",
+              "        assertEquals(OrekitRuntime.GRAVITY_MODEL, fresh.gravityModel());\n"
+              "        assertTrue(Math.abs(provider.getMu() - 3.986004418e14) / 3.986004418e14 < 1.0e-8);\n"
+              "        assertTrue(Double.isFinite(provider.getMu()) && provider.getMu() > 0.0);\n",
+          )
+
+          # Documentation: automatic gravity-reader selection is explicitly forbidden.
+          for path in (
+              "docs/architecture.md",
+              "docs/validation.md",
+              "docs/scenario-schema.md",
+              "sidecar/orekit-service/README.md",
+          ):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              marker = "## Explicit gravity authority\n"
+              if marker in text:
+                  continue
+              text += (
+                  "\n## Explicit gravity authority\n\n"
+                  "High-fidelity scenarios must declare `gravity_model: EIGEN-6S`. "
+                  "The Java authority clears Orekit's automatic potential-coefficient readers "
+                  "and installs only the ICGEM reader for `^eigen-6s-truncated$`. The model name "
+                  "is part of the force-model fingerprint and is repeated in runtime metadata. "
+                  "Selection by reader load order is forbidden because it is not reproducible.\n"
+              )
+              p.write_text(text, encoding="utf-8")
+
+          Path(".github/workflows/one-shot-gravity-authority-migration.yml").unlink()
+      - name: Commit migration and self-delete
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: complete explicit EIGEN-6S authority migration"
+          git push origin HEAD:feat/orekit-dsst-validation
