@@ -1,8 +1,9 @@
-from math import isclose, pi, sqrt
+from math import isclose, pi
 
 import numpy as np
 from hypothesis import given, strategies as st
 
+from constellation_control.adapters.synthetic.propagator import SyntheticMeanPropagator
 from constellation_control.analysis.drift import harmonic_regression
 from constellation_control.analysis.fuel import propellant_used_kg
 from constellation_control.control.controllers import DeadbandCandidate, DeadbandController
@@ -17,9 +18,13 @@ from constellation_control.domain.models import (
     SpacecraftModel,
 )
 from constellation_control.dynamics.j2 import first_order_j2_rates, mean_motion
-from constellation_control.dynamics.orbits import apply_tangential_impulse, mean_to_cartesian, mean_to_classical, semi_major_axis_from_state
+from constellation_control.dynamics.orbits import (
+    apply_tangential_impulse,
+    mean_to_cartesian,
+    mean_to_classical,
+    semi_major_axis_from_state,
+)
 from constellation_control.mean_elements.roe import damico_roe
-from constellation_control.adapters.synthetic.propagator import SyntheticMeanPropagator
 
 
 def force(j2: float = 0.00108262668) -> ForceModelConfig:
@@ -47,7 +52,13 @@ def orbit(lambda_rad: float = 0.0, a_m: float = 26_560_000.0) -> MeanOrbit:
 
 
 def spacecraft() -> SpacecraftModel:
-    return SpacecraftModel(dry_mass_kg=500.0, propellant_mass_kg=50.0, isp_s=220.0, area_m2=8.0, cr=1.3)
+    return SpacecraftModel(
+        dry_mass_kg=500.0,
+        propellant_mass_kg=50.0,
+        isp_s=220.0,
+        area_m2=8.0,
+        cr=1.3,
+    )
 
 
 def test_two_body_mean_motion_matches_kepler() -> None:
@@ -55,23 +66,56 @@ def test_two_body_mean_motion_matches_kepler() -> None:
     rates = first_order_j2_rates(elements, force(j2=0.0))
     assert rates.raan_rad_s == 0.0
     assert rates.argp_rad_s == 0.0
-    assert isclose(rates.mean_anomaly_rad_s, mean_motion(elements.a_m, force().mu_m3_s2), rel_tol=1e-15)
+    assert isclose(
+        rates.mean_anomaly_rad_s,
+        mean_motion(elements.a_m, force().mu_m3_s2),
+        rel_tol=1e-15,
+    )
 
 
 def test_identical_mean_orbits_with_phase_offset_have_zero_relative_secular_drift() -> None:
-    ref = SatelliteSpec(satellite_id="R", plane_id="P", role="reference", mean_orbit=orbit(), spacecraft=spacecraft())
-    dep = SatelliteSpec(satellite_id="D", plane_id="P", role="additional", reference_id="R", mean_orbit=orbit(pi / 4), spacecraft=spacecraft())
+    ref = SatelliteSpec(
+        satellite_id="R",
+        plane_id="P",
+        role="reference",
+        mean_orbit=orbit(),
+        spacecraft=spacecraft(),
+    )
+    dep = SatelliteSpec(
+        satellite_id="D",
+        plane_id="P",
+        role="additional",
+        reference_id="R",
+        mean_orbit=orbit(pi / 4),
+        spacecraft=spacecraft(),
+    )
     request = PropagationRequest(
         scenario_id="test",
         satellites=(ref, dep),
         duration_s=86400.0,
         output_step_s=600.0,
         force_model=force(),
-        integrator=IntegratorConfig(min_step_s=0.1, max_step_s=60.0, abs_tolerance=1e-9, rel_tolerance=1e-12),
+        integrator=IntegratorConfig(
+            min_step_s=0.1,
+            max_step_s=60.0,
+            abs_tolerance=1e-9,
+            rel_tolerance=1e-12,
+        ),
         seed=1,
     )
     result = SyntheticMeanPropagator().propagate(request)
-    phase = np.unwrap(np.array([damico_roe(r, d).delta_lambda_rad for r, d in zip(result.mean_orbits["R"], result.mean_orbits["D"], strict=True)]))
+    phase = np.unwrap(
+        np.array(
+            [
+                damico_roe(reference_orbit, deputy_orbit).delta_lambda_rad
+                for reference_orbit, deputy_orbit in zip(
+                    result.mean_orbits["R"],
+                    result.mean_orbits["D"],
+                    strict=True,
+                )
+            ]
+        )
+    )
     assert np.ptp(phase) < 1e-10
 
 
@@ -90,15 +134,26 @@ def test_positive_tangential_impulse_increases_a_and_reduces_mean_motion() -> No
     new_v = apply_tangential_impulse(r_m, v_m_s, 0.1)
     new_a = semi_major_axis_from_state(r_m, new_v, force().mu_m3_s2)
     assert new_a > elements.a_m
-    assert mean_motion(new_a, force().mu_m3_s2) < mean_motion(elements.a_m, force().mu_m3_s2)
+    assert mean_motion(new_a, force().mu_m3_s2) < mean_motion(
+        elements.a_m,
+        force().mu_m3_s2,
+    )
 
 
 def test_deadband_rejects_unsafe_candidate() -> None:
     controller = DeadbandController(phase_limit_rad=0.1, min_distance_m=1000.0)
     baseline = np.array([0.0, 0.05, 0.2])
     distance = np.array([5000.0, 5000.0, 5000.0])
-    unsafe = DeadbandCandidate((0.0, 0.01, 0.0), np.array([0.0, 0.05, 0.08]), np.array([5000.0, 900.0, 5000.0]))
-    safe = DeadbandCandidate((0.0, 0.02, 0.0), np.array([0.0, 0.04, 0.08]), np.array([5000.0, 5000.0, 5000.0]))
+    unsafe = DeadbandCandidate(
+        (0.0, 0.01, 0.0),
+        np.array([0.0, 0.05, 0.08]),
+        np.array([5000.0, 900.0, 5000.0]),
+    )
+    safe = DeadbandCandidate(
+        (0.0, 0.02, 0.0),
+        np.array([0.0, 0.04, 0.08]),
+        np.array([5000.0, 5000.0, 5000.0]),
+    )
     plan = controller.plan("D", baseline, distance, (unsafe, safe))
     assert plan.maneuvers[0].dv_rtn_m_s == safe.dv_rtn_m_s
 
