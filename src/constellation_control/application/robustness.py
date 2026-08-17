@@ -138,6 +138,21 @@ def _flag(sample: dict[str, object], name: str) -> bool:
     return value
 
 
+def _realization_seed(sample: dict[str, object]) -> int:
+    value = sample.get("realization_seed")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("robustness realization_seed must be an integer")
+    if value < 0:
+        raise ValueError("robustness realization_seed must be non-negative")
+    return value
+
+
+def _orekit_wire_seed(sample: dict[str, object]) -> int:
+    """Map the full lineage seed deterministically into Java's positive int range."""
+
+    return _realization_seed(sample) % (2**31 - 1)
+
+
 def _perturb_satellite(satellite: SatelliteSpec, sample: dict[str, object]) -> SatelliteSpec:
     satellite_id = satellite.satellite_id
     mean = satellite.mean_orbit
@@ -224,7 +239,7 @@ def apply_uncertainty_sample(
         output_step_s=scenario.output_step_s,
         force_model=scenario.force_model,
         integrator=scenario.integrator,
-        seed=int(sample["realization_seed"]),
+        seed=_orekit_wire_seed(sample),
     )
     return AppliedUncertainty(request=request, dropped_maneuver_indices=tuple(dropped))
 
@@ -407,6 +422,7 @@ def run_robustness_application(
         "required_gravity_model": config.authority.gravity_model,
         "required_orekit_data_revision": config.authority.orekit_data_revision,
         "required_orekit_data_sha256": config.authority.orekit_data_sha256,
+        "wire_seed_mapping": "realization_seed mod (2^31-1)",
     }
     result: RobustnessCampaignResult = run_robustness_campaign(
         config.campaign,
