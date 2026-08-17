@@ -292,6 +292,13 @@ def _persist_tables(output_dir: Path, samples: tuple[dict[str, object], ...], ou
     outcome_frame.to_csv(output_dir / "outcomes.csv", index=False)
 
 
+def _numeric_statistic(values: Mapping[object, object], key: str) -> float:
+    value = values.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"campaign statistic {key!r} must be numeric")
+    return float(value)
+
+
 def _summary_tables(output_dir: Path, summary: Mapping[str, object]) -> tuple[list[str], list[str]]:
     statistics_raw = summary.get("statistics")
     violations_raw = summary.get("violation_probability")
@@ -304,24 +311,22 @@ def _summary_tables(output_dir: Path, summary: Mapping[str, object]) -> tuple[li
         if not isinstance(metric, str) or not isinstance(values_raw, Mapping):
             raise TypeError("campaign statistic entries must be string -> mapping")
         count = values_raw.get("count")
-        p50 = values_raw.get("p50")
-        p95 = values_raw.get("p95")
-        p99 = values_raw.get("p99")
-        worst = values_raw.get("worst")
-        if not isinstance(count, int) or not all(isinstance(value, (int, float)) for value in (p50, p95, p99, worst)):
-            raise TypeError("campaign statistic values have invalid types")
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise TypeError("campaign statistic count must be an integer")
+        p50 = _numeric_statistic(values_raw, "p50")
+        p95 = _numeric_statistic(values_raw, "p95")
+        p99 = _numeric_statistic(values_raw, "p99")
+        worst = _numeric_statistic(values_raw, "worst")
         row = {
             "metric": metric,
             "count": count,
-            "p50": float(p50),
-            "p95": float(p95),
-            "p99": float(p99),
-            "worst": float(worst),
+            "p50": p50,
+            "p95": p95,
+            "p99": p99,
+            "worst": worst,
         }
         statistics_rows.append(row)
-        metric_lines.append(
-            f"| `{metric}` | {count} | {float(p50):.12g} | {float(p95):.12g} | {float(p99):.12g} | {float(worst):.12g} |"
-        )
+        metric_lines.append(f"| `{metric}` | {count} | {p50:.12g} | {p95:.12g} | {p99:.12g} | {worst:.12g} |")
     pd.DataFrame(statistics_rows).to_csv(output_dir / "statistics.csv", index=False)
 
     violation_rows: list[dict[str, object]] = []
