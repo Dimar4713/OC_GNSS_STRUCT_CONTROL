@@ -235,6 +235,24 @@ jobs:
             --output .e2e-runs/mpc-authority
           test -s .e2e-runs/mpc-authority/mpc_execution_authority.json
           test -s .e2e-runs/mpc-authority/mpc_execution_authority.npz
+      - name: Execute high-fidelity robustness campaign
+        shell: bash
+        run: |
+          set -euo pipefail
+          constellation-control robustness \
+            scenarios/orekit_linearization_smoke.yaml \
+            scenarios/robustness_campaign_smoke.yaml \
+            --output .e2e-runs/robustness \
+            > /tmp/robustness-e2e.log 2>&1
+          cat /tmp/robustness-e2e.log
+          run_dir="$(find .e2e-runs/robustness/synthetic-orekit-linearization-smoke--robustness -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$run_dir"
+          echo "ROBUSTNESS_RUN_DIR=$run_dir" >> "$GITHUB_ENV"
+      - name: Verify robustness campaign authority and statistics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_robustness_campaign_run.py "$ROBUSTNESS_RUN_DIR"
       - name: Execute full design search and top-K numerical replay
         shell: bash
         run: |
@@ -277,6 +295,7 @@ jobs:
             /tmp/orekit-health.json
             /tmp/design-e2e.log
             /tmp/validation-e2e.log
+            /tmp/robustness-e2e.log
             /tmp/design-pipeline-e2e.log
             sidecar/orekit-service/target/surefire-reports/
             .e2e-runs/
