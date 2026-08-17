@@ -2,6 +2,7 @@ package ru.aimeton.gnss.orekit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static ru.aimeton.gnss.orekit.ApiModels.*;
 
@@ -70,6 +71,31 @@ final class PropagationEngineIntegrationTest {
     }
 
     @Test
+    void tesseralGravityExecutesInBothAuthorityModes() {
+        PropagationResult design = engine.propagate(
+                request("design", false, false, false, List.of(), 2, false));
+        PropagationResult validation = engine.propagate(
+                request("validation", false, false, false, List.of(), 2, false));
+
+        assertEquals("2", design.backendMetadata().get("gravity_order"));
+        assertEquals("2", validation.backendMetadata().get("gravity_order"));
+        assertFalse(design.meanOrbits().get("SYNTH-1").isEmpty());
+        assertFalse(validation.meanOrbits().get("SYNTH-1").isEmpty());
+    }
+
+    @Test
+    void relativityExecutesOnlyInNumericalAuthority() {
+        PropagationResult validation = engine.propagate(
+                request("validation", false, false, false, List.of(), 0, true));
+        assertEquals("orekit-numerical-validation", validation.backend());
+        assertFalse(validation.cartesianStates().get("SYNTH-1").isEmpty());
+
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> engine.propagate(request("design", false, false, false, List.of(), 0, true)));
+    }
+
+    @Test
     void positiveTangentialImpulseRaisesMeanSemiMajorAxis() {
         PropagationResult baseline = engine.propagate(request("validation", false, false, false));
         Maneuver maneuver = new Maneuver("SYNTH-1", 0.0, List.of(0.0, 0.1, 0.0));
@@ -85,11 +111,22 @@ final class PropagationEngineIntegrationTest {
     }
 
     private static PropagationRequest request(String mode, boolean moon, boolean sun, boolean srp) {
-        return request(mode, moon, sun, srp, List.of());
+        return request(mode, moon, sun, srp, List.of(), 0, false);
     }
 
     private static PropagationRequest request(
             String mode, boolean moon, boolean sun, boolean srp, List<Maneuver> maneuvers) {
+        return request(mode, moon, sun, srp, maneuvers, 0, false);
+    }
+
+    private static PropagationRequest request(
+            String mode,
+            boolean moon,
+            boolean sun,
+            boolean srp,
+            List<Maneuver> maneuvers,
+            int gravityOrder,
+            boolean relativity) {
         String fingerprint = "integration-force-model-sha256";
         MeanElementDefinition definition = new MeanElementDefinition(
                 "equinoctial", "synthetic-integration-input", fingerprint);
@@ -111,12 +148,12 @@ final class PropagationEngineIntegrationTest {
                 0.00108262668,
                 7.2921150e-5,
                 2,
-                0,
+                gravityOrder,
                 moon,
                 sun,
                 srp,
                 false,
-                false);
+                relativity);
         Integrator integrator = new Integrator(0.1, 60.0, 1.0e-6, 1.0e-12);
         return new PropagationRequest(
                 "synthetic-orekit-integration",
