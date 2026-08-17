@@ -76,6 +76,9 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     scenario = load_scenario(scenario_path)
     request = PropagationRequest(
         scenario_id=scenario.scenario_id,
+        epoch=scenario.epoch,
+        frame=scenario.frame,
+        time_scale=scenario.time_scale,
         satellites=scenario.constellation.satellites,
         duration_s=scenario.duration_s,
         output_step_s=scenario.output_step_s,
@@ -185,8 +188,17 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         code_version=_code_version(),
         force_model_fingerprint=scenario.force_model.fingerprint(),
         force_model_mode=scenario.force_model.mode,
+        force_model=scenario.force_model,
+        integrator=scenario.integrator,
+        constraints=scenario.constraints,
+        frame=scenario.frame,
+        time_scale=scenario.time_scale,
+        mean_element_definitions={
+            sat.satellite_id: sat.mean_orbit.definition for sat in scenario.constellation.satellites
+        },
         backend=result.backend,
         backend_version=result.backend_version,
+        backend_metadata=result.backend_metadata,
         epoch=scenario.epoch,
         random_seed=scenario.seed,
         algorithm_versions={
@@ -198,6 +210,15 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     summary = {
         "metrics": [metric.model_dump(mode="json") for metric in metrics],
         "constraints": scenario.constraints.model_dump(mode="json"),
+        "provenance": {
+            "epoch": scenario.epoch.isoformat(),
+            "frame": scenario.frame.value,
+            "time_scale": scenario.time_scale.value,
+            "gravity_degree": scenario.force_model.gravity_degree,
+            "gravity_order": scenario.force_model.gravity_order,
+            "integrator": scenario.integrator.model_dump(mode="json"),
+            "backend_metadata": result.backend_metadata,
+        },
         "mean_element_rule": (
             "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded"
         ),
