@@ -28,7 +28,6 @@ function Read-AuthorityFile([string]$RelativePath, [int]$ExpectedLength) {
 Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.1"
 Write-Host "Repository: $Root"
 
-# Python 3.12 is the reviewed Preview interpreter family.
 $PythonArgs = @()
 if ($Python -eq "py") {
   $PythonArgs = @("-3.12")
@@ -77,6 +76,7 @@ if ([string]::IsNullOrWhiteSpace($OrekitData)) {
 }
 
 $SidecarStarted = $false
+$Sidecar = $null
 if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathType Container)) {
   Write-Host "Verifying Orekit physical data fingerprint..."
   $ActualSha = (& $VenvPython (Join-Path $Root "scripts\fingerprint_orekit_data.py") $OrekitData | Select-Object -Last 1).Trim()
@@ -90,18 +90,29 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
     $JavaVersionText = $null
   }
   if ($JavaVersionText) {
+    $JavaMatch = [regex]::Match([string]$JavaVersionText, 'version "(?<major>[0-9]+)')
+    if (-not $JavaMatch.Success -or [int]$JavaMatch.Groups['major'].Value -lt 17) {
+      Fail "High-fidelity runtime requires Java 17+; detected: $JavaVersionText"
+    }
+
     Write-Host "Starting verified Orekit sidecar on 127.0.0.1:8081..."
     $env:OREKIT_DATA_PATH = $OrekitData
     $env:OREKIT_PORT = "8081"
-    $SidecarLog = Join-Path $RuntimeRoot "orekit-sidecar.log"
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
-    $Sidecar = Start-Process -FilePath "java" -ArgumentList @("-jar", $OrekitJar) -RedirectStandardOutput $SidecarLog -RedirectStandardError $SidecarLog -PassThru
+    $SidecarStdout = Join-Path $RuntimeRoot "orekit-sidecar.out.log"
+    $SidecarStderr = Join-Path $RuntimeRoot "orekit-sidecar.err.log"
+    $Sidecar = Start-Process -FilePath "java" -ArgumentList @("-jar", $OrekitJar) -RedirectStandardOutput $SidecarStdout -RedirectStandardError $SidecarStderr -PassThru
     for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
       try {
         $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8081/healthz" -TimeoutSec 1
-        if ($Health.status -eq "ok" -and $Health.backend -eq "orekit" -and $Health.orekit_data_sha256 -eq $PinnedPhysicalSha) {
+        if (
+          $Health.status -eq "ok" -and
+          $Health.backend -eq "orekit" -and
+          $Health.orekit_data_revision -eq $PinnedRevision -and
+          $Health.orekit_data_sha256 -eq $PinnedPhysicalSha
+        ) {
           $SidecarStarted = $true
-          Write-Host "Orekit authority READY: version $($Health.orekit_version)"
+          Write-Host "Orekit authority READY: version $($Health.orekit_version), data $($Health.orekit_data_revision)"
           break
         }
       } catch { }
@@ -110,7 +121,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
     }
     if (-not $SidecarStarted) {
       if (-not $Sidecar.HasExited) { Stop-Process -Id $Sidecar.Id -Force }
-      Fail "Orekit sidecar failed authority health verification. See $SidecarLog"
+      Fail "Orekit sidecar failed reviewed revision/SHA health verification. See $SidecarStdout and $SidecarStderr"
     }
   } else {
     Write-Host "Java not available: Screening is usable; Design/Validation will remain NOT READY." -ForegroundColor Yellow
