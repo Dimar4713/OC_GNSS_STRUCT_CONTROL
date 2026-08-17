@@ -65,3 +65,75 @@ jobs:
           test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
       - name: Compile and execute Orekit integration tests
         run: mvn -B -f sidecar/orekit-service/pom.xml test
+      - name: Build Orekit sidecar executable
+        run: mvn -B -f sidecar/orekit-service/pom.xml -DskipTests package
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Python application for HTTP E2E
+        run: python -m pip install -U pip && pip install -e '.[dev]'
+      - name: Start authoritative Orekit sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          export OREKIT_PORT=8081
+          nohup java -jar sidecar/orekit-service/target/orekit-service-0.1.0-SNAPSHOT.jar \
+            > /tmp/orekit-service.log 2>&1 &
+          echo "$!" > /tmp/orekit-service.pid
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:8081/healthz > /tmp/orekit-health.json; then
+              cat /tmp/orekit-health.json
+              python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          health = json.loads(Path('/tmp/orekit-health.json').read_text())
+          assert health['status'] == 'ok'
+          assert health['backend'] == 'orekit'
+          assert health['orekit_version'] == '13.1.7'
+          assert health['orekit_data_revision'] == os.environ['OREKIT_DATA_REVISION']
+          assert len(health['orekit_data_sha256']) == 64
+          int(health['orekit_data_sha256'], 16)
+          PY
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/orekit-service.pid)" 2>/dev/null; then
+              cat /tmp/orekit-service.log
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/orekit-service.log
+          exit 1
+      - name: Execute DSST design via Python CLI and HTTP
+        shell: bash
+        run: |
+          set -euo pipefail
+          constellation-control run scenarios/orekit_design_smoke.yaml --output .e2e-runs/design
+          design_dir="$(find .e2e-runs/design/synthetic-orekit-dsst-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$design_dir"
+          python scripts/verify_high_fidelity_run.py "$design_dir" \
+            --backend orekit-dsst-design \
+            --mode design \
+            --data-revision "$OREKIT_DATA_REVISION"
+      - name: Execute numerical validation via Python CLI and HTTP
+        shell: bash
+        run: |
+          set -euo pipefail
+          constellation-control run scenarios/orekit_validation_smoke.yaml --output .e2e-runs/validation
+          validation_dir="$(find .e2e-runs/validation/synthetic-orekit-validation-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$validation_dir"
+          python scripts/verify_high_fidelity_run.py "$validation_dir" \
+            --backend orekit-numerical-validation \
+            --mode validation \
+            --data-revision "$OREKIT_DATA_REVISION"
+      - name: Stop Orekit sidecar
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/orekit-service.pid; then
+            kill "$(cat /tmp/orekit-service.pid)" 2>/dev/null || true
+          fi
+          cat /tmp/orekit-service.log 2>/dev/null || true
