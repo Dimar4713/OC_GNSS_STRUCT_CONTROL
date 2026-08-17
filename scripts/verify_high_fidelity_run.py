@@ -15,8 +15,10 @@ BASE_REQUIRED_ARTIFACTS = (
     "timeseries.parquet",
     "ground_track.csv",
     "ground_track.parquet",
+    "ground_track.json",
     "resources.csv",
     "resources.parquet",
+    "resources.json",
     "report.md",
     "report.html",
     "01_delta_lambda.png",
@@ -34,6 +36,7 @@ BASE_REQUIRED_ARTIFACTS = (
 VALIDATION_GEOMETRY_ARTIFACTS = (
     "navigation_geometry.csv",
     "navigation_geometry.parquet",
+    "navigation_geometry.json",
     "08_navigation_pdop.png",
 )
 
@@ -98,6 +101,10 @@ def verify_run(
     assert scenario["force_model"]["relativity"] is False
     assert scenario["force_model"]["tides"] is False
 
+    assert summary["mean_element_rule"] == (
+        "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded"
+    )
+
     metrics = summary.get("metrics", [])
     if len(metrics) != 1:
         raise AssertionError(f"expected one synthetic additional/reference metric, got {len(metrics)}")
@@ -115,11 +122,15 @@ def verify_run(
     ground_track = pd.read_parquet(run_dir / "ground_track.parquet")
     assert set(ground_track["satellite_id"]) == {"SYNTH-REF", "SYNTH-ADD-45"}
     assert ground_track["closure_from_initial_m"].ge(0.0).all()
+    ground_track_json = json.loads((run_dir / "ground_track.json").read_text(encoding="utf-8"))
+    assert len(ground_track_json) == len(ground_track)
 
     resources = pd.read_parquet(run_dir / "resources.parquet")
     assert set(resources["satellite_id"]) == {"SYNTH-REF", "SYNTH-ADD-45"}
     assert resources["cumulative_delta_v_m_s"].ge(0.0).all()
     assert resources["residual_propellant_kg"].ge(resources["required_reserve_kg"]).all()
+    resources_json = json.loads((run_dir / "resources.json").read_text(encoding="utf-8"))
+    assert len(resources_json) == len(resources)
 
     if expected_mode == "validation":
         geometry = pd.read_parquet(run_dir / "navigation_geometry.parquet")
@@ -132,6 +143,8 @@ def verify_run(
             "fewer-than-four-visible-satellites",
             "rank-deficient-geometry",
         }
+        geometry_json = json.loads((run_dir / "navigation_geometry.json").read_text(encoding="utf-8"))
+        assert len(geometry_json) == len(geometry)
         navigation = summary["navigation_geometry"]
         assert navigation["requested"] is True
         site_summary = navigation["sites"]["SYNTH-EQUATOR-0"]
