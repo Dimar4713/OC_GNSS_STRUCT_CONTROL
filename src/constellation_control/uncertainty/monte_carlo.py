@@ -16,13 +16,32 @@ class MonteCarloResult:
     summary: dict[str, object]
 
 
+def _as_numeric(value: object, key: str) -> float:
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"Monte Carlo outcome {key!r} must be numeric")
+    return float(value)
+
+
+def _as_violations(value: object) -> dict[str, bool]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise TypeError("Monte Carlo outcome 'violations' must be a mapping")
+    violations: dict[str, bool] = {}
+    for name, violated in value.items():
+        if not isinstance(name, str) or not isinstance(violated, bool):
+            raise TypeError("violation mapping must contain str -> bool entries")
+        violations[name] = violated
+    return violations
+
+
 def run_monte_carlo(
     config: MonteCarloConfig,
     evaluator: Callable[[dict[str, float | int]], dict[str, object]],
 ) -> MonteCarloResult:
     rng = np.random.default_rng(config.seed)
     names = tuple(sorted(config.perturbation_sigmas))
-    samples = []
+    samples: list[dict[str, float | int]] = []
     for index in range(config.samples):
         sample: dict[str, float | int] = {
             "realization": index,
@@ -38,12 +57,19 @@ def run_monte_carlo(
         with ThreadPoolExecutor(max_workers=config.workers) as pool:
             outcomes = list(pool.map(evaluator, samples))
 
-    numeric_keys = sorted(
-        key for key in outcomes[0] if all(isinstance(outcome.get(key), (int, float)) for outcome in outcomes)
-    ) if outcomes else []
+    numeric_keys = (
+        sorted(
+            key
+            for key in outcomes[0]
+            if key != "violations"
+            and all(isinstance(outcome.get(key), (int, float)) for outcome in outcomes)
+        )
+        if outcomes
+        else []
+    )
     statistics: dict[str, object] = {}
     for key in numeric_keys:
-        values = np.asarray([float(outcome[key]) for outcome in outcomes])
+        values = np.asarray([_as_numeric(outcome[key], key) for outcome in outcomes])
         statistics[key] = {
             "p50": float(np.percentile(values, 50)),
             "p95": float(np.percentile(values, 95)),
@@ -51,12 +77,11 @@ def run_monte_carlo(
             "worst": float(np.max(values)),
         }
 
-    violation_names = sorted(
-        {name for outcome in outcomes for name in dict(outcome.get("violations", {}))}
-    )
-    violation_probability = {}
+    violation_maps = [_as_violations(outcome.get("violations")) for outcome in outcomes]
+    violation_names = sorted({name for violations in violation_maps for name in violations})
+    violation_probability: dict[str, float] = {}
     for name in violation_names:
-        count = sum(bool(dict(outcome.get("violations", {})).get(name, False)) for outcome in outcomes)
+        count = sum(violations.get(name, False) for violations in violation_maps)
         violation_probability[name] = count / len(outcomes) if outcomes else 0.0
 
     return MonteCarloResult(
