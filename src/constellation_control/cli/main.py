@@ -5,7 +5,12 @@ import typer
 
 from constellation_control.application.run import run_scenario
 
-app = typer.Typer(help="Constellation Control CLI")
+app = typer.Typer(help="Constellation Control CLI", no_args_is_help=True)
+
+
+@app.callback()
+def main() -> None:
+    """Constellation Control command group."""
 
 
 @app.command()
