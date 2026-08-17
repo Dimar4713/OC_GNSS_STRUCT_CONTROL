@@ -81,4 +81,10 @@ constellation:
         isp_s: 220.0
         area_m2: 8.0
         cr: 1.3
+navigation_sites:
+  - site_id: SYNTH-EQUATOR-0
+    latitude_rad: 0.0
+    longitude_rad: 0.0
+    height_m: 0.0
+    elevation_mask_rad: 0.0
 maneuvers: []

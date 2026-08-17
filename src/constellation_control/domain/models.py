@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from constellation_control.domain.navigation import NavigationSiteConfig
+
 
 class ForceMode(StrEnum):
     SCREENING = "screening"
@@ -272,17 +274,25 @@ class ScenarioConfig(BaseModel):
     monte_carlo: MonteCarloConfig
     constellation: ConstellationSpec
     maneuvers: tuple[Maneuver, ...] = ()
+    navigation_sites: tuple[NavigationSiteConfig, ...] = ()
 
     @model_validator(mode="after")
-    def validate_maneuver_targets(self) -> ScenarioConfig:
+    def validate_targets_and_sites(self) -> ScenarioConfig:
         known = {sat.satellite_id for sat in self.constellation.satellites}
         for maneuver in self.maneuvers:
             if maneuver.satellite_id not in known:
                 raise ValueError(f"unknown maneuver satellite_id: {maneuver.satellite_id}")
             if maneuver.time_s > self.duration_s:
                 raise ValueError("maneuver time_s must lie inside scenario duration")
+        site_ids = [site.site_id for site in self.navigation_sites]
+        if len(site_ids) != len(set(site_ids)):
+            raise ValueError("navigation site_id values must be unique")
         return self
 
     def config_hash(self) -> str:
-        raw = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        payload = self.model_dump(mode="json")
+        # Preserve historical hashes for scenarios that do not request geometry.
+        if not self.navigation_sites:
+            payload.pop("navigation_sites", None)
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(raw.encode()).hexdigest()
