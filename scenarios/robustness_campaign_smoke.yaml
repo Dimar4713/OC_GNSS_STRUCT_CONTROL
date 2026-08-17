@@ -1,0 +1,84 @@
+campaign:
+  campaign_id: synthetic-high-fidelity-robustness-smoke
+  samples: 6
+  workers: 2
+  seed: 4713
+  accepted_candidate_id: synthetic-mpc-authority-smoke
+  worst_metric: fleet.total_delta_v_m_s
+  worst_direction: max
+  resume: true
+  scalar_uncertainties:
+    - name: initial.LIN-DEP.delta_a_m
+      distribution: normal
+      mean: 0.0
+      sigma: 20.0
+    - name: initial.LIN-DEP.delta_ex
+      distribution: normal
+      mean: 0.0
+      sigma: 2.0e-5
+    - name: initial.LIN-DEP.delta_ey
+      distribution: normal
+      mean: 0.0
+      sigma: 2.0e-5
+    - name: initial.LIN-DEP.delta_lambda_rad
+      distribution: normal
+      mean: 0.0
+      sigma: 5.0e-5
+    - name: slot.LIN-DEP.delta_lambda_rad
+      distribution: normal
+      mean: 0.0
+      sigma: 1.0e-4
+    - name: spacecraft.LIN-DEP.cr_area_over_mass_fraction
+      distribution: normal
+      mean: 0.0
+      sigma: 0.01
+    - name: maneuver.0.magnitude_fraction
+      distribution: normal
+      mean: 0.0
+      sigma: 0.005
+    - name: maneuver.0.direction_r_rad
+      distribution: normal
+      mean: 0.0
+      sigma: 1.0e-4
+    - name: maneuver.0.direction_t_rad
+      distribution: normal
+      mean: 0.0
+      sigma: 1.0e-4
+    - name: maneuver.0.direction_n_rad
+      distribution: normal
+      mean: 0.0
+      sigma: 1.0e-4
+    - name: maneuver.0.timing_error_s
+      distribution: uniform
+      low: 0.0
+      high: 0.5
+    - name: window.0.unavailable
+      distribution: bernoulli
+      probability_true: 0.2
+  correlated_normal_groups:
+    - group_id: od-LIN-DEP-mean-roe
+      names:
+        - od.LIN-DEP.delta_a_m
+        - od.LIN-DEP.delta_lambda_rad
+        - od.LIN-DEP.delta_ex
+        - od.LIN-DEP.delta_ey
+        - od.LIN-DEP.delta_ix
+        - od.LIN-DEP.delta_iy
+      mean: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      covariance:
+        - [4.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        - [0.0, 4.0e-10, 0.0, 0.0, 0.0, 0.0]
+        - [0.0, 0.0, 1.0e-10, 2.0e-11, 0.0, 0.0]
+        - [0.0, 0.0, 2.0e-11, 1.5e-10, 0.0, 0.0]
+        - [0.0, 0.0, 0.0, 0.0, 1.0e-10, 1.0e-11]
+        - [0.0, 0.0, 0.0, 0.0, 1.0e-11, 1.0e-10]
+authority:
+  backend_prefix: orekit-numerical
+  orekit_version: '13.1.7'
+  gravity_model: EIGEN-6S
+  orekit_data_revision: baf158744d38ec76cf94e2d396280d545b9f0ba2
+  orekit_data_sha256: 7c0387b0bf7f08f0393b724090c9b926870cae4dde1d02823d57291eab0a3fcf
+baseline_maneuvers:
+  - satellite_id: LIN-DEP
+    time_s: 10.0
+    dv_rtn_m_s: [0.02, 0.04, -0.01]
