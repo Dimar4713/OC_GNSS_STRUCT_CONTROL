@@ -23,6 +23,7 @@ import org.orekit.forces.radiation.IsotropicRadiationSingleCoefficient;
 import org.orekit.forces.radiation.SolarRadiationPressure;
 import org.orekit.frames.Frame;
 import org.orekit.frames.LOFType;
+import org.orekit.orbits.CartesianOrbit;
 import org.orekit.orbits.EquinoctialOrbit;
 import org.orekit.orbits.Orbit;
 import org.orekit.orbits.PositionAngleType;
@@ -37,10 +38,13 @@ import org.orekit.propagation.semianalytical.dsst.forces.DSSTTesseral;
 import org.orekit.propagation.semianalytical.dsst.forces.DSSTThirdBody;
 import org.orekit.propagation.semianalytical.dsst.forces.DSSTZonal;
 import org.orekit.time.AbsoluteDate;
+import org.orekit.utils.PVCoordinates;
 import org.orekit.utils.TimeStampedPVCoordinates;
 
 final class PropagationEngine {
     private static final double GRAVITY_MU_RELATIVE_TOLERANCE = 1.0e-8;
+    private static final double INITIAL_MANEUVER_TOLERANCE_S = 1.0e-12;
+    private static final double STANDARD_GRAVITY_M_S2 = 9.80665;
 
     private final OrekitRuntime runtime;
 
@@ -83,6 +87,7 @@ final class PropagationEngine {
         metadata.put("mean_definition", "DSST force-model-consistent mean equinoctial elements");
         metadata.put("propagation_type", request.forceModel().mode());
         metadata.put("maneuver_frame", "QSW/RTN");
+        metadata.put("initial_impulse_policy", "explicit-state-reset-at-epoch");
 
         String backend = request.forceModel().mode().equals("design")
                 ? "orekit-dsst-design"
@@ -106,13 +111,20 @@ final class PropagationEngine {
         SpacecraftState initialMean = new SpacecraftState(toOrekitOrbit(satellite.meanOrbit(), frame, epoch,
                 request.forceModel().muM3S2())).withMass(satellite.spacecraft().initialMassKg());
 
+        if (hasInitialImpulse(request, satellite)) {
+            SpacecraftState initialOsculating = DSSTPropagator.computeOsculatingState(initialMean, attitude, forces);
+            SpacecraftState maneuveredOsculating = applyInitialImpulses(initialOsculating, request, satellite);
+            initialMean = DSSTPropagator.computeMeanState(maneuveredOsculating, attitude, forces)
+                    .withMass(maneuveredOsculating.getMass());
+        }
+
         DSSTPropagator propagator = new DSSTPropagator(integrator(request.integrator()), PropagationType.MEAN, attitude);
         propagator.setMu(request.forceModel().muM3S2());
         for (DSSTForceModel force : forces) {
             propagator.addForceModel(force);
         }
         propagator.setInitialState(initialMean, PropagationType.MEAN);
-        addImpulses(propagator, request, satellite, frame, epoch);
+        addFutureImpulses(propagator, request, satellite, frame, epoch);
 
         List<MeanOrbit> mean = new ArrayList<>(times.size());
         List<OsculatingState> cartesian = new ArrayList<>(times.size());
@@ -134,13 +146,14 @@ final class PropagationEngine {
         SpacecraftState initialMean = new SpacecraftState(toOrekitOrbit(satellite.meanOrbit(), frame, epoch,
                 request.forceModel().muM3S2())).withMass(satellite.spacecraft().initialMassKg());
         SpacecraftState initialOsculating = DSSTPropagator.computeOsculatingState(initialMean, attitude, meanForces);
+        initialOsculating = applyInitialImpulses(initialOsculating, request, satellite);
 
         NumericalPropagator propagator = new NumericalPropagator(integrator(request.integrator()), attitude);
         propagator.setInitialState(initialOsculating);
         for (ForceModel force : numericalForces(request.forceModel(), satellite.spacecraft())) {
             propagator.addForceModel(force);
         }
-        addImpulses(propagator, request, satellite, frame, epoch);
+        addFutureImpulses(propagator, request, satellite, frame, epoch);
 
         List<MeanOrbit> mean = new ArrayList<>(times.size());
         List<OsculatingState> cartesian = new ArrayList<>(times.size());
@@ -223,19 +236,58 @@ final class PropagationEngine {
                 config.minStepS(), config.maxStepS(), config.absTolerance(), config.relTolerance());
     }
 
-    private void addImpulses(
+    private static boolean hasInitialImpulse(PropagationRequest request, SatelliteSpec satellite) {
+        return request.maneuvers().stream().anyMatch(maneuver ->
+                maneuver.satelliteId().equals(satellite.satelliteId())
+                        && Math.abs(maneuver.timeS()) <= INITIAL_MANEUVER_TOLERANCE_S);
+    }
+
+    private static SpacecraftState applyInitialImpulses(
+            SpacecraftState initialOsculating,
+            PropagationRequest request,
+            SatelliteSpec satellite) {
+        SpacecraftState state = initialOsculating;
+        for (Maneuver maneuver : request.maneuvers()) {
+            if (!maneuver.satelliteId().equals(satellite.satelliteId())
+                    || Math.abs(maneuver.timeS()) > INITIAL_MANEUVER_TOLERANCE_S) {
+                continue;
+            }
+            validateManeuverVector(maneuver);
+            Vector3D localDeltaV = new Vector3D(
+                    maneuver.dvRtnMS().get(0), maneuver.dvRtnMS().get(1), maneuver.dvRtnMS().get(2));
+            TimeStampedPVCoordinates pv = state.getPVCoordinates();
+            Vector3D inertialDeltaV = LOFType.QSW.rotationFromInertial(pv).revert().applyTo(localDeltaV);
+            PVCoordinates maneuveredPv = new PVCoordinates(
+                    pv.getPosition(),
+                    pv.getVelocity().add(inertialDeltaV));
+            Orbit maneuveredOrbit = new CartesianOrbit(
+                    maneuveredPv,
+                    state.getOrbit().getFrame(),
+                    state.getDate(),
+                    state.getOrbit().getMu());
+            double isp = satellite.spacecraft().ispS();
+            if (!(isp > 0.0)) {
+                throw new IllegalArgumentException("spacecraft isp_s must be positive");
+            }
+            double massAfter = state.getMass()
+                    * Math.exp(-localDeltaV.getNorm() / (STANDARD_GRAVITY_M_S2 * isp));
+            state = new SpacecraftState(maneuveredOrbit).withMass(massAfter);
+        }
+        return state;
+    }
+
+    private void addFutureImpulses(
             org.orekit.propagation.Propagator propagator,
             PropagationRequest request,
             SatelliteSpec satellite,
             Frame frame,
             AbsoluteDate epoch) {
         for (Maneuver maneuver : request.maneuvers()) {
-            if (!maneuver.satelliteId().equals(satellite.satelliteId())) {
+            if (!maneuver.satelliteId().equals(satellite.satelliteId())
+                    || maneuver.timeS() <= INITIAL_MANEUVER_TOLERANCE_S) {
                 continue;
             }
-            if (maneuver.dvRtnMS() == null || maneuver.dvRtnMS().size() != 3) {
-                throw new IllegalArgumentException("dv_rtn_m_s must have exactly three components");
-            }
+            validateManeuverVector(maneuver);
             Vector3D deltaV = new Vector3D(
                     maneuver.dvRtnMS().get(0), maneuver.dvRtnMS().get(1), maneuver.dvRtnMS().get(2));
             DateDetector trigger = new DateDetector(epoch.shiftedBy(maneuver.timeS()));
@@ -245,6 +297,17 @@ final class PropagationEngine {
                     deltaV,
                     satellite.spacecraft().ispS());
             propagator.addEventDetector(impulse);
+        }
+    }
+
+    private static void validateManeuverVector(Maneuver maneuver) {
+        if (maneuver.dvRtnMS() == null || maneuver.dvRtnMS().size() != 3) {
+            throw new IllegalArgumentException("dv_rtn_m_s must have exactly three components");
+        }
+        for (Double component : maneuver.dvRtnMS()) {
+            if (component == null || !Double.isFinite(component)) {
+                throw new IllegalArgumentException("dv_rtn_m_s components must be finite");
+            }
         }
     }
 
@@ -297,6 +360,17 @@ final class PropagationEngine {
         }
         if (request.maneuvers() == null) {
             throw new IllegalArgumentException("maneuvers must be an array, possibly empty");
+        }
+        for (Maneuver maneuver : request.maneuvers()) {
+            if (!Double.isFinite(maneuver.timeS()) || maneuver.timeS() < 0.0 || maneuver.timeS() > request.durationS()) {
+                throw new IllegalArgumentException("maneuver time_s must lie inside propagation duration");
+            }
+            validateManeuverVector(maneuver);
+            boolean targetExists = request.satellites().stream()
+                    .anyMatch(satellite -> satellite.satelliteId().equals(maneuver.satelliteId()));
+            if (!targetExists) {
+                throw new IllegalArgumentException("unknown maneuver satellite_id: " + maneuver.satelliteId());
+            }
         }
     }
 
