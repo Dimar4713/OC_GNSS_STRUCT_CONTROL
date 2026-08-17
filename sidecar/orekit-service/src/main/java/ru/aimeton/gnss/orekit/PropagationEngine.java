@@ -40,6 +40,8 @@ import org.orekit.time.AbsoluteDate;
 import org.orekit.utils.TimeStampedPVCoordinates;
 
 final class PropagationEngine {
+    private static final double GRAVITY_MU_RELATIVE_TOLERANCE = 1.0e-8;
+
     private final OrekitRuntime runtime;
 
     PropagationEngine(OrekitRuntime runtime) {
@@ -51,6 +53,10 @@ final class PropagationEngine {
         List<Double> times = outputTimes(request.durationS(), request.outputStepS());
         Map<String, List<MeanOrbit>> mean = new LinkedHashMap<>();
         Map<String, List<OsculatingState>> cartesian = new LinkedHashMap<>();
+
+        NormalizedSphericalHarmonicsProvider gravityIdentity = runtime.context().getGravityFields()
+                .getNormalizedProvider(request.forceModel().gravityDegree(), request.forceModel().gravityOrder());
+        validateGravityMu(request.forceModel(), gravityIdentity.getMu());
 
         for (SatelliteSpec satellite : request.satellites()) {
             SatelliteHistory history = switch (request.forceModel().mode()) {
@@ -70,6 +76,10 @@ final class PropagationEngine {
         metadata.put("time_scale", request.timeScale());
         metadata.put("gravity_degree", Integer.toString(request.forceModel().gravityDegree()));
         metadata.put("gravity_order", Integer.toString(request.forceModel().gravityOrder()));
+        metadata.put("gravity_mu_m3_s2", Double.toString(gravityIdentity.getMu()));
+        metadata.put("gravity_reference_radius_m", Double.toString(gravityIdentity.getAe()));
+        metadata.put("earth_ellipsoid_equatorial_radius_m", Double.toString(request.forceModel().referenceRadiusM()));
+        metadata.put("earth_ellipsoid_flattening", Double.toString(request.forceModel().flattening()));
         metadata.put("mean_definition", "DSST force-model-consistent mean equinoctial elements");
         metadata.put("propagation_type", request.forceModel().mode());
         metadata.put("maneuver_frame", "QSW/RTN");
@@ -153,7 +163,7 @@ final class PropagationEngine {
         }
         UnnormalizedSphericalHarmonicsProvider gravity = runtime.context().getGravityFields()
                 .getUnnormalizedProvider(config.gravityDegree(), config.gravityOrder());
-        validateGravityIdentity(config, gravity.getMu(), gravity.getAe());
+        validateGravityMu(config, gravity.getMu());
         Frame bodyFixed = runtime.bodyFixedFrame();
         OneAxisEllipsoid earth = new OneAxisEllipsoid(config.referenceRadiusM(), config.flattening(), bodyFixed);
         List<DSSTForceModel> forces = new ArrayList<>();
@@ -183,7 +193,7 @@ final class PropagationEngine {
         }
         NormalizedSphericalHarmonicsProvider gravity = runtime.context().getGravityFields()
                 .getNormalizedProvider(config.gravityDegree(), config.gravityOrder());
-        validateGravityIdentity(config, gravity.getMu(), gravity.getAe());
+        validateGravityMu(config, gravity.getMu());
         Frame bodyFixed = runtime.bodyFixedFrame();
         OneAxisEllipsoid earth = new OneAxisEllipsoid(config.referenceRadiusM(), config.flattening(), bodyFixed);
         List<ForceModel> forces = new ArrayList<>();
@@ -290,13 +300,11 @@ final class PropagationEngine {
         }
     }
 
-    private static void validateGravityIdentity(ApiModels.ForceModel config, double providerMu, double providerAe) {
+    private static void validateGravityMu(ApiModels.ForceModel config, double providerMu) {
         double muRelative = Math.abs(providerMu - config.muM3S2()) / config.muM3S2();
-        double aeRelative = Math.abs(providerAe - config.referenceRadiusM()) / config.referenceRadiusM();
-        if (muRelative > 1.0e-8 || aeRelative > 1.0e-8) {
+        if (muRelative > GRAVITY_MU_RELATIVE_TOLERANCE) {
             throw new IllegalArgumentException(
-                    "configured central-body constants disagree with loaded gravity field: mu_rel="
-                            + muRelative + ", ae_rel=" + aeRelative);
+                    "configured central-body mu disagrees with loaded gravity field: mu_rel=" + muRelative);
         }
     }
 
