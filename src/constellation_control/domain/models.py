@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime
+from enum import StrEnum
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ForceMode(StrEnum):
+    SCREENING = "screening"
+    DESIGN = "design"
+    VALIDATION = "validation"
+
+
+class MeanElementDefinition(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    representation: Literal["equinoctial"] = "equinoctial"
+    theory: str
+    force_model_fingerprint: str
+
+
+class MeanOrbit(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    a_m: float = Field(gt=0.0)
+    ex: float
+    ey: float
+    ix: float
+    iy: float
+    lambda_rad: float
+    definition: MeanElementDefinition
+
+
+class OsculatingState(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    epoch_s: float
+    r_m: tuple[float, float, float]
+    v_m_s: tuple[float, float, float]
+
+
+class SpacecraftModel(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    dry_mass_kg: float = Field(gt=0.0)
+    propellant_mass_kg: float = Field(ge=0.0)
+    isp_s: float = Field(gt=0.0)
+    area_m2: float = Field(gt=0.0)
+    cr: float = Field(gt=0.0)
+
+    @property
+    def initial_mass_kg(self) -> float:
+        return self.dry_mass_kg + self.propellant_mass_kg
+
+
+class SatelliteSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    satellite_id: str
+    plane_id: str
+    role: Literal["reference", "additional"]
+    reference_id: str | None = None
+    mean_orbit: MeanOrbit
+    spacecraft: SpacecraftModel
+
+    @model_validator(mode="after")
+    def validate_reference(self) -> SatelliteSpec:
+        if self.role == "additional" and not self.reference_id:
+            raise ValueError("additional satellite requires reference_id")
+        return self
+
+
+class PlaneSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    plane_id: str
+    satellite_ids: tuple[str, ...] = ()
+
+
+class ConstellationSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    satellites: tuple[SatelliteSpec, ...]
+    planes: tuple[PlaneSpec, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_ids(self) -> ConstellationSpec:
+        ids = [sat.satellite_id for sat in self.satellites]
+        if len(ids) != len(set(ids)):
+            raise ValueError("satellite_id values must be unique")
+        known = set(ids)
+        for sat in self.satellites:
+            if sat.reference_id and sat.reference_id not in known:
+                raise ValueError(f"unknown reference_id: {sat.reference_id}")
+        return self
+
+
+class ForceModelConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    mode: ForceMode
+    mu_m3_s2: float = Field(gt=0.0)
+    reference_radius_m: float = Field(gt=0.0)
+    j2: float
+    earth_rotation_rate_rad_s: float = Field(gt=0.0)
+    gravity_degree: int = Field(ge=0)
+    gravity_order: int = Field(ge=0)
+    moon: bool = False
+    sun: bool = False
+    srp: bool = False
+    tides: bool = False
+    relativity: bool = False
+
+    @model_validator(mode="after")
+    def validate_gravity_order(self) -> ForceModelConfig:
+        if self.gravity_order > self.gravity_degree:
+            raise ValueError("gravity_order must not exceed gravity_degree")
+        return self
+
+    def fingerprint(self) -> str:
+        raw = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+
+class IntegratorConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    min_step_s: float = Field(gt=0.0)
+    max_step_s: float = Field(gt=0.0)
+    abs_tolerance: float = Field(gt=0.0)
+    rel_tolerance: float = Field(gt=0.0)
+
+
+class ConstraintConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    min_pair_distance_m: float = Field(gt=0.0)
+    delta_a_bounds_m: tuple[float, float]
+    delta_e_max: float = Field(gt=0.0)
+    delta_i_max_rad: float = Field(gt=0.0)
+    phase_corridor_rad: float = Field(gt=0.0)
+    propellant_reserve_fraction: float = Field(ge=0.0, lt=1.0)
+
+
+class MonteCarloConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    samples: int = Field(gt=0)
+    workers: int = Field(gt=0)
+    seed: int
+    perturbation_sigmas: dict[str, float] = Field(default_factory=dict)
+
+
+class Maneuver(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    satellite_id: str
+    time_s: float = Field(ge=0.0)
+    dv_rtn_m_s: tuple[float, float, float]
+
+
+class ManeuverPlan(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    maneuvers: tuple[Maneuver, ...] = ()
+
+
+class PropagationRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    scenario_id: str
+    satellites: tuple[SatelliteSpec, ...]
+    duration_s: float = Field(gt=0.0)
+    output_step_s: float = Field(gt=0.0)
+    force_model: ForceModelConfig
+    integrator: IntegratorConfig
+    seed: int
+
+
+class PropagationResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    backend: str
+    backend_version: str
+    force_model_fingerprint: str
+    times_s: tuple[float, ...]
+    mean_orbits: dict[str, tuple[MeanOrbit, ...]]
+    cartesian_states: dict[str, tuple[OsculatingState, ...]]
+
+
+class StabilityMetrics(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    pair_id: str
+    secular_drift_delta_lambda_rad_s: float
+    periodic_amplitude_delta_lambda_rad: float
+    secular_drift_raan_rad_s: float
+    eccentricity_vector_drift_rate_s: float
+    inclination_vector_drift_rate_s: float
+    minimum_pair_distance_m: float
+    time_of_closest_approach_s: float
+    ground_track_closure_error_m: float
+    pdop: float | None = None
+
+
+class OptimizationResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    success: bool
+    algorithm: str
+    x: tuple[float, ...]
+    objective: float | None = None
+    objectives: tuple[float, ...] = ()
+    message: str = ""
+
+
+class ExperimentRunManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    scenario_id: str
+    run_id: str
+    config_hash: str
+    code_version: str
+    force_model_fingerprint: str
+    force_model_mode: ForceMode
+    backend: str
+    backend_version: str
+    epoch: datetime
+    random_seed: int
+    algorithm_versions: dict[str, str]
+
+
+class ScenarioConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    scenario_id: str
+    seed: int
+    epoch: datetime
+    duration_s: float = Field(gt=0.0)
+    output_step_s: float = Field(gt=0.0)
+    orekit_sidecar_url: str | None = None
+    force_model: ForceModelConfig
+    integrator: IntegratorConfig
+    constraints: ConstraintConfig
+    monte_carlo: MonteCarloConfig
+    constellation: ConstellationSpec
+
+    def config_hash(self) -> str:
+        raw = json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(raw.encode()).hexdigest()
