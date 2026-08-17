@@ -205,6 +205,17 @@ def test_finite_difference_provider_recovers_time_varying_mpc_contract() -> None
     assert np.allclose(b_matrices, np.stack([B_TRUE, B_TRUE]), rtol=0.0, atol=2e-8)
     assert np.allclose(disturbances, np.stack([D_TRUE, D_TRUE]), rtol=0.0, atol=2e-8)
 
+    # RTN sign semantics are part of the execution contract, not just magnitudes.
+    # +T increases normalized delta-a and delta-lambda in this local model.
+    assert b_matrices[0, 0, 1] > 0.0
+    assert b_matrices[0, 1, 1] > 0.0
+    # +R rotates the relative eccentricity vector with opposite ex/ey signs.
+    assert b_matrices[0, 2, 0] > 0.0
+    assert b_matrices[0, 3, 0] < 0.0
+    # +N produces the configured positive relative inclination-vector response.
+    assert b_matrices[0, 4, 2] > 0.0
+    assert b_matrices[0, 5, 2] > 0.0
+
 
 def test_linearization_rejects_non_validation_authority() -> None:
     request = _request()
