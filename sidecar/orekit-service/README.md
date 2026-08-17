@@ -12,17 +12,24 @@ There is no synthetic fallback.
 - SHA-256 of the complete data directory is returned as `orekit_data_sha256`
 - propagation requests carry the exact Python-side `force_model_fingerprint`
 
-For CI the official Orekit data repository is pinned to:
+The reviewed CI/validation authority revision is stored in:
 
 ```text
-f395924f27b6074c8db1432350f5917d722ff3e1
+orekit-data-revision.txt
 ```
 
-Production deployments should pin an explicitly reviewed data revision suitable
-for the scenario epoch. Updating auxiliary data is a controlled model change,
-not a transparent maintenance action. CI also logs the current official `main`
-revision so drift from the reviewed pin is visible without changing the run's
-physical-data authority.
+Current reviewed value:
+
+```text
+baf158744d38ec76cf94e2d396280d545b9f0ba2
+```
+
+This value was the official `orekit-data/main` revision observed by CI on
+2026-08-17. Production deployments must pin an explicitly reviewed revision
+suitable for the scenario epoch. Updating auxiliary data is a controlled model
+change, not a transparent maintenance action. CI also logs the current official
+`main` revision so drift from the reviewed pin is visible without changing the
+run's physical-data authority.
 
 ## Build and test
 

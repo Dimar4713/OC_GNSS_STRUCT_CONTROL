@@ -29,13 +29,14 @@ Initial impulses at exactly the scenario epoch are applied as an explicit state 
 
 ## Reproducibility evidence
 
-High-fidelity CI fetches the official `orekit-data` repository at the pinned revision:
+The reviewed Orekit auxiliary-data authority is stored in `sidecar/orekit-service/orekit-data-revision.txt`.
+The reviewed value adopted on 2026-08-17 is:
 
 ```text
-f395924f27b6074c8db1432350f5917d722ff3e1
+baf158744d38ec76cf94e2d396280d545b9f0ba2
 ```
 
-CI also reports the current official `main` revision so data drift is visible. The pinned revision remains the run authority until an updated revision is explicitly reviewed and committed.
+It was the official `orekit-data/main` revision observed by CI when the update was made. CI still reports current upstream `main` on every run so later drift is visible, but calculations use only the committed reviewed revision.
 
 The sidecar hashes the complete loaded data directory and returns `orekit_data_sha256`. Results also record Orekit version, frame, time scale, gravity degree/order, gravity-provider `mu` and `Ae`, Earth ellipsoid radius/flattening and force-model fingerprint.
 
