@@ -31,9 +31,10 @@ public final class OrekitServiceMain {
                 Math.max(2, Runtime.getRuntime().availableProcessors())));
         server.start();
         System.out.printf(
-                "orekit-service listening on :%d orekit=%s data_revision=%s data_sha256=%s%n",
+                "orekit-service listening on :%d orekit=%s gravity=%s data_revision=%s data_sha256=%s%n",
                 port,
                 OrekitRuntime.OREKIT_VERSION,
+                runtime.gravityModel(),
                 runtime.dataRevision(),
                 runtime.dataSha256());
     }
@@ -54,6 +55,7 @@ public final class OrekitServiceMain {
         body.put("orekit_version", OrekitRuntime.OREKIT_VERSION);
         body.put("orekit_data_revision", runtime.dataRevision());
         body.put("orekit_data_sha256", runtime.dataSha256());
+        body.put("gravity_model", runtime.gravityModel());
         writeJson(exchange, mapper, 200, body);
     }
 

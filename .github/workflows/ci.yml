@@ -96,6 +96,7 @@ jobs:
           assert health['status'] == 'ok'
           assert health['backend'] == 'orekit'
           assert health['orekit_version'] == '13.1.7'
+          assert health['gravity_model'] == 'EIGEN-6S'
           assert health['orekit_data_revision'] == os.environ['OREKIT_DATA_REVISION']
           assert len(health['orekit_data_sha256']) == 64
           int(health['orekit_data_sha256'], 16)
@@ -160,6 +161,15 @@ jobs:
             --backend orekit-numerical-validation \
             --mode validation \
             --data-revision "$OREKIT_DATA_REVISION"
+      - name: Derive MPC matrices from real Orekit numerical authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_orekit_linearization.py \
+            scenarios/orekit_linearization_smoke.yaml \
+            --output .e2e-runs/linearization
+          test -s .e2e-runs/linearization/orekit_roe_linearization.npz
+          test -s .e2e-runs/linearization/orekit_roe_linearization.json
       - name: Stop Orekit sidecar
         if: always()
         shell: bash

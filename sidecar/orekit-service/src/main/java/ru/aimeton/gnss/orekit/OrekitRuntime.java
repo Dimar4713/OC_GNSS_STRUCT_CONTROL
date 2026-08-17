@@ -64,6 +64,10 @@ final class OrekitRuntime {
         return dataRevision;
     }
 
+    String gravityModel() {
+        return GRAVITY_MODEL;
+    }
+
     TimeScale timeScale(String name) {
         return switch (name) {
             case "UTC" -> context.getTimeScales().getUTC();

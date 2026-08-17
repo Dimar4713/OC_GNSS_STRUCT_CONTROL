@@ -1,5 +1,6 @@
 package ru.aimeton.gnss.orekit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -18,12 +19,15 @@ final class FreshGravityAuthorityTest {
         OrekitRuntime fresh = new OrekitRuntime(Path.of(dataPath));
         var provider = fresh.context().getGravityFields().getNormalizedProvider(8, 8);
         System.out.printf(
-                "FRESH_GRAVITY_AUTHORITY degree=8 order=8 mu=%.17e ae=%.17e data_revision=%s data_sha256=%s%n",
+                "FRESH_GRAVITY_AUTHORITY model=%s degree=8 order=8 mu=%.17e ae=%.17e data_revision=%s data_sha256=%s%n",
+                fresh.gravityModel(),
                 provider.getMu(),
                 provider.getAe(),
                 fresh.dataRevision(),
                 fresh.dataSha256());
 
+        assertEquals(OrekitRuntime.GRAVITY_MODEL, fresh.gravityModel());
+        assertTrue(Math.abs(provider.getMu() - 3.986004418e14) / 3.986004418e14 < 1.0e-8);
         assertTrue(Double.isFinite(provider.getMu()) && provider.getMu() > 0.0);
         assertTrue(Double.isFinite(provider.getAe()) && provider.getAe() > 0.0);
     }

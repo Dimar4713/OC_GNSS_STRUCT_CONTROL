@@ -48,11 +48,13 @@ def verify_run(
     assert manifest["force_model_mode"] == expected_mode
     assert manifest["frame"] == "EME2000"
     assert manifest["time_scale"] == "UTC"
+    assert manifest["force_model"]["gravity_model"] == "EIGEN-6S"
     assert manifest["force_model"]["gravity_degree"] == 8
     assert manifest["force_model"]["gravity_order"] == 8
 
     metadata = manifest["backend_metadata"]
     assert metadata["orekit_version"] == "13.1.7"
+    assert metadata["gravity_model"] == "EIGEN-6S"
     assert metadata["orekit_data_revision"] == expected_data_revision
     assert len(metadata["orekit_data_sha256"]) == 64
     int(metadata["orekit_data_sha256"], 16)
@@ -68,6 +70,7 @@ def verify_run(
         assert definition["force_model_fingerprint"] == fingerprint
 
     assert scenario["force_model"]["mode"] == expected_mode
+    assert scenario["force_model"]["gravity_model"] == "EIGEN-6S"
     assert scenario["force_model"]["gravity_degree"] == 8
     assert scenario["force_model"]["gravity_order"] == 8
     assert scenario["force_model"]["moon"] is True
@@ -84,6 +87,7 @@ def verify_run(
     assert metric["minimum_pair_distance_m"] > 0.0
 
     provenance = summary["provenance"]
+    assert provenance["backend_metadata"]["gravity_model"] == "EIGEN-6S"
     assert provenance["backend_metadata"]["orekit_data_revision"] == expected_data_revision
     assert provenance["gravity_degree"] == 8
     assert provenance["gravity_order"] == 8
