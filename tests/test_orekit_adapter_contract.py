@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
+import io
 import json
 from typing import Any
+from urllib.error import HTTPError
 
 import pytest
 
@@ -135,4 +137,23 @@ def test_adapter_rejects_result_without_orekit_data_fingerprint(monkeypatch: pyt
 
     monkeypatch.setattr("constellation_control.adapters.orekit.adapter.urlopen", fake_urlopen)
     with pytest.raises(RuntimeError, match="orekit-data fingerprint"):
+        OrekitSidecarPropagator("http://orekit.invalid").propagate(request)
+
+
+def test_adapter_exposes_sidecar_http_error_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = _request()
+    response = io.BytesIO(b'{"error":"invalid_propagation_request","detail":"gravity mismatch"}')
+
+    def fake_urlopen(http_request: Any, timeout: float) -> _FakeResponse:
+        del http_request, timeout
+        raise HTTPError(
+            "http://orekit.invalid/v1/propagate",
+            422,
+            "Unprocessable Entity",
+            hdrs=None,
+            fp=response,
+        )
+
+    monkeypatch.setattr("constellation_control.adapters.orekit.adapter.urlopen", fake_urlopen)
+    with pytest.raises(RuntimeError, match=r"HTTP 422.*gravity mismatch"):
         OrekitSidecarPropagator("http://orekit.invalid").propagate(request)

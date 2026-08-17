@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from constellation_control.domain.models import PropagationRequest, PropagationResult
@@ -23,8 +24,15 @@ class OrekitSidecarPropagator:
         request_payload["force_model_fingerprint"] = request.force_model.fingerprint()
         body = json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
         http_request = Request(self._url, data=body, headers={"Content-Type": "application/json"}, method="POST")
-        with urlopen(http_request, timeout=self._timeout_s) as response:  # noqa: S310
-            payload = response.read().decode()
+        try:
+            with urlopen(http_request, timeout=self._timeout_s) as response:  # noqa: S310
+                payload = response.read().decode()
+        except HTTPError as error:
+            detail = error.read().decode(errors="replace")
+            raise RuntimeError(f"Orekit sidecar HTTP {error.code}: {detail}") from error
+        except URLError as error:
+            raise RuntimeError(f"Orekit sidecar connection failed: {error.reason}") from error
+
         result = PropagationResult.model_validate(json.loads(payload))
         if not result.backend.lower().startswith("orekit"):
             raise RuntimeError("high-fidelity sidecar returned a non-Orekit backend identity")

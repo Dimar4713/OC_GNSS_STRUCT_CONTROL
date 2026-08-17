@@ -12,12 +12,13 @@ app = typer.Typer(help="Constellation Control CLI")
 def run(
     scenario: Annotated[Path, typer.Argument(help="Validated YAML scenario")],
     output: Annotated[
-        Path,
+        Path | None,
         typer.Option("--output", "-o", help="Root directory for reproducible run artifacts"),
-    ] = Path("runs"),
+    ] = None,
 ) -> None:
     """Run one validated YAML scenario and write reproducible artifacts."""
-    run_dir = run_scenario(scenario, output)
+    output_root = output if output is not None else Path("runs")
+    run_dir = run_scenario(scenario, output_root)
     typer.echo(run_dir)
 
 

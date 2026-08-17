@@ -114,7 +114,12 @@ jobs:
           constellation-control run scenarios/orekit_design_smoke.yaml --output .e2e-runs/design
           design_dir="$(find .e2e-runs/design/synthetic-orekit-dsst-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
           test -n "$design_dir"
-          python scripts/verify_high_fidelity_run.py "$design_dir" \
+          echo "DESIGN_RUN_DIR=$design_dir" >> "$GITHUB_ENV"
+      - name: Verify DSST design artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_high_fidelity_run.py "$DESIGN_RUN_DIR" \
             --backend orekit-dsst-design \
             --mode design \
             --data-revision "$OREKIT_DATA_REVISION"
@@ -125,7 +130,12 @@ jobs:
           constellation-control run scenarios/orekit_validation_smoke.yaml --output .e2e-runs/validation
           validation_dir="$(find .e2e-runs/validation/synthetic-orekit-validation-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
           test -n "$validation_dir"
-          python scripts/verify_high_fidelity_run.py "$validation_dir" \
+          echo "VALIDATION_RUN_DIR=$validation_dir" >> "$GITHUB_ENV"
+      - name: Verify numerical validation artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_high_fidelity_run.py "$VALIDATION_RUN_DIR" \
             --backend orekit-numerical-validation \
             --mode validation \
             --data-revision "$OREKIT_DATA_REVISION"
