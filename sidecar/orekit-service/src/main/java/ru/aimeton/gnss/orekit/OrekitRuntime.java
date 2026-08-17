@@ -24,12 +24,14 @@ final class OrekitRuntime {
 
     private final LazyLoadedDataContext context;
     private final String dataSha256;
+    private final String dataRevision;
 
     OrekitRuntime(Path dataPath) throws IOException {
         if (!Files.isDirectory(dataPath)) {
             throw new IllegalArgumentException("OREKIT_DATA_PATH must point to a readable directory: " + dataPath);
         }
         this.dataSha256 = fingerprint(dataPath);
+        this.dataRevision = readDataRevision();
         this.context = new LazyLoadedDataContext();
         this.context.getDataProvidersManager().clearProviders();
         this.context.getDataProvidersManager().addProvider(new DirectoryCrawler(dataPath.toFile()));
@@ -45,6 +47,10 @@ final class OrekitRuntime {
 
     String dataSha256() {
         return dataSha256;
+    }
+
+    String dataRevision() {
+        return dataRevision;
     }
 
     TimeScale timeScale(String name) {
@@ -77,17 +83,28 @@ final class OrekitRuntime {
         return context.getFrames().getITRF(IERSConventions.IERS_2010, false);
     }
 
+    private static String readDataRevision() {
+        String revision = System.getenv().getOrDefault("OREKIT_DATA_REVISION", "unversioned").trim();
+        if (!revision.equals("unversioned") && !revision.matches("[0-9a-f]{40}")) {
+            throw new IllegalArgumentException(
+                    "OREKIT_DATA_REVISION must be a 40-character lowercase git SHA when provided");
+        }
+        return revision;
+    }
+
     private static String fingerprint(Path root) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             List<Path> files;
             try (var stream = Files.walk(root)) {
                 files = stream.filter(Files::isRegularFile)
-                        .sorted(Comparator.comparing(path -> root.relativize(path).toString()))
+                        .filter(path -> !root.relativize(path).startsWith(".git"))
+                        .sorted(Comparator.comparing(
+                                path -> root.relativize(path).toString().replace('\\', '/')))
                         .toList();
             }
             if (files.isEmpty()) {
-                throw new IllegalArgumentException("OREKIT_DATA_PATH contains no files: " + root);
+                throw new IllegalArgumentException("OREKIT_DATA_PATH contains no physical data files: " + root);
             }
             for (Path file : files) {
                 String relative = root.relativize(file).toString().replace('\\', '/');
