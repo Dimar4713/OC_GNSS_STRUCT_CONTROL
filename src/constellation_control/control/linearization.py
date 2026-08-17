@@ -4,7 +4,13 @@ from datetime import timedelta
 
 import numpy as np
 
-from constellation_control.domain.models import ForceMode, Maneuver, PropagationRequest, SatelliteSpec
+from constellation_control.domain.models import (
+    ForceMode,
+    Maneuver,
+    MeanOrbit,
+    PropagationRequest,
+    SatelliteSpec,
+)
 from constellation_control.domain.protocols import Propagator
 from constellation_control.dynamics.orbits import wrap_pi
 from constellation_control.mean_elements.roe import (
@@ -39,10 +45,14 @@ class FiniteDifferenceRoeLinearizationProvider:
             _DEFAULT_STATE_STEPS if state_steps is None else state_steps,
             dtype=float,
         )
-        if self._state_steps.shape != (6,) or np.any(self._state_steps <= 0.0):
+        if (
+            self._state_steps.shape != (6,)
+            or not np.all(np.isfinite(self._state_steps))
+            or np.any(self._state_steps <= 0.0)
+        ):
             raise ValueError("state_steps must contain six positive finite-difference steps")
-        if impulse_step_m_s <= 0.0:
-            raise ValueError("impulse_step_m_s must be positive")
+        if not np.isfinite(impulse_step_m_s) or impulse_step_m_s <= 0.0:
+            raise ValueError("impulse_step_m_s must be positive and finite")
         self._impulse_step_m_s = float(impulse_step_m_s)
 
     def linearize(
@@ -128,8 +138,8 @@ class FiniteDifferenceRoeLinearizationProvider:
                 a_matrices[k, :, component] = self._difference(plus_next, minus_next) / (2.0 * step)
 
             for component in range(3):
-                plus_dv = np.zeros(3, dtype=float)
-                minus_dv = np.zeros(3, dtype=float)
+                plus_dv = [0.0, 0.0, 0.0]
+                minus_dv = [0.0, 0.0, 0.0]
                 plus_dv[component] = self._impulse_step_m_s
                 minus_dv[component] = -self._impulse_step_m_s
                 plus_next = self._next_roe(
@@ -137,14 +147,14 @@ class FiniteDifferenceRoeLinearizationProvider:
                     local_reference,
                     local_deputy,
                     dep_now,
-                    tuple(float(value) for value in plus_dv),
+                    (plus_dv[0], plus_dv[1], plus_dv[2]),
                 )
                 minus_next = self._next_roe(
                     local_request,
                     local_reference,
                     local_deputy,
                     dep_now,
-                    tuple(float(value) for value in minus_dv),
+                    (minus_dv[0], minus_dv[1], minus_dv[2]),
                 )
                 b_matrices[k, :, component] = self._difference(plus_next, minus_next) / (
                     2.0 * self._impulse_step_m_s
@@ -171,11 +181,11 @@ class FiniteDifferenceRoeLinearizationProvider:
         request: PropagationRequest,
         reference: SatelliteSpec,
         deputy: SatelliteSpec,
-        deputy_mean: object,
+        deputy_mean: MeanOrbit,
         dv_rtn_m_s: tuple[float, float, float] | None,
     ) -> np.ndarray:
         deputy_updated = deputy.model_copy(update={"mean_orbit": deputy_mean})
-        maneuvers = ()
+        maneuvers: tuple[Maneuver, ...] = ()
         if dv_rtn_m_s is not None:
             maneuvers = (
                 Maneuver(
