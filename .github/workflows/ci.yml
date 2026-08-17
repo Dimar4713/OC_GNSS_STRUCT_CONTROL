@@ -226,6 +226,15 @@ jobs:
             --output .e2e-runs/linearization
           test -s .e2e-runs/linearization/orekit_roe_linearization.npz
           test -s .e2e-runs/linearization/orekit_roe_linearization.json
+      - name: Authorize first MPC maneuver by numerical replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_mpc_execution_authority.py \
+            scenarios/orekit_linearization_smoke.yaml \
+            --output .e2e-runs/mpc-authority
+          test -s .e2e-runs/mpc-authority/mpc_execution_authority.json
+          test -s .e2e-runs/mpc-authority/mpc_execution_authority.npz
       - name: Execute full design search and top-K numerical replay
         shell: bash
         run: |
