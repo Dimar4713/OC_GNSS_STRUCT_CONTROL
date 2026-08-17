@@ -65,26 +65,71 @@ def solve_impulsive_mpc(
     target: np.ndarray | None = None,
     w_tracking: float = 1.0,
     w_max: float = 1.0,
+    eccentricity_vector_max: float | None = None,
+    inclination_vector_max: float | None = None,
 ) -> MPCSolution:
+    """Solve a convex impulsive MPC problem in D'Amico ROE coordinates.
+
+    State ordering is `[delta_a, delta_lambda, delta_ex, delta_ey, delta_ix, delta_iy]`.
+    Vector-norm corridors are optional second-order-cone constraints and complement
+    the component-wise state bounds. Minimum-impulse-bit and nonlinear safety
+    replay are intentionally handled by the execution-authority layer because
+    they are not convex constraints in this formulation.
+    """
+
     import cvxpy as cp
 
+    x0_array = np.asarray(x0, dtype=float)
+    lower = np.asarray(lower_state, dtype=float)
+    upper = np.asarray(upper_state, dtype=float)
+    max_impulse = np.asarray(max_abs_impulse, dtype=float)
+    windows = np.asarray(maneuver_windows, dtype=bool)
+
+    if a_matrices.ndim != 3 or a_matrices.shape[1] != a_matrices.shape[2]:
+        raise ValueError("A matrices must have shape (horizon, state_dim, state_dim)")
     horizon, state_dim, _ = a_matrices.shape
-    input_dim = b_matrices.shape[2]
     if b_matrices.shape[:2] != (horizon, state_dim):
         raise ValueError("A/B dimensions are inconsistent")
+    input_dim = b_matrices.shape[2]
     if disturbances.shape != (horizon, state_dim):
         raise ValueError("disturbance dimensions are inconsistent")
+    if x0_array.shape != (state_dim,) or lower.shape != (state_dim,) or upper.shape != (state_dim,):
+        raise ValueError("x0/lower/upper must match the MPC state dimension")
+    if np.any(lower > upper):
+        raise ValueError("lower_state must not exceed upper_state")
+    if max_impulse.shape != (input_dim,) or np.any(max_impulse < 0.0):
+        raise ValueError("max_abs_impulse must match input dimension and be non-negative")
+    if windows.shape != (horizon,):
+        raise ValueError("maneuver_windows must have one boolean per horizon interval")
+    if state_dim < 6 and (eccentricity_vector_max is not None or inclination_vector_max is not None):
+        raise ValueError("ROE vector corridors require at least six state components")
+    if eccentricity_vector_max is not None and eccentricity_vector_max <= 0.0:
+        raise ValueError("eccentricity_vector_max must be positive")
+    if inclination_vector_max is not None and inclination_vector_max <= 0.0:
+        raise ValueError("inclination_vector_max must be positive")
+    for input_slice in spacecraft_input_slices:
+        start = 0 if input_slice.start is None else input_slice.start
+        stop = input_dim if input_slice.stop is None else input_slice.stop
+        if start < 0 or stop > input_dim or start >= stop:
+            raise ValueError("spacecraft input slice lies outside MPC input dimension")
+
     target_state = np.zeros(state_dim) if target is None else np.asarray(target, dtype=float)
+    if target_state.shape != (state_dim,):
+        raise ValueError("target must match the MPC state dimension")
 
     x = cp.Variable((horizon + 1, state_dim))
     u = cp.Variable((horizon, input_dim))
     z = cp.Variable(nonneg=True)
-    constraints = [x[0] == x0]
+    constraints = [x[0] == x0_array]
     for k in range(horizon):
         constraints += [x[k + 1] == a_matrices[k] @ x[k] + b_matrices[k] @ u[k] + disturbances[k]]
-        constraints += [x[k + 1] >= lower_state, x[k + 1] <= upper_state]
-        constraints += [cp.abs(u[k]) <= max_abs_impulse]
-        if not bool(maneuver_windows[k]):
+        constraints += [x[k + 1] >= lower, x[k + 1] <= upper]
+        constraints += [cp.abs(u[k]) <= max_impulse]
+        if eccentricity_vector_max is not None:
+            constraints += [cp.norm2(x[k + 1, 2:4]) <= eccentricity_vector_max]
+        if inclination_vector_max is not None:
+            constraints += [cp.norm2(x[k + 1, 4:6]) <= inclination_vector_max]
+        if not bool(windows[k]):
             constraints += [u[k] == 0.0]
     for input_slice in spacecraft_input_slices:
         constraints += [cp.sum(cp.abs(u[:, input_slice])) <= z]
