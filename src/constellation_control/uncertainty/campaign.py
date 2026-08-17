@@ -204,11 +204,14 @@ def summarize_campaign(
     if not outcomes:
         raise ValueError("robustness campaign produced no outcomes")
     flattened = [_flatten_numeric(outcome) for outcome in outcomes]
-    common_numeric = sorted(set.intersection(*(set(item) for item in flattened)))
-    statistics: dict[str, dict[str, float]] = {}
-    for key in common_numeric:
-        values = np.asarray([item[key] for item in flattened], dtype=float)
+    numeric_keys = sorted(set().union(*(set(item) for item in flattened)))
+    statistics: dict[str, dict[str, float | int]] = {}
+    for key in numeric_keys:
+        values = np.asarray([item[key] for item in flattened if key in item], dtype=float)
+        if values.size == 0:
+            continue
         statistics[key] = {
+            "count": int(values.size),
             "p50": float(np.percentile(values, 50)),
             "p95": float(np.percentile(values, 95)),
             "p99": float(np.percentile(values, 99)),
@@ -222,8 +225,8 @@ def summarize_campaign(
         for name in violation_names
     }
 
-    if config.worst_metric not in common_numeric:
-        raise ValueError(f"configured worst_metric is not a common numeric outcome: {config.worst_metric}")
+    if any(config.worst_metric not in item for item in flattened):
+        raise ValueError(f"configured worst_metric is not numeric in every outcome: {config.worst_metric}")
     metric_values = np.asarray([item[config.worst_metric] for item in flattened], dtype=float)
     worst_index = int(np.argmax(metric_values) if config.worst_direction == WorstDirection.MAX else np.argmin(metric_values))
 
@@ -287,6 +290,50 @@ def _persist_tables(output_dir: Path, samples: tuple[dict[str, object], ...], ou
     outcome_frame = pd.DataFrame(outcome_rows)
     outcome_frame.to_parquet(output_dir / "outcomes.parquet", index=False)
     outcome_frame.to_csv(output_dir / "outcomes.csv", index=False)
+
+
+def _summary_tables(output_dir: Path, summary: Mapping[str, object]) -> tuple[list[str], list[str]]:
+    statistics_raw = summary.get("statistics")
+    violations_raw = summary.get("violation_probability")
+    if not isinstance(statistics_raw, Mapping) or not isinstance(violations_raw, Mapping):
+        raise TypeError("campaign summary statistics/violation_probability must be mappings")
+
+    statistics_rows: list[dict[str, object]] = []
+    metric_lines = ["## Metric distributions", "", "| Metric | count | P50 | P95 | P99 | Worst |", "|---|---:|---:|---:|---:|---:|"]
+    for metric, values_raw in sorted(statistics_raw.items(), key=lambda item: str(item[0])):
+        if not isinstance(metric, str) or not isinstance(values_raw, Mapping):
+            raise TypeError("campaign statistic entries must be string -> mapping")
+        count = values_raw.get("count")
+        p50 = values_raw.get("p50")
+        p95 = values_raw.get("p95")
+        p99 = values_raw.get("p99")
+        worst = values_raw.get("worst")
+        if not isinstance(count, int) or not all(isinstance(value, (int, float)) for value in (p50, p95, p99, worst)):
+            raise TypeError("campaign statistic values have invalid types")
+        row = {
+            "metric": metric,
+            "count": count,
+            "p50": float(p50),
+            "p95": float(p95),
+            "p99": float(p99),
+            "worst": float(worst),
+        }
+        statistics_rows.append(row)
+        metric_lines.append(
+            f"| `{metric}` | {count} | {float(p50):.12g} | {float(p95):.12g} | {float(p99):.12g} | {float(worst):.12g} |"
+        )
+    pd.DataFrame(statistics_rows).to_csv(output_dir / "statistics.csv", index=False)
+
+    violation_rows: list[dict[str, object]] = []
+    violation_lines = ["## Constraint / event probabilities", "", "| Name | Probability |", "|---|---:|"]
+    for name, probability in sorted(violations_raw.items(), key=lambda item: str(item[0])):
+        if not isinstance(name, str) or isinstance(probability, bool) or not isinstance(probability, (int, float)):
+            raise TypeError("violation probabilities must be string -> numeric")
+        numeric = float(probability)
+        violation_rows.append({"name": name, "probability": numeric})
+        violation_lines.append(f"| `{name}` | {numeric:.6f} |")
+    pd.DataFrame(violation_rows).to_csv(output_dir / "violation_probability.csv", index=False)
+    return metric_lines, violation_lines
 
 
 def run_robustness_campaign(
@@ -354,21 +401,32 @@ def run_robustness_campaign(
     summary = summarize_campaign(config, complete_outcomes)
     _persist_tables(output_dir, samples, complete_outcomes)
     _atomic_json(output_dir / "summary.json", summary)
+    metric_lines, violation_lines = _summary_tables(output_dir, summary)
 
-    markdown = "\n".join(
-        (
-            f"# Robustness campaign: {config.campaign_id}",
-            "",
-            f"- Realizations: `{len(samples)}`",
-            f"- Workers: `{config.workers}`",
-            f"- Seed: `{config.seed}`",
-            f"- Accepted candidate: `{config.accepted_candidate_id}`",
-            f"- Worst metric: `{config.worst_metric}` ({config.worst_direction.value})",
-            f"- Worst realization: `{summary['worst_case']['realization']}`",
-            "",
-            "All random samples are generated before parallel dispatch. Resumed realizations are accepted only when sample and campaign fingerprints match.",
-        )
-    ) + "\n"
+    worst_case = summary.get("worst_case")
+    if not isinstance(worst_case, Mapping):
+        raise TypeError("campaign summary worst_case must be a mapping")
+    worst_realization = worst_case.get("realization")
+    if not isinstance(worst_realization, int):
+        raise TypeError("campaign summary worst_case.realization must be an integer")
+
+    markdown_lines = [
+        f"# Robustness campaign: {config.campaign_id}",
+        "",
+        f"- Realizations: `{len(samples)}`",
+        f"- Workers: `{config.workers}`",
+        f"- Seed: `{config.seed}`",
+        f"- Accepted candidate: `{config.accepted_candidate_id}`",
+        f"- Worst metric: `{config.worst_metric}` ({config.worst_direction.value})",
+        f"- Worst realization: `{worst_realization}`",
+        "",
+        "All random samples are generated before parallel dispatch. Resumed realizations are accepted only when sample and campaign fingerprints match.",
+        "",
+        *metric_lines,
+        "",
+        *violation_lines,
+    ]
+    markdown = "\n".join(markdown_lines) + "\n"
     (output_dir / "report.md").write_text(markdown, encoding="utf-8")
     (output_dir / "report.html").write_text(
         f"<html><body><pre>{html.escape(markdown)}</pre></body></html>",
