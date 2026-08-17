@@ -33,6 +33,7 @@ final class PropagationEngineIntegrationTest {
 
         assertEquals("orekit-dsst-design", designResult.backend());
         assertEquals(OrekitRuntime.OREKIT_VERSION, designResult.backendVersion());
+        assertEquals(OrekitRuntime.GRAVITY_MODEL, designResult.backendMetadata().get("gravity_model"));
         assertEquals(runtime.dataSha256(), designResult.backendMetadata().get("orekit_data_sha256"));
         assertEquals(List.of(0.0, 300.0, 600.0), designResult.timesS());
         assertEquals(3, designResult.meanOrbits().get("SYNTH-1").size());
@@ -41,6 +42,7 @@ final class PropagationEngineIntegrationTest {
         PropagationRequest validation = request("validation", false, false, false);
         PropagationResult validationResult = engine.propagate(validation);
         assertEquals("orekit-numerical-validation", validationResult.backend());
+        assertEquals(OrekitRuntime.GRAVITY_MODEL, validationResult.backendMetadata().get("gravity_model"));
         assertEquals(3, validationResult.meanOrbits().get("SYNTH-1").size());
         assertEquals(3, validationResult.cartesianStates().get("SYNTH-1").size());
     }
@@ -88,8 +90,10 @@ final class PropagationEngineIntegrationTest {
         PropagationResult design = engine.propagate(smokeRequest("design"));
         PropagationResult validation = engine.propagate(smokeRequest("validation"));
 
+        assertEquals(OrekitRuntime.GRAVITY_MODEL, design.backendMetadata().get("gravity_model"));
         assertEquals("8", design.backendMetadata().get("gravity_degree"));
         assertEquals("8", design.backendMetadata().get("gravity_order"));
+        assertEquals(OrekitRuntime.GRAVITY_MODEL, validation.backendMetadata().get("gravity_model"));
         assertEquals("8", validation.backendMetadata().get("gravity_degree"));
         assertEquals("8", validation.backendMetadata().get("gravity_order"));
         assertEquals(25, design.timesS().size());
@@ -153,6 +157,7 @@ final class PropagationEngineIntegrationTest {
         SatelliteSpec satellite = new SatelliteSpec("SYNTH-1", "P-SYNTH", "reference", null, orbit, spacecraft);
         ForceModel forceModel = new ForceModel(
                 mode,
+                OrekitRuntime.GRAVITY_MODEL,
                 3.986004418e14,
                 6_378_137.0,
                 1.0 / 298.257223563,
@@ -190,6 +195,7 @@ final class PropagationEngineIntegrationTest {
         SatelliteSpec satellite = new SatelliteSpec("SYNTH-SMOKE", "P-SYNTH", "reference", null, orbit, spacecraft);
         ForceModel forceModel = new ForceModel(
                 mode,
+                OrekitRuntime.GRAVITY_MODEL,
                 3.986004418e14,
                 6_378_137.0,
                 1.0 / 298.257223563,
