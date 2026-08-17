@@ -21,8 +21,8 @@ from constellation_control.domain.models import (
     StabilityMetrics,
 )
 from constellation_control.domain.protocols import Propagator
-from constellation_control.dynamics.j2 import first_order_j2_rates, mean_motion
-from constellation_control.dynamics.orbits import mean_to_classical
+from constellation_control.dynamics.j2 import mean_motion
+from constellation_control.dynamics.orbits import mean_to_classical, wrap_pi
 from constellation_control.mean_elements.roe import damico_roe
 from constellation_control.reporting.artifacts import write_run_artifacts
 
@@ -112,9 +112,22 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         roes = [damico_roe(ref, dep) for ref, dep in zip(ref_series, dep_series, strict=True)]
         phase = np.asarray([roe.delta_lambda_rad for roe in roes])
         unwrapped_phase = np.unwrap(phase)
-        initial_ref = mean_to_classical(reference.mean_orbit)
+
+        ref_classical = [mean_to_classical(item) for item in ref_series]
+        dep_classical = [mean_to_classical(item) for item in dep_series]
+        initial_ref = ref_classical[0]
         orbital_period = 2.0 * pi / mean_motion(initial_ref.a_m, scenario.force_model.mu_m3_s2)
-        fit = harmonic_regression(times, phase, default_harmonic_frequencies(orbital_period))
+        frequencies = default_harmonic_frequencies(orbital_period)
+        phase_fit = harmonic_regression(times, phase, frequencies)
+        delta_raan = np.unwrap(
+            np.asarray(
+                [
+                    wrap_pi(dep.raan_rad - ref.raan_rad)
+                    for ref, dep in zip(ref_classical, dep_classical, strict=True)
+                ]
+            )
+        )
+        raan_fit = harmonic_regression(times, delta_raan, frequencies)
 
         ref_cart = result.cartesian_states[reference.satellite_id]
         dep_cart = result.cartesian_states[deputy.satellite_id]
@@ -134,8 +147,6 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             scenario.force_model.reference_radius_m,
             scenario.force_model.earth_rotation_rate_rad_s,
         )
-        ref_rates = first_order_j2_rates(initial_ref, scenario.force_model)
-        dep_rates = first_order_j2_rates(mean_to_classical(deputy.mean_orbit), scenario.force_model)
         ex_rate = sqrt(
             linear_rate(times, np.asarray([roe.delta_ex for roe in roes])) ** 2
             + linear_rate(times, np.asarray([roe.delta_ey for roe in roes])) ** 2
@@ -147,9 +158,9 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         pair_id = f"{deputy.satellite_id}/{reference.satellite_id}"
         metric = StabilityMetrics(
             pair_id=pair_id,
-            secular_drift_delta_lambda_rad_s=fit.secular_drift_rad_s,
-            periodic_amplitude_delta_lambda_rad=fit.periodic_amplitude_rad,
-            secular_drift_raan_rad_s=dep_rates.raan_rad_s - ref_rates.raan_rad_s,
+            secular_drift_delta_lambda_rad_s=phase_fit.secular_drift_rad_s,
+            periodic_amplitude_delta_lambda_rad=phase_fit.periodic_amplitude_rad,
+            secular_drift_raan_rad_s=raan_fit.secular_drift_rad_s,
             eccentricity_vector_drift_rate_s=ex_rate,
             inclination_vector_drift_rate_s=ix_rate,
             minimum_pair_distance_m=float(distances[closest_index]),
@@ -164,13 +175,14 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                     "pair_id": pair_id,
                     "time_s": float(time_s),
                     "delta_lambda_rad": float(unwrapped_phase[index]),
-                    "trend_rad": float(fit.trend_rad[index]),
-                    "harmonic_rad": float(fit.harmonic_rad[index]),
+                    "trend_rad": float(phase_fit.trend_rad[index]),
+                    "harmonic_rad": float(phase_fit.harmonic_rad[index]),
                     "delta_a_mean_m": float(dep_series[index].a_m - ref_series[index].a_m),
                     "delta_ex": roe.delta_ex,
                     "delta_ey": roe.delta_ey,
                     "delta_ix": roe.delta_ix,
                     "delta_iy": roe.delta_iy,
+                    "delta_raan_rad": float(delta_raan[index]),
                     "pair_distance_m": float(distances[index]),
                 }
             )
@@ -203,7 +215,8 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         epoch=scenario.epoch,
         random_seed=scenario.seed,
         algorithm_versions={
-            "drift": "harmonic-lstsq-v1",
+            "phase_drift": "harmonic-lstsq-v1",
+            "raan_drift": "harmonic-lstsq-v1",
             "roe": "damico-v1",
             "screening": "j2-first-order-v1",
         },
