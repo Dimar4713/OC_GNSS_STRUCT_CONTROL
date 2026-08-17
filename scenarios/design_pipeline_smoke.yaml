@@ -1,0 +1,18 @@
+bounds:
+  - [-200.0, 200.0]
+  - [-0.0002, 0.0002]
+  - [-0.0002, 0.0002]
+  - [-0.0002, 0.0002]
+  - [-0.0002, 0.0002]
+  - [0.05, 0.20]
+lhs_samples: 8
+grid_levels: 0
+local_seeds: 2
+local_method: SLSQP
+nsga_population: 8
+nsga_generations: 3
+top_k: 2
+seed: 4713
+recommendation:
+  version: weighted-normalized-v1
+  weights: [0.45, 0.25, 0.30]
