@@ -84,12 +84,13 @@ def test_nondominated_mask_rejects_strictly_dominated_candidate() -> None:
 
 
 def test_pipeline_is_deterministic_and_pareto_set_is_feasible() -> None:
-    first = run_design_pipeline(_config(), evaluator=_evaluate, validator=_validator)
-    second = run_design_pipeline(_config(), evaluator=_evaluate, validator=_validator)
+    config = _config()
+    first = run_design_pipeline(config, evaluator=_evaluate, validator=_validator)
+    second = run_design_pipeline(config, evaluator=_evaluate, validator=_validator)
 
     assert first == second
     assert first.policy_version == "weighted-normalized-v1"
-    assert len(first.validation) == 2
+    assert len(first.validation) == min(config.top_k, len(first.pareto_candidate_ids))
     by_id = {record.candidate_id: record for record in first.records}
     assert first.recommendation_candidate_id in first.pareto_candidate_ids
     assert all(by_id[candidate_id].feasible for candidate_id in first.pareto_candidate_ids)
