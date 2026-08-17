@@ -49,18 +49,35 @@ jobs:
       - name: Report official Orekit data main revision
         shell: bash
         run: |
-          set -euo pipefail
-          current="$(git ls-remote https://gitlab.orekit.org/orekit/orekit-data.git refs/heads/main | awk '{print $1}')"
-          test -n "$current"
-          echo "OREKIT_DATA_MAIN_REVISION=$current"
+          set -uo pipefail
           echo "OREKIT_DATA_PINNED_REVISION=$OREKIT_DATA_REVISION"
+          for attempt in 1 2 3; do
+            if current="$(git ls-remote https://gitlab.orekit.org/orekit/orekit-data.git refs/heads/main 2>/tmp/orekit-data-main.err | awk '{print $1}')" && test -n "$current"; then
+              echo "OREKIT_DATA_MAIN_REVISION=$current"
+              exit 0
+            fi
+            echo "::warning::Orekit upstream main lookup attempt $attempt failed; pinned reviewed revision remains authoritative"
+            cat /tmp/orekit-data-main.err 2>/dev/null || true
+            sleep "$((attempt * 2))"
+          done
+          echo "::warning::Orekit upstream main revision unavailable; continuing with reviewed pinned authority $OREKIT_DATA_REVISION"
+          echo "OREKIT_DATA_MAIN_REVISION=unavailable"
       - name: Fetch pinned official Orekit data
         shell: bash
         run: |
           set -euo pipefail
           git init "$OREKIT_DATA_PATH"
           git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
-          git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"
+          fetched=false
+          for attempt in 1 2 3 4; do
+            if git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
+              fetched=true
+              break
+            fi
+            echo "::warning::Pinned Orekit data fetch attempt $attempt failed"
+            sleep "$((attempt * 2))"
+          done
+          test "$fetched" = true
           git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
           test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
       - name: Compile and execute Orekit integration tests
