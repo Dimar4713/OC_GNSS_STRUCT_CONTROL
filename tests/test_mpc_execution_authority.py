@@ -26,12 +26,16 @@ from constellation_control.mean_elements.roe import RelativeOrbitalElements, dam
 
 
 class FixedLinearizer:
+    def __init__(self) -> None:
+        self.calls = 0
+
     def linearize(
         self,
         request: PropagationRequest,
         times_s: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         del request
+        self.calls += 1
         assert np.allclose(times_s, np.asarray([0.0, 60.0]))
         a = np.eye(6, dtype=float)[None, :, :]
         b = np.zeros((1, 6, 3), dtype=float)
@@ -188,7 +192,12 @@ def _constraints(minimum_distance_m: float = 1000.0, reserve: float = 0.1) -> Co
     )
 
 
-def _controller(propagator: ReplayPropagator, *, mib: float = 1.0e-3, trust_phase: float = 1.0e-3) -> RecedingHorizonMPCController:
+def _controller(
+    propagator: ReplayPropagator,
+    *,
+    mib: float = 1.0e-3,
+    trust_phase: float = 1.0e-3,
+) -> RecedingHorizonMPCController:
     controller = RecedingHorizonMPCController(
         propagator,
         MPCExecutionPolicy(
@@ -204,10 +213,13 @@ def _controller(propagator: ReplayPropagator, *, mib: float = 1.0e-3, trust_phas
     return controller
 
 
-def _run(controller: RecedingHorizonMPCController):
+def _run(
+    controller: RecedingHorizonMPCController,
+    constraints: ConstraintConfig | None = None,
+):
     return controller.authorize_first_maneuver(
         _request(),
-        _constraints(),
+        _constraints() if constraints is None else constraints,
         np.asarray([0.0, 60.0]),
         np.asarray([True]),
     )
@@ -260,8 +272,32 @@ def test_rejects_sub_minimum_impulse_before_replay() -> None:
     assert propagator.calls == 0
 
 
+def test_rejects_propellant_reserve_violation_before_replay() -> None:
+    propagator = ReplayPropagator()
+    evidence = _run(_controller(propagator, mib=1.0e-6), _constraints(reserve=0.99999))
+    assert not evidence.authorized
+    assert evidence.reason == "propellant-reserve-violation"
+    assert evidence.propellant_remaining_kg < evidence.required_reserve_kg
+    assert propagator.calls == 0
+
+
 def test_rejects_force_model_fingerprint_mismatch() -> None:
     propagator = ReplayPropagator(fingerprint_matches=False)
     evidence = _run(_controller(propagator))
     assert not evidence.authorized
     assert evidence.reason == "replay-force-model-fingerprint-mismatch"
+
+
+def test_each_receding_horizon_call_relinearizes_before_replay() -> None:
+    propagator = ReplayPropagator()
+    controller = _controller(propagator)
+    linearizer = FixedLinearizer()
+    controller._linearizer = linearizer  # noqa: SLF001 - verifies mandatory relinearization behavior
+
+    first = _run(controller)
+    second = _run(controller)
+
+    assert first.authorized and second.authorized
+    assert linearizer.calls == 2
+    assert propagator.calls == 2
+    assert first.requires_relinearization and second.requires_relinearization
