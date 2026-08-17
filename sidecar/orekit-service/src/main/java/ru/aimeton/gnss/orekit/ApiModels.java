@@ -3,6 +3,8 @@ package ru.aimeton.gnss.orekit;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 final class ApiModels {
     private ApiModels() {}
 
@@ -38,6 +40,7 @@ final class ApiModels {
 
     record ForceModel(
             String mode,
+            String gravityModel,
             double muM3S2,
             double referenceRadiusM,
             double flattening,
@@ -73,7 +76,10 @@ final class ApiModels {
             int seed,
             String forceModelFingerprint) {}
 
-    record OsculatingState(double epochS, List<Double> rM, List<Double> vMS) {}
+    record OsculatingState(
+            double epochS,
+            List<Double> rM,
+            @JsonProperty("v_m_s") List<Double> vMS) {}
 
     record PropagationResult(
             String backend,

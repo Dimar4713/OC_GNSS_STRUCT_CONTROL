@@ -15,6 +15,10 @@ class ForceMode(StrEnum):
     VALIDATION = "validation"
 
 
+class GravityModelName(StrEnum):
+    EIGEN_6S = "EIGEN-6S"
+
+
 class FrameName(StrEnum):
     EME2000 = "EME2000"
     GCRF = "GCRF"
@@ -109,6 +113,7 @@ class ConstellationSpec(BaseModel):
 class ForceModelConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
     mode: ForceMode
+    gravity_model: GravityModelName | None = None
     mu_m3_s2: float = Field(gt=0.0)
     reference_radius_m: float = Field(gt=0.0)
     flattening: float = Field(ge=0.0, lt=1.0)
@@ -123,9 +128,11 @@ class ForceModelConfig(BaseModel):
     relativity: bool = False
 
     @model_validator(mode="after")
-    def validate_gravity_order(self) -> ForceModelConfig:
+    def validate_gravity_configuration(self) -> ForceModelConfig:
         if self.gravity_order > self.gravity_degree:
             raise ValueError("gravity_order must not exceed gravity_degree")
+        if self.mode in (ForceMode.DESIGN, ForceMode.VALIDATION) and self.gravity_model is None:
+            raise ValueError("high-fidelity force model requires explicit gravity_model")
         return self
 
     def fingerprint(self) -> str:

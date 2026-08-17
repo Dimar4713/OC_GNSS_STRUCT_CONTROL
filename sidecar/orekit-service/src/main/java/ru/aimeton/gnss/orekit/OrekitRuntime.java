@@ -13,6 +13,7 @@ import java.util.List;
 import org.orekit.data.DataContext;
 import org.orekit.data.DirectoryCrawler;
 import org.orekit.data.LazyLoadedDataContext;
+import org.orekit.forces.gravity.potential.ICGEMFormatReader;
 import org.orekit.frames.Frame;
 import org.orekit.time.AbsoluteDate;
 import org.orekit.time.DateTimeComponents;
@@ -21,6 +22,8 @@ import org.orekit.utils.IERSConventions;
 
 final class OrekitRuntime {
     static final String OREKIT_VERSION = "13.1.7";
+    static final String GRAVITY_MODEL = "EIGEN-6S";
+    private static final String GRAVITY_MODEL_FILE_PATTERN = "^eigen-6s-truncated$";
 
     private final LazyLoadedDataContext context;
     private final String dataSha256;
@@ -35,6 +38,14 @@ final class OrekitRuntime {
         this.context = new LazyLoadedDataContext();
         this.context.getDataProvidersManager().clearProviders();
         this.context.getDataProvidersManager().addProvider(new DirectoryCrawler(dataPath.toFile()));
+
+        // Production gravity authority is explicit. Do not allow Orekit's default
+        // reader ordering to select another coefficient family from the same data tree.
+        var gravityFields = this.context.getGravityFields();
+        gravityFields.clearPotentialCoefficientsReaders();
+        gravityFields.addPotentialCoefficientsReader(
+                new ICGEMFormatReader(GRAVITY_MODEL_FILE_PATTERN, false, this.context.getTimeScales().getTT()));
+
         DataContext.setDefault(this.context);
         // Fail at startup if critical time/EOP data cannot be resolved.
         this.context.getTimeScales().getUTC();

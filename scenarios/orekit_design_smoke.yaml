@@ -8,6 +8,7 @@ output_step_s: 900.0
 orekit_sidecar_url: http://127.0.0.1:8081
 force_model:
   mode: design
+  gravity_model: EIGEN-6S
   mu_m3_s2: 3.986004418e14
   reference_radius_m: 6378137.0
   flattening: 0.0033528106647474805

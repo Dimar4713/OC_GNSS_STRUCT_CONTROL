@@ -78,6 +78,7 @@ final class PropagationEngine {
         metadata.put("orekit_data_sha256", runtime.dataSha256());
         metadata.put("frame", request.frame());
         metadata.put("time_scale", request.timeScale());
+        metadata.put("gravity_model", OrekitRuntime.GRAVITY_MODEL);
         metadata.put("gravity_degree", Integer.toString(request.forceModel().gravityDegree()));
         metadata.put("gravity_order", Integer.toString(request.forceModel().gravityOrder()));
         metadata.put("gravity_mu_m3_s2", Double.toString(gravityIdentity.getMu()));
@@ -355,6 +356,14 @@ final class PropagationEngine {
         if (request.forceModelFingerprint() == null || request.forceModelFingerprint().isBlank()) {
             throw new IllegalArgumentException("force_model_fingerprint is mandatory");
         }
+        if (request.forceModel() == null) {
+            throw new IllegalArgumentException("force_model is mandatory");
+        }
+        if (!OrekitRuntime.GRAVITY_MODEL.equals(request.forceModel().gravityModel())) {
+            throw new IllegalArgumentException(
+                    "unsupported gravity_model: requested=" + request.forceModel().gravityModel()
+                            + " runtime=" + OrekitRuntime.GRAVITY_MODEL);
+        }
         if (request.satellites() == null || request.satellites().isEmpty()) {
             throw new IllegalArgumentException("at least one satellite is required");
         }
@@ -378,7 +387,8 @@ final class PropagationEngine {
         double muRelative = Math.abs(providerMu - config.muM3S2()) / config.muM3S2();
         if (muRelative > GRAVITY_MU_RELATIVE_TOLERANCE) {
             throw new IllegalArgumentException(
-                    "configured central-body mu disagrees with loaded gravity field: mu_rel=" + muRelative);
+                    "configured central-body mu disagrees with loaded gravity field: configured_mu="
+                            + config.muM3S2() + " provider_mu=" + providerMu + " mu_rel=" + muRelative);
         }
     }
 
