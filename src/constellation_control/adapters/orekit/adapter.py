@@ -11,8 +11,9 @@ class OrekitSidecarPropagator:
     """HTTP adapter for the authoritative Java Orekit service.
 
     The sidecar exposes POST /v1/propagate. High-fidelity execution fails closed:
-    backend identity, force-model fingerprint, Orekit version and Orekit-data
-    fingerprint are all validated before a result enters application code.
+    backend identity, force-model fingerprint, gravity authority, Orekit version
+    and Orekit-data fingerprint are all validated before a result enters
+    application code.
     """
 
     def __init__(self, base_url: str, timeout_s: float = 300.0) -> None:
@@ -42,4 +43,14 @@ class OrekitSidecarPropagator:
             raise RuntimeError("Orekit result omitted backend version")
         if not result.backend_metadata.get("orekit_data_sha256"):
             raise RuntimeError("Orekit result omitted orekit-data fingerprint")
+
+        requested_gravity = request.force_model.gravity_model
+        if requested_gravity is None:
+            raise RuntimeError("high-fidelity Orekit request omitted explicit gravity authority")
+        actual_gravity = result.backend_metadata.get("gravity_model")
+        if actual_gravity != requested_gravity.value:
+            raise RuntimeError(
+                "Orekit result gravity authority does not match request: "
+                f"requested={requested_gravity.value} actual={actual_gravity}"
+            )
         return result
