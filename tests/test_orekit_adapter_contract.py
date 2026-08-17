@@ -11,6 +11,7 @@ from constellation_control.domain.models import (
     ForceModelConfig,
     ForceMode,
     FrameName,
+    GravityModelName,
     IntegratorConfig,
     MeanElementDefinition,
     MeanOrbit,
@@ -24,6 +25,7 @@ from constellation_control.domain.models import (
 def _request() -> PropagationRequest:
     force = ForceModelConfig(
         mode=ForceMode.DESIGN,
+        gravity_model=GravityModelName.EIGEN_6S,
         mu_m3_s2=3.986004418e14,
         reference_radius_m=6378137.0,
         flattening=1.0 / 298.257223563,
@@ -95,7 +97,7 @@ class _FakeResponse:
 
 def _result_payload(request: PropagationRequest, *, include_data_hash: bool = True) -> dict[str, Any]:
     orbit = request.satellites[0].mean_orbit.model_dump(mode="json")
-    metadata = {"orekit_version": "13.1.7"}
+    metadata = {"orekit_version": "13.1.7", "gravity_model": "EIGEN-6S"}
     if include_data_hash:
         metadata["orekit_data_sha256"] = "a" * 64
     return {
@@ -125,7 +127,9 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
 
     assert captured["timeout"] == 12.0
     assert captured["body"]["force_model_fingerprint"] == request.force_model.fingerprint()
+    assert captured["body"]["force_model"]["gravity_model"] == "EIGEN-6S"
     assert result.backend_metadata["orekit_data_sha256"] == "a" * 64
+    assert result.backend_metadata["gravity_model"] == "EIGEN-6S"
 
 
 def test_adapter_rejects_result_without_orekit_data_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
