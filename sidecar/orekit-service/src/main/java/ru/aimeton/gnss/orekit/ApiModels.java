@@ -60,7 +60,10 @@ final class ApiModels {
             double absTolerance,
             double relTolerance) {}
 
-    record Maneuver(String satelliteId, double timeS, List<Double> dvRtnMS) {}
+    record Maneuver(
+            String satelliteId,
+            double timeS,
+            @JsonProperty("dv_rtn_m_s") List<Double> dvRtnMS) {}
 
     record PropagationRequest(
             String scenarioId,

@@ -26,4 +26,20 @@ final class WireContractTest {
         OsculatingState restored = mapper.readValue(json, OsculatingState.class);
         assertEquals(state, restored);
     }
+
+    @Test
+    void maneuverDeltaVUsesCanonicalPythonWireName() throws Exception {
+        var mapper = OrekitServiceMain.mapper();
+        Maneuver maneuver = new Maneuver(
+                "SYNTH-1",
+                0.0,
+                List.of(0.1, 0.2, 0.3));
+
+        String json = mapper.writeValueAsString(maneuver);
+        assertTrue(json.contains("\"dv_rtn_m_s\""));
+        assertFalse(json.contains("\"dv_rtn_ms\""));
+
+        Maneuver restored = mapper.readValue(json, Maneuver.class);
+        assertEquals(maneuver, restored);
+    }
 }
