@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from math import isclose, pi
 from pathlib import Path
 
@@ -29,6 +29,7 @@ def _force() -> ForceModelConfig:
         mode=ForceMode.SCREENING,
         mu_m3_s2=3.986004418e14,
         reference_radius_m=6378137.0,
+        flattening=1.0 / 298.257223563,
         j2=0.00108262668,
         earth_rotation_rate_rad_s=7.292115e-5,
         gravity_degree=2,
@@ -68,7 +69,7 @@ def _spacecraft() -> SpacecraftModel:
 def _request(satellites: tuple[SatelliteSpec, ...]) -> PropagationRequest:
     return PropagationRequest(
         scenario_id="screening-validation",
-        epoch=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        epoch=datetime(2026, 1, 1, tzinfo=UTC),
         frame=FrameName.EME2000,
         time_scale=TimeScaleName.UTC,
         satellites=satellites,
