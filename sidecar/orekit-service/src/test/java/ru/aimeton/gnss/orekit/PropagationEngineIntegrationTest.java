@@ -69,7 +69,27 @@ final class PropagationEngineIntegrationTest {
         assertTrue(design.backendMetadata().get("orekit_data_sha256").length() == 64);
     }
 
+    @Test
+    void positiveTangentialImpulseRaisesMeanSemiMajorAxis() {
+        PropagationResult baseline = engine.propagate(request("validation", false, false, false));
+        Maneuver maneuver = new Maneuver("SYNTH-1", 0.0, List.of(0.0, 0.1, 0.0));
+        PropagationResult maneuvered = engine.propagate(
+                request("validation", false, false, false, List.of(maneuver)));
+
+        double baselineA = baseline.meanOrbits().get("SYNTH-1").get(2).aM();
+        double maneuveredA = maneuvered.meanOrbits().get("SYNTH-1").get(2).aM();
+        assertTrue(
+                maneuveredA > baselineA + 100.0,
+                () -> "positive QSW/RTN tangential impulse must raise mean a: baseline="
+                        + baselineA + " maneuvered=" + maneuveredA);
+    }
+
     private static PropagationRequest request(String mode, boolean moon, boolean sun, boolean srp) {
+        return request(mode, moon, sun, srp, List.of());
+    }
+
+    private static PropagationRequest request(
+            String mode, boolean moon, boolean sun, boolean srp, List<Maneuver> maneuvers) {
         String fingerprint = "integration-force-model-sha256";
         MeanElementDefinition definition = new MeanElementDefinition(
                 "equinoctial", "synthetic-integration-input", fingerprint);
@@ -104,7 +124,7 @@ final class PropagationEngineIntegrationTest {
                 "EME2000",
                 "UTC",
                 List.of(satellite),
-                List.of(),
+                maneuvers,
                 600.0,
                 300.0,
                 forceModel,
