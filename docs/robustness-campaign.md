@@ -17,6 +17,8 @@ A final campaign requires:
 
 Screening or DSST results cannot satisfy final robustness authority. A mismatch aborts the realization rather than silently falling back.
 
+The permanent high-fidelity CI runs the robustness campaign after real Orekit linearization and MPC maneuver authorization, then verifies campaign authority/statistics before the existing design/top-K regression gate. The downloadable diagnostics artifact must retain the robustness log and full `.e2e-runs/robustness` tree.
+
 ## Reproducibility and parallelism
 
 All random samples are generated in deterministic realization order **before** worker dispatch. The worker count therefore cannot affect random draws, sample hashes or aggregate statistics.
@@ -24,11 +26,13 @@ All random samples are generated in deterministic realization order **before** w
 Each realization stores:
 
 - realization index;
-- realization seed;
+- full 63-bit realization seed used as lineage evidence;
 - full sampled uncertainty vector;
 - sample SHA-256;
 - outcome and violated constraints;
 - campaign configuration hash.
+
+The Python-to-Java propagation request uses a deterministic positive-int wire seed `realization_seed mod (2^31-1)`. This mapping does not alter the sampled realization or its stored lineage and is recorded in campaign provenance.
 
 Bounded `ThreadPoolExecutor` parallelism is used only after samples are fixed.
 
