@@ -38,31 +38,88 @@ jobs:
           java-version: '17'
           cache: maven
           cache-dependency-path: sidecar/orekit-service/pom.xml
-      - name: Load reviewed Orekit data revision
+      - name: Load reviewed Orekit data authority
         shell: bash
         run: |
           set -euo pipefail
           pinned="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-revision.txt)"
+          physical_sha="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-sha256.txt)"
+          mirror_revision="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-mirror-revision.txt)"
           [[ "$pinned" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$physical_sha" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$mirror_revision" =~ ^[0-9a-f]{40}$ ]]
           echo "OREKIT_DATA_REVISION=$pinned" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_SHA256=$physical_sha" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_MIRROR_REVISION=$mirror_revision" >> "$GITHUB_ENV"
           echo "OREKIT_DATA_PINNED_REVISION=$pinned"
+          echo "OREKIT_DATA_PINNED_SHA256=$physical_sha"
+          echo "OREKIT_DATA_PINNED_MIRROR_REVISION=$mirror_revision"
       - name: Report official Orekit data main revision
         shell: bash
         run: |
-          set -euo pipefail
-          current="$(git ls-remote https://gitlab.orekit.org/orekit/orekit-data.git refs/heads/main | awk '{print $1}')"
-          test -n "$current"
-          echo "OREKIT_DATA_MAIN_REVISION=$current"
+          set -uo pipefail
           echo "OREKIT_DATA_PINNED_REVISION=$OREKIT_DATA_REVISION"
-      - name: Fetch pinned official Orekit data
+          for attempt in 1 2 3; do
+            if current="$(timeout 10s git ls-remote https://gitlab.orekit.org/orekit/orekit-data.git refs/heads/main 2>/tmp/orekit-data-main.err | awk '{print $1}')" && test -n "$current"; then
+              echo "OREKIT_DATA_MAIN_REVISION=$current"
+              exit 0
+            fi
+            echo "::warning::Orekit upstream main lookup attempt $attempt failed; pinned reviewed revision remains authoritative"
+            cat /tmp/orekit-data-main.err 2>/dev/null || true
+            sleep "$((attempt * 2))"
+          done
+          echo "::warning::Orekit upstream main revision unavailable; continuing with reviewed pinned authority $OREKIT_DATA_REVISION"
+          echo "OREKIT_DATA_MAIN_REVISION=unavailable"
+      - name: Fetch reviewed Orekit data with verified fallback
         shell: bash
         run: |
           set -euo pipefail
           git init "$OREKIT_DATA_PATH"
           git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
-          git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"
-          git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
-          test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
+          fetched=false
+          for attempt in 1 2 3 4; do
+            if timeout 30s git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
+              fetched=true
+              break
+            fi
+            echo "::warning::Official pinned Orekit data fetch attempt $attempt failed"
+            sleep "$((attempt * 2))"
+          done
+
+          if test "$fetched" = true; then
+            git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
+            test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
+            data_source="official-gitlab-exact-revision"
+          else
+            echo "::warning::Official Orekit data unavailable; using pinned transport mirror subject to full physical fingerprint verification"
+            rm -rf "$OREKIT_DATA_PATH"
+            mirror_dir="$RUNNER_TEMP/orekit-data-mirror"
+            rm -rf "$mirror_dir"
+            git init "$mirror_dir"
+            git -C "$mirror_dir" remote add origin https://github.com/fndtnl/orekit-data-snapshot.git
+            mirror_fetched=false
+            for attempt in 1 2 3; do
+              if timeout 30s git -C "$mirror_dir" fetch --depth 1 origin "$OREKIT_DATA_MIRROR_REVISION"; then
+                mirror_fetched=true
+                break
+              fi
+              echo "::warning::Pinned GitHub transport mirror fetch attempt $attempt failed"
+              sleep "$((attempt * 2))"
+            done
+            test "$mirror_fetched" = true
+            git -C "$mirror_dir" checkout --detach FETCH_HEAD
+            test "$(git -C "$mirror_dir" rev-parse HEAD)" = "$OREKIT_DATA_MIRROR_REVISION"
+            test -d "$mirror_dir/orekit/orekit-data"
+            mkdir -p "$OREKIT_DATA_PATH"
+            cp -a "$mirror_dir/orekit/orekit-data/." "$OREKIT_DATA_PATH/"
+            data_source="github-transport-mirror-physical-sha-verified"
+          fi
+
+          actual_sha="$(python3 scripts/fingerprint_orekit_data.py "$OREKIT_DATA_PATH")"
+          echo "OREKIT_DATA_ACTUAL_SHA256=$actual_sha"
+          test "$actual_sha" = "$OREKIT_DATA_SHA256"
+          echo "OREKIT_DATA_SOURCE=$data_source" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_SOURCE=$data_source"
       - name: Compile and execute Orekit integration tests
         shell: bash
         run: |
@@ -98,8 +155,7 @@ jobs:
           assert health['orekit_version'] == '13.1.7'
           assert health['gravity_model'] == 'EIGEN-6S'
           assert health['orekit_data_revision'] == os.environ['OREKIT_DATA_REVISION']
-          assert len(health['orekit_data_sha256']) == 64
-          int(health['orekit_data_sha256'], 16)
+          assert health['orekit_data_sha256'] == os.environ['OREKIT_DATA_SHA256']
           PY
               exit 0
             fi
