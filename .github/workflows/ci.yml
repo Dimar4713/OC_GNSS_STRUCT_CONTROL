@@ -170,6 +170,26 @@ jobs:
             --output .e2e-runs/linearization
           test -s .e2e-runs/linearization/orekit_roe_linearization.npz
           test -s .e2e-runs/linearization/orekit_roe_linearization.json
+      - name: Execute full design search and top-K numerical replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          constellation-control design \
+            scenarios/design_pipeline_screening_smoke.yaml \
+            scenarios/design_pipeline_validation_smoke.yaml \
+            scenarios/design_pipeline_smoke.yaml \
+            --output .e2e-runs/design-pipeline \
+            > /tmp/design-pipeline-e2e.log 2>&1
+          cat /tmp/design-pipeline-e2e.log
+          run_dir="$(find .e2e-runs/design-pipeline/synthetic-design-pipeline-smoke--design -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$run_dir"
+          echo "DESIGN_PIPELINE_RUN_DIR=$run_dir" >> "$GITHUB_ENV"
+      - name: Verify design recommendation authority and lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_design_pipeline_run.py "$DESIGN_PIPELINE_RUN_DIR" \
+            --data-revision "$OREKIT_DATA_REVISION"
       - name: Stop Orekit sidecar
         if: always()
         shell: bash
@@ -191,5 +211,6 @@ jobs:
             /tmp/orekit-health.json
             /tmp/design-e2e.log
             /tmp/validation-e2e.log
+            /tmp/design-pipeline-e2e.log
             sidecar/orekit-service/target/surefire-reports/
             .e2e-runs/
