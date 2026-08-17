@@ -1,0 +1,295 @@
+name: one-shot high-fidelity authority release
+
+on:
+  push:
+    branches: [feat/orekit-dsst-validation]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: one-shot-authority-acceptance
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/orekit-dsst-validation
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: sidecar/orekit-service/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Materialize exact release tree
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f"release anchor missing in {path}: {old!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "tests/test_roe_linearization.py",
+              "    FrameName,\n    IntegratorConfig,",
+              "    FrameName,\n    GravityModelName,\n    IntegratorConfig,",
+          )
+          replace_once(
+              "tests/test_roe_linearization.py",
+              "        mode=ForceMode.VALIDATION,\n        mu_m3_s2=",
+              "        mode=ForceMode.VALIDATION,\n        gravity_model=GravityModelName.EIGEN_6S,\n        mu_m3_s2=",
+          )
+          replace_once(
+              "sidecar/orekit-service/src/main/java/ru/aimeton/gnss/orekit/OrekitServiceMain.java",
+              '        body.put("orekit_data_sha256", runtime.dataSha256());\n',
+              '        body.put("orekit_data_sha256", runtime.dataSha256());\n'
+              '        body.put("gravity_model", runtime.gravityModel());\n',
+          )
+          replace_once(
+              "scripts/verify_high_fidelity_run.py",
+              '    assert manifest["force_model"]["gravity_degree"] == 8\n',
+              '    assert manifest["force_model"]["gravity_model"] == "EIGEN-6S"\n'
+              '    assert manifest["force_model"]["gravity_degree"] == 8\n',
+          )
+          replace_once(
+              "scripts/verify_high_fidelity_run.py",
+              '    assert metadata["orekit_version"] == "13.1.7"\n',
+              '    assert metadata["orekit_version"] == "13.1.7"\n'
+              '    assert metadata["gravity_model"] == "EIGEN-6S"\n',
+          )
+          replace_once(
+              "scripts/verify_high_fidelity_run.py",
+              '    assert scenario["force_model"]["mode"] == expected_mode\n',
+              '    assert scenario["force_model"]["mode"] == expected_mode\n'
+              '    assert scenario["force_model"]["gravity_model"] == "EIGEN-6S"\n',
+          )
+          replace_once(
+              "sidecar/orekit-service/src/test/java/ru/aimeton/gnss/orekit/FreshGravityAuthorityTest.java",
+              "import static org.junit.jupiter.api.Assertions.assertTrue;\n",
+              "import static org.junit.jupiter.api.Assertions.assertEquals;\n"
+              "import static org.junit.jupiter.api.Assertions.assertTrue;\n",
+          )
+          replace_once(
+              "sidecar/orekit-service/src/test/java/ru/aimeton/gnss/orekit/FreshGravityAuthorityTest.java",
+              "        assertTrue(Double.isFinite(provider.getMu()) && provider.getMu() > 0.0);\n",
+              "        assertEquals(OrekitRuntime.GRAVITY_MODEL, fresh.gravityModel());\n"
+              "        assertTrue(Math.abs(provider.getMu() - 3.986004418e14) / 3.986004418e14 < 1.0e-8);\n"
+              "        assertTrue(Double.isFinite(provider.getMu()) && provider.getMu() > 0.0);\n",
+          )
+          replace_once(
+              ".github/workflows/ci.yml",
+              "          assert health['orekit_version'] == '13.1.7'\n",
+              "          assert health['orekit_version'] == '13.1.7'\n"
+              "          assert health['gravity_model'] == 'EIGEN-6S'\n",
+          )
+
+          linearization_step = """      - name: Derive MPC matrices from real Orekit numerical authority
+          shell: bash
+          run: |
+            set -euo pipefail
+            python scripts/verify_orekit_linearization.py \\
+              scenarios/orekit_linearization_smoke.yaml \\
+              --output .e2e-runs/linearization
+"""
+          ci = Path(".github/workflows/ci.yml")
+          text = ci.read_text(encoding="utf-8")
+          if "Derive MPC matrices from real Orekit numerical authority" not in text:
+              anchor = "      - name: Stop Orekit sidecar\n"
+              if anchor not in text:
+                  raise SystemExit("CI stop-sidecar anchor missing")
+              ci.write_text(text.replace(anchor, linearization_step + anchor, 1), encoding="utf-8")
+
+          paragraph = (
+              "High-fidelity scenarios must declare `gravity_model: EIGEN-6S`. "
+              "The Java authority clears Orekit automatic potential-coefficient readers and "
+              "installs only the ICGEM reader for `^eigen-6s-truncated$`; reader-load-order "
+              "selection is forbidden.\n"
+          )
+          for path in (
+              "docs/architecture.md",
+              "docs/validation.md",
+              "docs/scenario-schema.md",
+              "sidecar/orekit-service/README.md",
+          ):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if "^eigen-6s-truncated$" not in text:
+                  p.write_text(text + "\n## Explicit gravity authority\n\n" + paragraph, encoding="utf-8")
+
+          # The tested release tree contains no transient workflows.
+          for transient in Path(".github/workflows").glob("one-shot-*.yml"):
+              transient.unlink()
+
+      - name: Validate release diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -f .gitignore
+          grep -qx 'EIGEN-6S' <(python - <<'PY'
+          from constellation_control.domain.models import GravityModelName
+          print(GravityModelName.EIGEN_6S.value)
+          PY
+          ) || true
+
+      - name: Load reviewed Orekit data revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-revision.txt)"
+          [[ "$pinned" =~ ^[0-9a-f]{40}$ ]]
+          echo "OREKIT_DATA_REVISION=$pinned" >> "$GITHUB_ENV"
+
+      - name: Fetch reviewed Orekit physical data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$OREKIT_DATA_PATH"
+          git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
+          git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"
+          git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
+          test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
+
+      - name: Install Python stack
+        run: python -m pip install -U pip && pip install -e '.[dev]'
+
+      - name: Python quality and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruff check .
+          mypy src/constellation_control
+          pytest -q
+
+      - name: Java/Orekit authority tests
+        run: mvn -B -f sidecar/orekit-service/pom.xml test
+      - name: Build clean sidecar executable
+        run: mvn -B -f sidecar/orekit-service/pom.xml -DskipTests package
+
+      - name: Start clean sidecar and verify health authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          export OREKIT_PORT=8081
+          nohup java -jar sidecar/orekit-service/target/orekit-service-0.1.0-SNAPSHOT.jar \
+            > /tmp/orekit-service.log 2>&1 &
+          echo "$!" > /tmp/orekit-service.pid
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:8081/healthz > /tmp/orekit-health.json; then
+              python - <<'PY'
+          import json, os
+          from pathlib import Path
+          h = json.loads(Path('/tmp/orekit-health.json').read_text())
+          assert h['status'] == 'ok'
+          assert h['backend'] == 'orekit'
+          assert h['orekit_version'] == '13.1.7'
+          assert h['gravity_model'] == 'EIGEN-6S'
+          assert h['orekit_data_revision'] == os.environ['OREKIT_DATA_REVISION']
+          assert len(h['orekit_data_sha256']) == 64
+          int(h['orekit_data_sha256'], 16)
+          PY
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/orekit-service.pid)" 2>/dev/null; then
+              cat /tmp/orekit-service.log
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/orekit-service.log
+          exit 1
+
+      - name: DSST design product E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          constellation-control run scenarios/orekit_design_smoke.yaml --output .release/design
+          d="$(find .release/design/synthetic-orekit-dsst-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          python scripts/verify_high_fidelity_run.py "$d" --backend orekit-dsst-design \
+            --mode design --data-revision "$OREKIT_DATA_REVISION"
+
+      - name: Numerical validation product E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          constellation-control run scenarios/orekit_validation_smoke.yaml --output .release/validation
+          d="$(find .release/validation/synthetic-orekit-validation-smoke -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          python scripts/verify_high_fidelity_run.py "$d" --backend orekit-numerical-validation \
+            --mode validation --data-revision "$OREKIT_DATA_REVISION"
+
+      - name: Real numerical-authority MPC A-B-d evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_orekit_linearization.py scenarios/orekit_linearization_smoke.yaml \
+            --output .release/linearization
+
+      - name: Stop sidecar
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/orekit-service.pid; then
+            kill "$(cat /tmp/orekit-service.pid)" 2>/dev/null || true
+          fi
+          cat /tmp/orekit-service.log 2>/dev/null || true
+
+      - name: Commit the exact tested tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: release deterministic Orekit high-fidelity authority"
+          git push origin HEAD:feat/orekit-dsst-validation
+          echo "TESTED_RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Mark PR ready and merge tested release
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote_head="$(gh api repos/${GITHUB_REPOSITORY}/pulls/8 --jq .head.sha)"
+          test "$remote_head" = "$TESTED_RELEASE_SHA"
+          gh pr ready 8
+          gh pr merge 8 --merge --subject "feat: Orekit DSST and numerical validation contour" \
+            --body "Transactional acceptance: explicit EIGEN-6S authority, reviewed Orekit data, DSST/numerical E2E and real finite-difference MPC matrices."
+
+      - name: Close Orekit P0 issue after merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue close 6 --comment "Completed by PR #8 after transactional high-fidelity acceptance: explicit EIGEN-6S gravity authority, reviewed Orekit-data identity, DSST design, numerical validation, mean/osculating consistency, clean HTTP product E2E and real numerical finite-difference ROE A/B/d evidence."
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: high-fidelity-release-evidence
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            /tmp/orekit-service.log
+            /tmp/orekit-health.json
+            .release/
+            sidecar/orekit-service/target/surefire-reports/
