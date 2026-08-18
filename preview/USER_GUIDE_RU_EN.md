@@ -1,0 +1,86 @@
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.1
+# Руководство пользователя / User Guide
+
+## Русский
+
+### 1. Запуск
+1. Распакуйте ZIP в локальный каталог Windows 10.
+2. Убедитесь, что установлен Python 3.12.
+3. Для Design/Validation дополнительно требуется Java 17+.
+4. Запустите `start-preview.bat`.
+5. Откроется `http://127.0.0.1:8765`.
+
+### 2. Язык
+В правом верхнем углу выберите **Русский** или **English**. Выбор сохраняется в браузере.
+
+### 3. Сценарии
+В списке **Сценарий** показываются только YAML, которые проходят проверку как `ScenarioConfig`. Конфигурации Design pipeline и Robustness campaign вынесены в блок **Другие YAML-входы** и не запускаются кнопкой обычного сценария.
+
+### 4. Authority
+Перед запуском проверьте статус:
+- SCREENING — Python analytical/synthetic mean-element authority;
+- DESIGN — требуется Orekit DSST;
+- VALIDATION — требуется Orekit Numerical.
+
+Если Design/Validation показывают **НЕ ГОТОВО**, запуск high fidelity не должен подменяться Screening. Проверьте наличие Java 17+, `preview/runtime/orekit-service.jar` и `preview/runtime/orekit-data/`.
+
+### 5. Проверка входных данных
+Перед расчётом просмотрите:
+- эпоху, frame и time scale;
+- длительность и шаг;
+- force-model fingerprint;
+- таблицу КА;
+- **Эксперт / YAML**;
+- **Нормализованный сценарий**.
+
+### 6. Запуск и результаты
+Нажмите **Запустить выбранный сценарий**. После завершения появится ссылка **Открыть инженерный отчёт**. Результаты сохраняются в `preview/results/`.
+
+### 7. Физическое правило
+Вековое поведение оценивается по средним элементам, согласованным с той же моделью сил. Мгновенная оскулирующая большая полуось не используется как критерий векового ухода/управления. Cartesian state применяется для истинных физических расстояний, навигационной геометрии и ground track.
+
+### 8. Обратная связь
+Заполняйте `preview/EXPERT_FEEDBACK.md` либо присылайте: сценарий → действие → ожидаемый результат → фактический результат → замечание.
+
+---
+
+## English
+
+### 1. Start
+1. Extract the ZIP to a local Windows 10 directory.
+2. Make sure Python 3.12 is installed.
+3. Design/Validation additionally require Java 17+.
+4. Run `start-preview.bat`.
+5. The UI opens at `http://127.0.0.1:8765`.
+
+### 2. Language
+Select **Русский** or **English** in the upper-right corner. The choice is stored in the browser.
+
+### 3. Scenarios
+The **Scenario** selector contains only YAML files that validate as `ScenarioConfig`. Design pipeline and Robustness campaign configurations are listed under **Other YAML inputs** and are not executed with the normal scenario button.
+
+### 4. Authority
+Check the status before execution:
+- SCREENING — Python analytical/synthetic mean-element authority;
+- DESIGN — Orekit DSST required;
+- VALIDATION — Orekit Numerical required.
+
+If Design/Validation show **NOT READY**, high fidelity must not silently fall back to Screening. Check Java 17+, `preview/runtime/orekit-service.jar`, and `preview/runtime/orekit-data/`.
+
+### 5. Input review
+Before a run inspect:
+- epoch, frame and time scale;
+- duration and output step;
+- force-model fingerprint;
+- spacecraft table;
+- **Expert / YAML**;
+- **Normalized scenario**.
+
+### 6. Run and results
+Click **Run selected scenario**. After completion use **Open engineering report**. Run evidence is retained under `preview/results/`.
+
+### 7. Physics rule
+Secular behavior is evaluated using mean elements consistent with the same force model. Instantaneous osculating semi-major axis is not used as a secular drift/control criterion. Cartesian state is used for true physical distance, navigation geometry and ground-track evidence.
+
+### 8. Feedback
+Use `preview/EXPERT_FEEDBACK.md` or report: scenario → action → expected result → actual result → engineering comment.
