@@ -1,42 +1,28 @@
-# constellation-control
+# OC GNSS STRUCT CONTROL / constellation-control
 
-Production-oriented research platform for reproducible analysis, modelling and optimal control of stable orbital constellations.
+## Русский
 
-> **Critical invariant:** an instantaneous osculating semi-major axis is never used as a secular-drift criterion. Drift comparison and design optimisation operate only on mean elements whose definition is bound to the same force-model configuration used by propagation.
+Платформа для воспроизводимого анализа, моделирования, проектирования и управления устойчивыми орбитальными группировками.
 
-## Project tree
+> **Критический инвариант:** мгновенная оскулирующая большая полуось никогда не используется как критерий векового ухода. Сравнение дрейфа и оптимизация выполняются только по средним элементам, определение которых связано с той же конфигурацией модели сил, что используется при распространении движения.
 
-```text
-src/constellation_control/
-  domain/                 # schemas and ports; no Orekit dependency
-  application/            # scenario orchestration and run identity
-  dynamics/               # screening mechanics and common orbital math
-  mean_elements/          # ROE and mean-element transformations
-  analysis/               # drift regression and fuel accounting
-  optimization/           # LHS, SciPy local optimisation, NSGA-II
-  control/                # deadband and impulsive MPC
-  uncertainty/            # deterministic Monte Carlo
-  reporting/              # JSON/CSV/Parquet/Markdown/HTML + plots
-  adapters/synthetic/     # deterministic unit/screening backend
-  adapters/orekit/        # authoritative Orekit boundary
-  api/                    # optional FastAPI layer
-  cli/                    # Typer CLI
-scenarios/
-tests/
-docs/
-  adr/
-```
+### Режимы точности
+- **screening** — двухтельная модель + секулярные скорости первого порядка J2. Только быстрый поиск кандидатов.
+- **design** — authoritative Orekit DSST. Зональные/тессеральные гармоники, Солнце/Луна, SRP и согласованное преобразование mean↔osculating.
+- **validation** — authoritative Orekit numerical propagation. Полная настроенная гравитация, третьи тела, SRP/затмения и манёвры.
 
-## Accuracy modes
+Design/Validation работают fail-closed: при отсутствии проверенного Orekit service нет скрытого перехода на Screening.
 
-- **screening** — two-body + first-order J2 secular rates. Fast candidate search only.
-- **design** — authoritative Orekit DSST service. Zonal/tesseral gravity, Sun/Moon, SRP and consistent mean↔osculating mapping.
-- **validation** — authoritative Orekit numerical propagation. Full configured gravity, third bodies, SRP/eclipses and manoeuvres.
+### Engineering Preview Windows 10
+Текущая экспертная сборка: **Engineering Preview Python 0.1.1**.
 
-The current MVP implements the complete screening path and the production boundary to an Orekit sidecar. `design` and `validation` deliberately fail closed when the Orekit service is absent; there is no silent fallback to screening.
+- запуск: `start-preview.bat`;
+- локальный UI: `http://127.0.0.1:8765`;
+- переключение интерфейса: **Русский / English**;
+- руководство: `preview/USER_GUIDE_RU_EN.md`;
+- двуязычная форма обратной связи: `preview/EXPERT_FEEDBACK.md`.
 
-## Quickstart
-
+### Быстрый запуск разработки
 Python 3.12+:
 
 ```bash
@@ -48,34 +34,58 @@ pytest -q
 constellation-control run scenarios/mvp_45deg.yaml --output runs
 ```
 
-The example is a **synthetic demonstration scenario**, not a declaration of operational GNSS constellation parameters. All orbital, spacecraft, force-model and constraint values enter through YAML.
+`mvp_45deg.yaml` — **синтетический демонстрационный сценарий**, а не набор эксплуатационных параметров ГНСС. Орбитальные, аппаратные, физические и ограничительные параметры задаются явно через YAML.
 
-Optional API:
+### Контракт воспроизводимости
+Каждый запуск сохраняет `scenario_id`, детерминированный `run_id`, hash нормализованной конфигурации, версию кода, backend/version, force-model fingerprint, epoch, версии алгоритмов и random seed. Результаты сохраняются в JSON + CSV + Parquet; отчёты — Markdown + HTML.
+
+### Политика документации
+Пользовательская, эксплуатационная и проектная документация должна быть доступна на **русском и английском языках**. Новые README/руководства создаются двуязычными либо как явно связанные пары RU/EN. Технические термины, идентификаторы схем и имена полей кода не переводятся, если перевод может изменить их машинный смысл.
+
+См. `preview/README.md`, `preview/USER_GUIDE_RU_EN.md`, `docs/roadmap.md`, `docs/validation.md`.
+
+---
+
+## English
+
+Production-oriented platform for reproducible analysis, modelling, design and control of stable orbital constellations.
+
+> **Critical invariant:** instantaneous osculating semi-major axis is never used as a secular-drift criterion. Drift comparison and design optimisation operate only on mean elements whose definition is bound to the same force-model configuration used by propagation.
+
+### Accuracy modes
+- **screening** — two-body + first-order J2 secular rates. Fast candidate search only.
+- **design** — authoritative Orekit DSST. Zonal/tesseral gravity, Sun/Moon, SRP and consistent mean↔osculating mapping.
+- **validation** — authoritative Orekit numerical propagation. Full configured gravity, third bodies, SRP/eclipses and manoeuvres.
+
+Design/Validation fail closed when the reviewed Orekit service is unavailable; there is no silent fallback to Screening.
+
+### Windows 10 Engineering Preview
+Current expert build: **Engineering Preview Python 0.1.1**.
+
+- start: `start-preview.bat`;
+- local UI: `http://127.0.0.1:8765`;
+- UI language: **Русский / English**;
+- guide: `preview/USER_GUIDE_RU_EN.md`;
+- bilingual feedback form: `preview/EXPERT_FEEDBACK.md`.
+
+### Development quickstart
+Python 3.12+:
 
 ```bash
-pip install -e '.[api]'
-uvicorn constellation_control.api.app:app --reload
+python -m venv .venv
+source .venv/bin/activate              # Windows: .venv\Scripts\activate
+python -m pip install -U pip
+pip install -e '.[dev]'
+pytest -q
+constellation-control run scenarios/mvp_45deg.yaml --output runs
 ```
 
-Optional JPype runtime for direct Orekit experiments:
+`mvp_45deg.yaml` is a **synthetic demonstration scenario**, not a declaration of operational GNSS constellation parameters. Orbital, spacecraft, force-model and constraint values are supplied explicitly through YAML.
 
-```bash
-pip install -e '.[orekit]'
-```
-
-The repository currently pins `orekit-jpype==13.1.5.0`. The Java Orekit project has released 13.1.6, so a 13.1.6 migration is accepted only after wrapper/sidecar compatibility is verified and the force-model/runtime fingerprint changes accordingly.
-
-## Reproducibility contract
-
+### Reproducibility contract
 Every run records `scenario_id`, deterministic `run_id`, normalized config hash, code version, backend identity/version, force-model fingerprint, epoch, algorithm versions and random seed. Core results are written to JSON + CSV + Parquet; reports are emitted as Markdown + HTML.
 
-## Engineering status
+### Documentation policy
+User-facing, operational and project documentation must be available in **Russian and English**. New README/guides are bilingual or maintained as explicitly linked RU/EN pairs. Machine-significant schema identifiers, code field names and canonical technical tokens are not translated when translation could alter their meaning.
 
-- Mission umbrella: #1
-- Architecture/reproducibility: #2
-- Screening/drift physics: #3
-- Optimisation/control: #4
-- Monte Carlo/reporting: #5
-- Orekit DSST + numerical validation: #6
-
-See `docs/roadmap.md` and `docs/validation.md` for acceptance gates and known gaps.
+See `preview/README.md`, `preview/USER_GUIDE_RU_EN.md`, `docs/roadmap.md`, and `docs/validation.md`.
