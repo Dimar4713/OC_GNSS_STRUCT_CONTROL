@@ -21,15 +21,17 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -e '.[dev]'
-      - name: Validate Windows PowerShell launcher syntax
+      - name: Validate Windows PowerShell 5.1 UTF-8 launcher path
         shell: powershell
         run: |
-          $text = Get-Content -LiteralPath preview\start-preview.ps1 -Raw
+          $bootstrap = Get-Content -LiteralPath preview\start-preview-bootstrap.ps1 -Raw
+          [void][scriptblock]::Create($bootstrap)
+          $text = [System.IO.File]::ReadAllText((Resolve-Path preview\start-preview.ps1), [System.Text.Encoding]::UTF8)
           [void][scriptblock]::Create($text)
-          Write-Host 'PowerShell 5.1 syntax parse: OK'
+          Write-Host 'PowerShell 5.1 UTF-8 bootstrap parse: OK'
       - name: Run Preview HTTP and loopback tests on Windows
         shell: pwsh
-        run: pytest -q tests/test_preview.py tests/test_orekit_http.py
+        run: pytest -q tests/test_preview.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
 
   build-preview-bundle:
     runs-on: ubuntu-latest
@@ -105,7 +107,7 @@ jobs:
           mkdir -p "$root/preview/runtime/orekit-data" "$root/sidecar/orekit-service" "$root/scripts"
           cp start-preview.bat pyproject.toml README.md "$root/"
           cp -a src scenarios "$root/"
-          cp preview/start-preview.ps1 preview/requirements-preview.lock preview/README.md preview/USER_GUIDE_RU_EN.md preview/EXPERT_FEEDBACK.md "$root/preview/"
+          cp preview/start-preview-bootstrap.ps1 preview/start-preview.ps1 preview/requirements-preview.lock preview/README.md preview/USER_GUIDE_RU_EN.md preview/EXPERT_FEEDBACK.md "$root/preview/"
           cp scripts/fingerprint_orekit_data.py "$root/scripts/"
           cp sidecar/orekit-service/orekit-data-revision.txt sidecar/orekit-service/orekit-data-sha256.txt sidecar/orekit-service/orekit-data-mirror-revision.txt "$root/sidecar/orekit-service/"
           cp sidecar/orekit-service/target/orekit-service-0.1.0-SNAPSHOT.jar "$root/preview/runtime/orekit-service.jar"
@@ -147,6 +149,7 @@ jobs:
           test -s "$BUNDLE_NAME.zip"
           test -s "$BUNDLE_NAME.zip.sha256"
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
+          unzip -l "$BUNDLE_NAME.zip" | grep 'preview/start-preview-bootstrap.ps1'
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/USER_GUIDE_RU_EN.md'
           unzip -l "$BUNDLE_NAME.zip" | grep "$BUNDLE_NAME/README.md"
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/README.md" | grep '## Русский'
