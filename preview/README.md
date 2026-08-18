@@ -1,46 +1,79 @@
-# Engineering Preview Python 0.1
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.1
 
-This directory is the handoff boundary for the first expert-facing Python preview of OC GNSS STRUCT CONTROL.
+## Русский
 
-## Windows 10 quick start
+### Назначение
+Engineering Preview 0.1.1 — экспертная Windows-версия для проверки сценариев, физической постановки, расчётной authority, отчётов и рабочего процесса до финальной упаковки продукта.
 
-1. Install Python 3.12 if it is not already available. No administrator rights are required for a per-user Python installation.
-2. From the repository root run `start-preview.bat`.
-3. The launcher creates `.venv-preview`, installs the reviewed runtime versions from `preview/requirements-preview.lock`, and starts the local UI on `http://127.0.0.1:8765`.
-4. Select a scenario, inspect the authority banner and Expert/YAML view, then launch the calculation.
-5. After completion use **Open engineering report** to inspect retained evidence.
+### Быстрый запуск Windows 10
+1. Установите Python 3.12 для текущего пользователя, если он ещё не установлен.
+2. Распакуйте сборку в локальный каталог.
+3. Запустите `start-preview.bat`.
+4. Launcher создаст `.venv-preview`, установит зафиксированные зависимости и откроет `http://127.0.0.1:8765`.
+5. В интерфейсе выберите **Русский** или **English**. Выбор сохраняется в браузере.
+6. Выберите сценарий, проверьте блок **Расчётная authority**, YAML и нормализованный сценарий, затем запускайте расчёт.
+7. После завершения откройте **Инженерный отчёт**.
 
-The Preview binds to localhost by default. It does not expose a network service unless the operator explicitly changes the launcher behavior.
+Preview привязан к localhost и по умолчанию не публикует сетевой сервис.
 
-## High-fidelity authority
+### Режимы fidelity
+- **SCREENING** работает только с Python runtime.
+- **DESIGN** требует проверенный Orekit DSST sidecar.
+- **VALIDATION** требует проверенный Orekit Numerical sidecar.
 
-Screening can run with the Python runtime alone. Design and Validation are intentionally fail-closed and require the authoritative Orekit sidecar.
+High-fidelity режимы работают fail-closed: если Java, JAR, orekit-data или их fingerprint не подтверждены, Design/Validation показывают **НЕ ГОТОВО** и не подменяются Screening.
 
-The launcher reads, rather than duplicates, the reviewed authority identity from:
-
+Launcher читает канонические authority-файлы:
 - `sidecar/orekit-service/orekit-data-revision.txt`;
 - `sidecar/orekit-service/orekit-data-sha256.txt`.
 
-For high fidelity provide:
+Release bundle содержит `preview/runtime/orekit-service.jar` и проверенный `preview/runtime/orekit-data/`. Для запуска high fidelity требуется Java 17+.
 
-- `preview/runtime/orekit-service.jar` (release bundles will place the reviewed sidecar here), and
-- `preview/runtime/orekit-data/`, or set `OREKIT_DATA_PATH` to the reviewed data directory.
+### Правило физической интерпретации
+Вековое поведение оценивается по средним элементам, согласованным с используемой моделью сил. Мгновенная оскулирующая большая полуось **не является** критерием векового ухода или управления. Cartesian state используется для физических расстояний, навигационной геометрии и наземной трассы.
 
-Before starting Java, the launcher recomputes the physical orekit-data fingerprint using `scripts/fingerprint_orekit_data.py`. A mismatch stops startup. After Java starts, `/healthz` must report `status=ok`, `backend=orekit`, and the same physical SHA-256 before the UI can present the authority as ready.
+### Каталоги
+- `scenarios/` — проверенные входные сценарии;
+- `preview/results/` — результаты запусков UI;
+- `preview/runtime/` — Orekit runtime/data;
+- `preview/EXPERT_FEEDBACK.md` — двуязычная форма обратной связи.
 
-If Java, JAR, or reviewed data are unavailable, the UI still starts for Screening while Design/Validation show **NOT READY**. There is no synthetic fallback for a high-fidelity request.
+---
 
-## Workspace
+## English
 
-- `scenarios/` — validated scenario inputs. The Preview does not invent operational constellation constants.
-- `preview/results/` — run outputs created through the UI.
-- `preview/runtime/` — local/release high-fidelity runtime material; ignored by Git except for its boundary marker.
-- `preview/EXPERT_FEEDBACK.md` — structured feedback form.
+### Purpose
+Engineering Preview 0.1.1 is an expert-facing Windows build for validating scenarios, physics assumptions, computation authority, reports and workflow before the final product package is frozen.
 
-## Physics rule visible to experts
+### Windows 10 quick start
+1. Install Python 3.12 for the current user if it is not already installed.
+2. Extract the build into a local directory.
+3. Run `start-preview.bat`.
+4. The launcher creates `.venv-preview`, installs pinned dependencies and opens `http://127.0.0.1:8765`.
+5. Select **Русский** or **English** in the UI. The browser remembers the choice.
+6. Select a scenario, inspect **Authority**, YAML and the normalized scenario, then run the calculation.
+7. After completion open the **Engineering report**.
 
-Secular behavior is evaluated from force-model-consistent mean elements. Instantaneous osculating semi-major axis is not a secular-drift optimisation/control criterion. Cartesian states are used for physical distance, navigation geometry and ground-track evidence.
+The Preview binds to localhost and does not expose a network service by default.
 
-## Current Preview boundary
+### Fidelity modes
+- **SCREENING** uses the Python runtime only.
+- **DESIGN** requires the reviewed Orekit DSST sidecar.
+- **VALIDATION** requires the reviewed Orekit Numerical sidecar.
 
-This is deliberately an engineering preview, not the final Windows product. It exposes the accepted computational core with a thin local Web UI so experts can challenge scenario inputs, terminology, reports, authority semantics and workflow before the final packaged UI is frozen.
+High-fidelity execution is fail-closed: if Java, JAR, orekit-data or its fingerprint cannot be verified, Design/Validation remain **NOT READY** and are never silently replaced by Screening.
+
+The launcher reads canonical authority identity from:
+- `sidecar/orekit-service/orekit-data-revision.txt`;
+- `sidecar/orekit-service/orekit-data-sha256.txt`.
+
+The release bundle contains `preview/runtime/orekit-service.jar` and verified `preview/runtime/orekit-data/`. Java 17+ is required for high fidelity.
+
+### Physics interpretation rule
+Secular behavior is evaluated using force-model-consistent mean elements. Instantaneous osculating semi-major axis is **not** a secular drift/control criterion. Cartesian state is used for physical distance, navigation geometry and ground-track evidence.
+
+### Directories
+- `scenarios/` — validated scenario inputs;
+- `preview/results/` — UI run outputs;
+- `preview/runtime/` — Orekit runtime/data;
+- `preview/EXPERT_FEEDBACK.md` — bilingual expert feedback form.
