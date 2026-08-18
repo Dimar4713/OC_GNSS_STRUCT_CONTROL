@@ -5,7 +5,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0preview\st
 set EXITCODE=%ERRORLEVEL%
 if not "%EXITCODE%"=="0" (
   echo.
-  echo Engineering Preview failed with exit code %EXITCODE%.
+  echo Engineering Preview завершился с ошибкой / failed with exit code %EXITCODE%.
   pause
 )
 exit /b %EXITCODE%
