@@ -8,6 +8,11 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $Root
 
+# Loopback authority traffic must never be sent through a corporate/system proxy.
+$LoopbackNoProxy = "127.0.0.1,localhost,::1"
+$env:NO_PROXY = $LoopbackNoProxy
+$env:no_proxy = $LoopbackNoProxy
+
 function Fail([string]$Message) {
   Write-Host "ERROR: $Message" -ForegroundColor Red
   exit 1
@@ -104,7 +109,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
     $Sidecar = Start-Process -FilePath "java" -ArgumentList @("-jar", $OrekitJar) -RedirectStandardOutput $SidecarStdout -RedirectStandardError $SidecarStderr -PassThru
     for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
       try {
-        $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8081/healthz" -TimeoutSec 1
+        $Health = Invoke-RestMethod -Uri "http://127.0.0.1:8081/healthz" -TimeoutSec 1 -NoProxy
         if (
           $Health.status -eq "ok" -and
           $Health.backend -eq "orekit" -and
