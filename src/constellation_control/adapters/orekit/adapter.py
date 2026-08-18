@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
+from constellation_control.adapters.orekit.http import open_orekit_url
 from constellation_control.domain.models import PropagationRequest, PropagationResult
 
 
@@ -26,7 +27,7 @@ class OrekitSidecarPropagator:
         body = json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
         http_request = Request(self._url, data=body, headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urlopen(http_request, timeout=self._timeout_s) as response:  # noqa: S310
+            with open_orekit_url(http_request, self._timeout_s) as response:
                 payload = response.read().decode()
         except HTTPError as error:
             detail = error.read().decode(errors="replace")
