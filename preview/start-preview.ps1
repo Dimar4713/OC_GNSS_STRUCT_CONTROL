@@ -5,7 +5,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if (-not [string]::IsNullOrWhiteSpace($env:OC_GNSS_PREVIEW_ROOT)) {
+  $Root = (Resolve-Path $env:OC_GNSS_PREVIEW_ROOT).Path
+} elseif (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+  $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+} else {
+  throw "Preview root is unavailable / Корневой каталог Preview не определён"
+}
 Set-Location $Root
 
 # Локальный authority-трафик не должен уходить через системный/корпоративный proxy.
@@ -22,28 +28,23 @@ function Fail([string]$Ru, [string]$En) {
 function Read-AuthorityFile([string]$RelativePath, [int]$ExpectedLength) {
   $Path = Join-Path $Root $RelativePath
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-    Fail "Отсутствует authority-файл: $RelativePath" "Missing authority file: $RelativePath"
+    Fail "Отсутствует файл authority: $RelativePath" "Missing authority file: $RelativePath"
   }
   $Value = (Get-Content -LiteralPath $Path -Raw).Trim()
   if ($Value.Length -ne $ExpectedLength -or $Value -notmatch '^[0-9a-f]+$') {
-    Fail "Некорректное authority-значение в $RelativePath" "Invalid authority value in $RelativePath"
+    Fail "Некорректное значение authority в $RelativePath" "Invalid authority value in $RelativePath"
   }
   return $Value
 }
 
-function Invoke-LocalJson([string]$Uri) {
-  Add-Type -AssemblyName System.Net.Http
+function Get-DirectJson([string]$Uri, [int]$TimeoutMs = 1000) {
   $Handler = New-Object System.Net.Http.HttpClientHandler
   $Handler.UseProxy = $false
   $Client = New-Object System.Net.Http.HttpClient($Handler)
-  $Client.Timeout = [TimeSpan]::FromSeconds(1)
   try {
-    $Response = $Client.GetAsync($Uri).GetAwaiter().GetResult()
-    if (-not $Response.IsSuccessStatusCode) {
-      throw "HTTP $([int]$Response.StatusCode)"
-    }
-    $Text = $Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-    return $Text | ConvertFrom-Json
+    $Client.Timeout = [TimeSpan]::FromMilliseconds($TimeoutMs)
+    $Text = $Client.GetStringAsync($Uri).GetAwaiter().GetResult()
+    return ($Text | ConvertFrom-Json)
   } finally {
     $Client.Dispose()
     $Handler.Dispose()
@@ -51,7 +52,7 @@ function Invoke-LocalJson([string]$Uri) {
 }
 
 Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.1.1"
-Write-Host "Каталог / Repository: $Root"
+Write-Host "Корень / Root: $Root"
 
 $PythonArgs = @()
 if ($Python -eq "py") {
@@ -63,7 +64,7 @@ try {
   Fail "Python 3.12 не найден. Установите Python 3.12 для пользователя или задайте -Python <executable>." "Python 3.12 was not found. Install Python 3.12 for the user or pass -Python <executable>."
 }
 if (($Version | Select-Object -Last 1).Trim() -ne "3.12") {
-  Fail "Engineering Preview требует Python 3.12; обнаружено: $Version" "Engineering Preview requires Python 3.12; detected: $Version"
+  Fail "Engineering Preview требует Python 3.12; обнаружен $Version" "Engineering Preview requires Python 3.12; detected $Version"
 }
 
 $Venv = Join-Path $Root ".venv-preview"
@@ -73,20 +74,14 @@ if (-not (Test-Path -LiteralPath $VenvPython -PathType Leaf)) {
   & $Python @PythonArgs -m venv $Venv
 }
 
-Write-Host "Установка/обновление зависимостей... / Installing/updating Preview dependencies..."
+Write-Host "Установка/обновление зависимостей Preview... / Installing/updating Preview dependencies..."
 & $VenvPython -m pip install --disable-pip-version-check -r (Join-Path $Root "preview\requirements-preview.lock")
-if ($LASTEXITCODE -ne 0) {
-  Fail "Не удалось установить зависимости Preview." "Failed to install Preview dependencies."
-}
 & $VenvPython -m pip install --disable-pip-version-check --no-deps -e $Root
-if ($LASTEXITCODE -ne 0) {
-  Fail "Не удалось установить приложение Preview." "Failed to install Preview application."
-}
 
 $PinnedRevision = Read-AuthorityFile "sidecar\orekit-service\orekit-data-revision.txt" 40
 $PinnedPhysicalSha = Read-AuthorityFile "sidecar\orekit-service\orekit-data-sha256.txt" 64
 Write-Host "Проверенная ревизия Orekit data / Reviewed revision: $PinnedRevision"
-Write-Host "Проверенный physical SHA-256 / Reviewed SHA:     $PinnedPhysicalSha"
+Write-Host "Проверенный physical SHA-256 / Reviewed SHA:   $PinnedPhysicalSha"
 
 $RuntimeRoot = Join-Path $Root "preview\runtime"
 $BundledJar = Join-Path $RuntimeRoot "orekit-service.jar"
@@ -109,7 +104,7 @@ if ([string]::IsNullOrWhiteSpace($OrekitData)) {
 $SidecarStarted = $false
 $Sidecar = $null
 if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathType Container)) {
-  Write-Host "Проверка fingerprint Orekit data... / Verifying Orekit data fingerprint..."
+  Write-Host "Проверка physical fingerprint Orekit data... / Verifying Orekit physical data fingerprint..."
   $ActualSha = (& $VenvPython (Join-Path $Root "scripts\fingerprint_orekit_data.py") $OrekitData | Select-Object -Last 1).Trim()
   if ($ActualSha -ne $PinnedPhysicalSha) {
     Fail "Fingerprint Orekit data не совпадает. Ожидался $PinnedPhysicalSha, получен $ActualSha" "Orekit data fingerprint mismatch. Expected $PinnedPhysicalSha, got $ActualSha"
@@ -135,7 +130,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
     $Sidecar = Start-Process -FilePath "java" -ArgumentList @("-jar", $OrekitJar) -RedirectStandardOutput $SidecarStdout -RedirectStandardError $SidecarStderr -PassThru
     for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
       try {
-        $Health = Invoke-LocalJson "http://127.0.0.1:8081/healthz"
+        $Health = Get-DirectJson "http://127.0.0.1:8081/healthz" 1000
         if (
           $Health.status -eq "ok" -and
           $Health.backend -eq "orekit" -and
@@ -143,7 +138,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
           $Health.orekit_data_sha256 -eq $PinnedPhysicalSha
         ) {
           $SidecarStarted = $true
-          Write-Host "Orekit authority ГОТОВО / READY: version $($Health.orekit_version), data $($Health.orekit_data_revision)" -ForegroundColor Green
+          Write-Host "Orekit authority ГОТОВО / READY: version $($Health.orekit_version), data $($Health.orekit_data_revision)"
           break
         }
       } catch { }
@@ -155,11 +150,11 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
       Fail "Orekit sidecar не прошёл проверку revision/SHA. См. $SidecarStdout и $SidecarStderr" "Orekit sidecar failed reviewed revision/SHA health verification. See $SidecarStdout and $SidecarStderr"
     }
   } else {
-    Write-Host "Java недоступна: Screening работает; Design/Validation НЕ ГОТОВО. / Java unavailable: Screening is usable; Design/Validation NOT READY." -ForegroundColor Yellow
+    Write-Host "Java недоступна: Screening работает; Design/Validation будут НЕ ГОТОВО. / Java unavailable: Screening works; Design/Validation remain NOT READY." -ForegroundColor Yellow
   }
 } else {
-  Write-Host "Проверенный Orekit runtime не найден: Screening работает; Design/Validation НЕ ГОТОВО. / Verified Orekit runtime not present: Screening is usable; Design/Validation NOT READY." -ForegroundColor Yellow
-  Write-Host "Для high fidelity нужны preview\runtime\orekit-service.jar и проверенный orekit-data (или OREKIT_DATA_PATH). / High fidelity requires the reviewed JAR and orekit-data."
+  Write-Host "Проверенный Orekit runtime отсутствует: Screening работает; Design/Validation будут НЕ ГОТОВО. / Verified Orekit runtime not present: Screening works; Design/Validation remain NOT READY." -ForegroundColor Yellow
+  Write-Host "Для high fidelity нужны preview\runtime\orekit-service.jar и проверенный orekit-data (или OREKIT_DATA_PATH). / High fidelity requires the bundled JAR and verified orekit-data."
 }
 
 $Url = "http://127.0.0.1:$Port"
