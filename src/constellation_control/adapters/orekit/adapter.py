@@ -17,7 +17,7 @@ class OrekitSidecarPropagator:
     application code.
     """
 
-    def __init__(self, base_url: str, timeout_s: float = 300.0) -> None:
+    def __init__(self, base_url: str, timeout_s: float = 1800.0) -> None:
         self._url = base_url.rstrip("/") + "/v1/propagate"
         self._timeout_s = timeout_s
 
@@ -34,6 +34,11 @@ class OrekitSidecarPropagator:
             raise RuntimeError(f"Orekit sidecar HTTP {error.code}: {detail}") from error
         except URLError as error:
             raise RuntimeError(f"Orekit sidecar connection failed: {error.reason}") from error
+        except TimeoutError as error:
+            raise RuntimeError(
+                f"Orekit sidecar propagation exceeded {self._timeout_s:.0f} s; "
+                "the calculation may be too large for the synchronous Preview transport"
+            ) from error
 
         result = PropagationResult.model_validate(json.loads(payload))
         if not result.backend.lower().startswith("orekit"):
