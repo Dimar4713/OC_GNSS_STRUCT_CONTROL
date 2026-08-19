@@ -1,6 +1,7 @@
 package ru.aimeton.gnss.orekit;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -24,14 +25,15 @@ public final class OrekitServiceMain {
         PropagationEngine engine = new PropagationEngine(runtime);
         ObjectMapper mapper = mapper();
 
-        HttpServer server = HttpServer.create(new InetSocketAddress(port), 32);
+        InetSocketAddress bindAddress = new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port);
+        HttpServer server = HttpServer.create(bindAddress, 32);
         server.createContext("/healthz", exchange -> handleHealth(exchange, mapper, runtime));
         server.createContext("/v1/propagate", exchange -> handlePropagate(exchange, mapper, engine));
         server.setExecutor(Executors.newFixedThreadPool(
                 Math.max(2, Runtime.getRuntime().availableProcessors())));
         server.start();
         System.out.printf(
-                "orekit-service listening on :%d orekit=%s gravity=%s data_revision=%s data_sha256=%s%n",
+                "orekit-service listening on 127.0.0.1:%d orekit=%s gravity=%s data_revision=%s data_sha256=%s%n",
                 port,
                 OrekitRuntime.OREKIT_VERSION,
                 runtime.gravityModel(),
