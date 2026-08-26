@@ -6,6 +6,7 @@ import pytest
 from constellation_control.analysis.relative_operations import (
     angular_rate_engineering_units,
     analyze_relative_operations,
+    forecast_phase_corridor,
     mean_phase_rad,
     relative_mean_phase_series_rad,
 )
@@ -79,3 +80,39 @@ def test_relative_operations_reports_mean_phase_and_along_track_arc_proxy() -> N
     assert diagnostics.secular_delta_u_rate_deg_day == pytest.approx(0.5)
     expected_rate = A_M * math.radians(0.5) / 86400.0
     assert diagnostics.secular_along_track_proxy_rate_m_s == pytest.approx(expected_rate)
+
+
+def test_phase_corridor_forecast_uses_configured_half_width_and_drift_direction() -> None:
+    forecast = forecast_phase_corridor(
+        current_delta_u_rad=math.radians(2.0),
+        secular_delta_u_rate_rad_s=math.radians(0.5) / 86400.0,
+        half_width_rad=math.radians(5.0),
+    )
+
+    assert forecast.inside_corridor is True
+    assert forecast.predicted_boundary_deg == pytest.approx(5.0)
+    assert forecast.time_to_boundary_days == pytest.approx(6.0)
+
+
+def test_phase_corridor_forecast_reports_zero_when_already_outside() -> None:
+    forecast = forecast_phase_corridor(
+        current_delta_u_rad=math.radians(-6.0),
+        secular_delta_u_rate_rad_s=math.radians(-0.5) / 86400.0,
+        half_width_rad=math.radians(5.0),
+    )
+
+    assert forecast.inside_corridor is False
+    assert forecast.predicted_boundary_deg == pytest.approx(-5.0)
+    assert forecast.time_to_boundary_s == pytest.approx(0.0)
+
+
+def test_phase_corridor_forecast_does_not_invent_time_for_zero_drift() -> None:
+    forecast = forecast_phase_corridor(
+        current_delta_u_rad=math.radians(2.0),
+        secular_delta_u_rate_rad_s=0.0,
+        half_width_rad=math.radians(5.0),
+    )
+
+    assert forecast.inside_corridor is True
+    assert forecast.predicted_boundary_rad is None
+    assert forecast.time_to_boundary_s is None
