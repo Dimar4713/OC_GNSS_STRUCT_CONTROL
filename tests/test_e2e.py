@@ -86,7 +86,7 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     assert {
         "delta_u_mean_rad",
         "delta_u_mean_deg",
-        "delta_u_trend_deg",
+        "delta_u_trend_rad",
         "delta_u_harmonic_deg",
         "secular_delta_u_rate_deg_day",
         "secular_along_track_proxy_rate_m_s",
