@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import Iterable
+from typing import Iterable, cast
 
 from constellation_control.domain.models import MeanOrbit, SatelliteSpec
 
@@ -119,11 +119,13 @@ def constellation_geometry_preflight(
     if plane_ids:
         reference_id = plane_ids[0]
         reference = by_plane[reference_id]
-        ref_phases = list(reference["u_mean_deg_sorted"])
-        ref_first = float(ref_phases[0]) if ref_phases else 0.0
+        ref_phases = cast(list[float], reference["u_mean_deg_sorted"])
+        ref_count = cast(int, reference["satellite_count"])
+        ref_first = ref_phases[0] if ref_phases else 0.0
         for plane_id in plane_ids[1:]:
             current = by_plane[plane_id]
-            current_phases = list(current["u_mean_deg_sorted"])
+            current_phases = cast(list[float], current["u_mean_deg_sorted"])
+            current_count = cast(int, current["satellite_count"])
             raan_delta = wrap_deg(float(current["raan_mean_deg"]) - float(reference["raan_mean_deg"]))
             record: dict[str, object] = {
                 "reference_plane_id": reference_id,
@@ -131,14 +133,9 @@ def constellation_geometry_preflight(
                 "raan_offset_deg": raan_delta,
                 "phase_offset_mod_slot_deg": None,
             }
-            if (
-                current["satellite_count"] == reference["satellite_count"]
-                and int(reference["satellite_count"]) > 0
-                and current_phases
-                and ref_phases
-            ):
-                slot_deg = 360.0 / int(reference["satellite_count"])
-                record["phase_offset_mod_slot_deg"] = wrap_deg(float(current_phases[0]) - ref_first) % slot_deg
+            if current_count == ref_count and ref_count > 0 and current_phases and ref_phases:
+                slot_deg = 360.0 / ref_count
+                record["phase_offset_mod_slot_deg"] = wrap_deg(current_phases[0] - ref_first) % slot_deg
                 record["slot_deg"] = slot_deg
             interplane.append(record)
 
