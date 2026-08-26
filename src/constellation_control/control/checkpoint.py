@@ -11,12 +11,13 @@ from constellation_control.control.campaign import (
     CampaignPolicyTraceRecord,
     ClosedLoopCampaignResult,
 )
+from constellation_control.control.execution import MPCExecutionPolicy
 from constellation_control.control.policies import CorrectionPolicy
 from constellation_control.control.transition import (
     AuthoritativeTransitionSnapshot,
     CorrectionResourceRecord,
 )
-from constellation_control.domain.models import IntegratorConfig, PropagationRequest
+from constellation_control.domain.models import ConstraintConfig, IntegratorConfig, PropagationRequest
 
 CHECKPOINT_SCHEMA_VERSION = "closed-loop-checkpoint-v1"
 
@@ -68,6 +69,8 @@ class ClosedLoopCampaignCheckpoint(BaseModel):
     frame: str
     time_scale: str
     integrator: IntegratorConfig
+    constraints: ConstraintConfig
+    base_execution_policy: MPCExecutionPolicy
     current_request: PropagationRequest
     campaign_horizon_s: float = Field(gt=0.0)
     coast_horizon_s: float = Field(gt=0.0)
@@ -197,6 +200,8 @@ def campaign_progress(
 def create_campaign_checkpoint(
     campaign: ClosedLoopCampaignResult,
     *,
+    constraints: ConstraintConfig,
+    base_execution_policy: MPCExecutionPolicy,
     campaign_horizon_s: float,
     coast_horizon_s: float,
     coast_output_step_s: float,
@@ -212,6 +217,8 @@ def create_campaign_checkpoint(
     coast_step = _positive_finite(coast_output_step_s, "coast_output_step_s")
     if max_corrections <= 0:
         raise ValueError("max_corrections must be positive")
+    if constraints.phase_corridor_rad != campaign.corridor_half_width_rad:
+        raise ValueError("checkpoint constraints phase corridor does not match campaign evidence")
     times, windows = _validate_grid(authority_times_s, maneuver_windows)
     request = campaign.final_request
     progress = campaign_progress(
@@ -228,6 +235,8 @@ def create_campaign_checkpoint(
         frame=request.frame.value,
         time_scale=request.time_scale.value,
         integrator=request.integrator,
+        constraints=constraints,
+        base_execution_policy=base_execution_policy,
         current_request=request,
         campaign_horizon_s=horizon,
         coast_horizon_s=coast_horizon,
