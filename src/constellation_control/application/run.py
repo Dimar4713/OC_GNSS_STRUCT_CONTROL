@@ -12,7 +12,12 @@ import yaml
 
 from constellation_control.adapters.orekit.adapter import OrekitSidecarPropagator
 from constellation_control.adapters.synthetic.propagator import SyntheticMeanPropagator
-from constellation_control.analysis.drift import default_harmonic_frequencies, harmonic_regression, linear_rate
+from constellation_control.analysis.drift import (
+    DEFAULT_HARMONIC_LABELS,
+    default_harmonic_frequencies,
+    harmonic_regression,
+    linear_rate,
+)
 from constellation_control.analysis.fuel import propellant_used_kg
 from constellation_control.analysis.navigation_geometry import evaluate_navigation_geometry, inertial_to_ecef_m
 from constellation_control.analysis.relative_operations import (
@@ -333,6 +338,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         )
         raan_fit = harmonic_regression(times, delta_raan, frequencies)
         operations, delta_u, along_track = analyze_relative_operations(times, ref_series, dep_series)
+        delta_u_fit = harmonic_regression(times, delta_u, frequencies)
         corridor = forecast_phase_corridor(
             current_delta_u_rad=float(delta_u[-1]),
             secular_delta_u_rate_rad_s=operations.secular_delta_u_rate_rad_s,
@@ -379,6 +385,18 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             pdop=representative_pdop,
         )
         metrics.append(metric)
+        periodic_components = [
+            {
+                "basis": label,
+                "period_s": component.period_s,
+                "period_days": component.period_s / 86400.0,
+                "amplitude_rad": component.amplitude_rad,
+                "amplitude_deg": float(np.degrees(component.amplitude_rad)),
+                "peak_to_peak_rad": component.peak_to_peak_rad,
+                "peak_to_peak_deg": float(np.degrees(component.peak_to_peak_rad)),
+            }
+            for label, component in zip(DEFAULT_HARMONIC_LABELS, delta_u_fit.components, strict=True)
+        ]
         relative_operations.append(
             {
                 "pair_id": pair_id,
@@ -389,6 +407,16 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                 "along_track_semantics": "near-circular mean arc proxy a_ref*Delta_u; not Cartesian separation",
                 "phase_corridor_semantics": "symmetric +/- constraints.phase_corridor_rad around Delta_u=0",
                 "phase_corridor": corridor.__dict__,
+                "periodic_delta_u": {
+                    "basis": "orbital + sidereal_day + lunar + sidereal_year",
+                    "components": periodic_components,
+                    "rss_component_amplitude_rad": delta_u_fit.periodic_amplitude_rad,
+                    "rss_component_amplitude_deg": float(np.degrees(delta_u_fit.periodic_amplitude_rad)),
+                    "rss_semantics": (
+                        "root-sum-square of fitted component amplitudes; not a single harmonic amplitude and has no single period"
+                    ),
+                    "component_semantics": "amplitude is center-to-peak; peak_to_peak is exactly 2*amplitude",
+                },
                 **operations.__dict__,
             }
         )
@@ -403,6 +431,12 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                     "harmonic_rad": float(phase_fit.harmonic_rad[index]),
                     "delta_u_mean_rad": float(delta_u[index]),
                     "delta_u_mean_deg": float(np.degrees(delta_u[index])),
+                    "delta_u_trend_rad": float(delta_u_fit.trend_rad[index]),
+                    "delta_u_harmonic_rad": float(delta_u_fit.harmonic_rad[index]),
+                    "delta_u_harmonic_deg": float(np.degrees(delta_u_fit.harmonic_rad[index])),
+                    "secular_delta_u_rate_rad_s": operations.secular_delta_u_rate_rad_s,
+                    "secular_delta_u_rate_deg_day": operations.secular_delta_u_rate_deg_day,
+                    "secular_along_track_proxy_rate_m_s": operations.secular_along_track_proxy_rate_m_s,
                     "phase_corridor_upper_deg": corridor_deg,
                     "phase_corridor_lower_deg": -corridor_deg,
                     "along_track_mean_arc_proxy_m": float(along_track[index]),
@@ -447,6 +481,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             "phase_drift": "harmonic-lstsq-v1",
             "raan_drift": "harmonic-lstsq-v1",
             "relative_mean_phase": "u-mean-lambda-minus-raan-v1",
+            "relative_phase_periodic": "harmonic-lstsq-default-basis-v1",
             "along_track_proxy": "mean-arc-a-delta-u-v1",
             "phase_corridor_forecast": "linear-secular-rate-v1",
             "roe": "damico-v1",
