@@ -42,6 +42,20 @@ def test_preview_lists_only_runnable_scenarios_and_exposes_explicit_authority() 
     assert "оскулирующая большая полуось" in payload["mean_element_rule_ru"]
     assert "osculating semi-major axis is not a secular control criterion" in payload["mean_element_rule_en"]
 
+    first = payload["satellites"][0]
+    assert first["period_s"] > 0.0
+    assert first["period_h"] > 0.0
+    assert first["a_mean_km"] > 0.0
+    assert 0.0 <= first["raan_deg"] < 360.0
+    assert 0.0 <= first["u_mean_deg"] < 360.0
+    assert 0.0 < first["inclination_deg"] < 180.0
+
+    geometry = payload["geometry_preflight"]
+    assert geometry["plane_count"] >= 1
+    assert geometry["satellite_count"] == len(payload["satellites"])
+    assert geometry["planes"]
+    assert "u_mean = lambda - Omega" in geometry["semantics_en"]
+
 
 def test_non_scenario_yaml_returns_domain_message_not_pydantic_field_spam() -> None:
     app = create_preview_app(_repo_root() / "scenarios", _repo_root() / ".preview-test-unused")
@@ -80,11 +94,19 @@ def test_preview_http_shell_runs_screening_and_serves_report(tmp_path: Path) -> 
 
     health = client.get("/health")
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "preview": "0.1.1"}
+    assert health.json() == {"status": "ok", "preview": "0.1.2"}
 
     catalog = client.get("/api/scenarios")
     assert catalog.status_code == 200
     assert "design_pipeline_smoke.yaml" not in catalog.json()["scenarios"]
+
+    scenario = client.get("/api/scenarios/mvp_45deg.yaml")
+    assert scenario.status_code == 200
+    scenario_payload = scenario.json()
+    assert scenario_payload["geometry_preflight"]["plane_count"] >= 1
+    assert "period_h" in scenario_payload["satellites"][0]
+    assert "raan_deg" in scenario_payload["satellites"][0]
+    assert "u_mean_deg" in scenario_payload["satellites"][0]
 
     preflight = client.get("/api/preflight/mvp_45deg.yaml")
     assert preflight.status_code == 200
@@ -123,9 +145,9 @@ def test_preview_result_access_stays_inside_output_root(tmp_path: Path) -> None:
         _safe_result_file(tmp_path, "..", "run", "report.html")
 
 
-def test_preview_page_is_bilingual_and_exposes_language_switch() -> None:
+def test_preview_page_is_bilingual_and_exposes_engineering_view() -> None:
     page = render_preview_page_for_test()
-    assert "OC GNSS STRUCT CONTROL — Engineering Preview 0.1.1" in page
+    assert "OC GNSS STRUCT CONTROL — Engineering Preview 0.1.2" in page
     assert "Русский" in page
     assert "English" in page
     assert "Локальная инженерная оболочка" in page
@@ -134,3 +156,7 @@ def test_preview_page_is_bilingual_and_exposes_language_switch() -> None:
     assert "Open engineering report" in page
     assert "Эксперт / YAML" in page
     assert "Expert / YAML" in page
+    assert "Проверка геометрии ОГ" in page
+    assert "Constellation geometry preflight" in page
+    assert "u_mean" in page
+    assert "Ω" in page
