@@ -12,6 +12,14 @@ SIDEREAL_YEAR_S = 365.25636 * 86400.0
 
 
 @dataclass(frozen=True)
+class HarmonicComponent:
+    frequency_rad_s: float
+    period_s: float
+    amplitude_rad: float
+    peak_to_peak_rad: float
+
+
+@dataclass(frozen=True)
 class HarmonicFit:
     intercept_rad: float
     secular_drift_rad_s: float
@@ -20,6 +28,7 @@ class HarmonicFit:
     trend_rad: np.ndarray
     harmonic_rad: np.ndarray
     residual_rad: np.ndarray
+    components: tuple[HarmonicComponent, ...]
 
 
 def default_harmonic_frequencies(orbital_period_s: float) -> tuple[float, ...]:
@@ -40,11 +49,22 @@ def harmonic_regression(times_s: np.ndarray, angle_rad: np.ndarray, frequencies_
     fitted = design @ coefficients
     trend = coefficients[0] + coefficients[1] * t
     harmonic = fitted - trend
-    amplitudes = []
-    for index in range(len(frequencies_rad_s)):
+    amplitudes: list[float] = []
+    components: list[HarmonicComponent] = []
+    for index, frequency in enumerate(frequencies_rad_s):
         a = coefficients[2 + 2 * index]
         b = coefficients[3 + 2 * index]
-        amplitudes.append(float(np.hypot(a, b)))
+        amplitude = float(np.hypot(a, b))
+        amplitudes.append(amplitude)
+        period_s = 2.0 * pi / frequency
+        components.append(
+            HarmonicComponent(
+                frequency_rad_s=float(frequency),
+                period_s=float(period_s),
+                amplitude_rad=amplitude,
+                peak_to_peak_rad=2.0 * amplitude,
+            )
+        )
     return HarmonicFit(
         intercept_rad=float(coefficients[0]),
         secular_drift_rad_s=float(coefficients[1]),
@@ -53,6 +73,7 @@ def harmonic_regression(times_s: np.ndarray, angle_rad: np.ndarray, frequencies_
         trend_rad=trend,
         harmonic_rad=harmonic,
         residual_rad=y - fitted,
+        components=tuple(components),
     )
 
 
