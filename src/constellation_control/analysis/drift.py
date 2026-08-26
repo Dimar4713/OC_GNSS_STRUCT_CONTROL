@@ -9,6 +9,7 @@ import numpy as np
 SIDEREAL_DAY_S = 86164.0905
 LUNAR_PERIOD_S = 27.321661 * 86400.0
 SIDEREAL_YEAR_S = 365.25636 * 86400.0
+DEFAULT_HARMONIC_LABELS = ("orbital", "sidereal_day", "lunar", "sidereal_year")
 
 
 @dataclass(frozen=True)
