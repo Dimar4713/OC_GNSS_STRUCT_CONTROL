@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import Iterable, cast
+from collections.abc import Iterable
+from typing import cast
 
 from constellation_control.domain.models import MeanOrbit, SatelliteSpec
 
