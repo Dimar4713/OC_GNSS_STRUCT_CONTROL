@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
-from math import hypot
+from math import cos, hypot, sin
 
 import numpy as np
 
 from constellation_control.analysis.fuel import propellant_used_kg
+from constellation_control.analysis.relative_operations import mean_phase_rad
 from constellation_control.control.controllers import MPCSolution, solve_impulsive_mpc
 from constellation_control.control.linearization import FiniteDifferenceRoeLinearizationProvider
 from constellation_control.domain.models import (
@@ -18,7 +19,7 @@ from constellation_control.domain.models import (
     SatelliteSpec,
 )
 from constellation_control.domain.protocols import Propagator
-from constellation_control.dynamics.orbits import wrap_pi
+from constellation_control.dynamics.orbits import mean_to_classical, wrap_pi
 from constellation_control.mean_elements.roe import RelativeOrbitalElements, damico_roe
 
 
@@ -121,6 +122,7 @@ class RecedingHorizonMPCController:
         deputy, reference = self._resolve_pair(request.satellites)
         initial_roe = damico_roe(reference.mean_orbit, deputy.mean_orbit)
         x0 = np.asarray(initial_roe.as_tuple(), dtype=float)
+        mean_phase_cot_i = self._mean_phase_cot_i(reference)
 
         a_matrices, b_matrices, disturbances = self._linearizer.linearize(request, requested_times)
         lower_state, upper_state = self._state_bounds(reference, constraints)
@@ -139,6 +141,8 @@ class RecedingHorizonMPCController:
             w_max=self._policy.w_max,
             eccentricity_vector_max=constraints.delta_e_max,
             inclination_vector_max=constraints.delta_i_max_rad,
+            mean_phase_cot_i=mean_phase_cot_i,
+            mean_phase_half_width_rad=constraints.phase_corridor_rad,
         )
 
         first_impulse = np.asarray(solution.impulses[0, :3], dtype=float)
@@ -354,12 +358,20 @@ class RecedingHorizonMPCController:
         return deputy, by_id[deputy.reference_id]
 
     @staticmethod
+    def _mean_phase_cot_i(reference: SatelliteSpec) -> float:
+        inclination = mean_to_classical(reference.mean_orbit).i_rad
+        sin_i = sin(inclination)
+        if abs(sin_i) < 1.0e-8:
+            raise ValueError("mean-phase MPC corridor is ill-conditioned near equatorial inclination")
+        return cos(inclination) / sin_i
+
+    @staticmethod
     def _state_bounds(reference: SatelliteSpec, constraints: ConstraintConfig) -> tuple[np.ndarray, np.ndarray]:
         delta_a_low, delta_a_high = constraints.delta_a_bounds_m
         lower = np.asarray(
             [
                 delta_a_low / reference.mean_orbit.a_m,
-                -constraints.phase_corridor_rad,
+                -np.inf,
                 -constraints.delta_e_max,
                 -constraints.delta_e_max,
                 -constraints.delta_i_max_rad,
@@ -370,7 +382,7 @@ class RecedingHorizonMPCController:
         upper = np.asarray(
             [
                 delta_a_high / reference.mean_orbit.a_m,
-                constraints.phase_corridor_rad,
+                np.inf,
                 constraints.delta_e_max,
                 constraints.delta_e_max,
                 constraints.delta_i_max_rad,
@@ -410,8 +422,9 @@ class RecedingHorizonMPCController:
             delta_a_m = relative.delta_a * ref_mean.a_m
             if delta_a_m < delta_a_low or delta_a_m > delta_a_high:
                 return "replay-delta-a-corridor-violation", float("nan")
-            if abs(relative.delta_lambda_rad) > constraints.phase_corridor_rad:
-                return "replay-phase-corridor-violation", float("nan")
+            delta_u = wrap_pi(mean_phase_rad(dep_mean) - mean_phase_rad(ref_mean))
+            if abs(delta_u) > constraints.phase_corridor_rad:
+                return "replay-mean-phase-corridor-violation", float("nan")
             if hypot(relative.delta_ex, relative.delta_ey) > constraints.delta_e_max:
                 return "replay-eccentricity-corridor-violation", float("nan")
             if hypot(relative.delta_ix, relative.delta_iy) > constraints.delta_i_max_rad:
