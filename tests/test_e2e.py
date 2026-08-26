@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from constellation_control.application.run import run_scenario
 
 
@@ -38,11 +40,23 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
 
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    timeseries = pd.read_csv(run_dir / "timeseries.csv")
     ground_track = json.loads((run_dir / "ground_track.json").read_text(encoding="utf-8"))
     resources = json.loads((run_dir / "resources.json").read_text(encoding="utf-8"))
     assert manifest["force_model_mode"] == "screening"
+    assert manifest["algorithm_versions"]["relative_mean_phase"] == "u-mean-lambda-minus-raan-v1"
     assert ground_track
     assert resources
+    assert summary["relative_operations"]
+    first_relative = summary["relative_operations"][0]
+    assert first_relative["phase_coordinate"] == "u_mean=lambda-Omega"
+    assert "not osculating argument of latitude" in first_relative["phase_semantics"]
+    assert "not Cartesian separation" in first_relative["along_track_semantics"]
+    assert {
+        "delta_u_mean_rad",
+        "delta_u_mean_deg",
+        "along_track_mean_arc_proxy_m",
+    }.issubset(timeseries.columns)
     assert summary["mean_element_rule"] == (
         "all secular drift metrics use force-model-consistent mean elements; osculating a is excluded"
     )
