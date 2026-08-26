@@ -1,4 +1,4 @@
-# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.1
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.2
 # Руководство пользователя / User Guide
 
 ## Русский
@@ -8,7 +8,9 @@
 2. Убедитесь, что установлен Python 3.12.
 3. Для Design/Validation дополнительно требуется Java 17+.
 4. Запустите `start-preview.bat`.
-5. Откроется `http://127.0.0.1:8765`.
+5. Откроется локальный Preview.
+
+На каждом новом компьютере launcher должен создать `.venv-preview` заново. Не копируйте готовую `.venv-preview` с другой машины: virtualenv может содержать абсолютный путь к исходному Python.
 
 ### 2. Java Runtime без прав администратора
 Для корпоративных компьютеров рекомендуется portable Java.
@@ -52,22 +54,44 @@ Orekit JAR уже входит в Engineering Preview. Отдельная уст
 
 Если Design/Validation показывают **НЕ ГОТОВО**, запуск high fidelity не должен подменяться Screening. Проверьте Java 17+, `preview/runtime/orekit-service.jar` и `preview/runtime/orekit-data/`.
 
-### 6. Проверка входных данных
+### 6. Инженерный вид орбиты
+Основная таблица КА показывает производные от авторитетных средних эквиноциальных элементов:
+- `T, ч` — период, вычисленный из средней большой полуоси и `mu` сценария;
+- `a, км` — средняя большая полуось;
+- `i, °` — наклонение;
+- `Ω, °` — RAAN;
+- `u_mean, ° = λ - Ω` — средняя фазовая координата `M + ω`;
+- массу и запас топлива.
+
+Важно: `u_mean` — не оскулирующий аргумент широты. Исходные `ex/ey/ix/iy/lambda_rad` всегда остаются доступными в **Эксперт / YAML** и **Нормализованный сценарий**.
+
+### 7. Проверка геометрии ОГ
+Перед расчётом изучите блок **Проверка геометрии ОГ**. Он показывает фактическую геометрию входного сценария, не навязывая нормативные значения:
+- число плоскостей и КА;
+- средний RAAN и наклонение каждой плоскости;
+- средний внутриплоскостной шаг по `u_mean`;
+- `ΔΩ` относительно первой плоскости;
+- фазовый сдвиг modulo slot для равнонаселённых регулярных плоскостей.
+
+Если ожидаемая схема ОГ, например 8 КА × 45° и межплоскостное фазирование 0/15/30°, не совпадает с фактической, сценарий следует проверить до длительного расчёта.
+
+### 8. Проверка входных данных
 Перед расчётом просмотрите:
 - эпоху, frame и time scale;
 - длительность и шаг;
 - force-model fingerprint;
-- таблицу КА;
+- инженерную таблицу КА;
+- **Проверку геометрии ОГ**;
 - **Эксперт / YAML**;
 - **Нормализованный сценарий**.
 
-### 7. Запуск и результаты
+### 9. Запуск и результаты
 Нажмите **Запустить выбранный сценарий**. После завершения появится ссылка **Открыть инженерный отчёт**. Результаты сохраняются в `preview/results/`.
 
-### 8. Физическое правило
+### 10. Физическое правило
 Вековое поведение оценивается по средним элементам, согласованным с той же моделью сил. Мгновенная оскулирующая большая полуось не используется как критерий векового ухода/управления. Cartesian state применяется для истинных физических расстояний, навигационной геометрии и ground track.
 
-### 9. Обратная связь
+### 11. Обратная связь
 Заполняйте `preview/EXPERT_FEEDBACK.md` либо присылайте: сценарий → действие → ожидаемый результат → фактический результат → замечание.
 
 ---
@@ -79,7 +103,9 @@ Orekit JAR уже входит в Engineering Preview. Отдельная уст
 2. Make sure Python 3.12 is installed.
 3. Design/Validation additionally require Java 17+.
 4. Run `start-preview.bat`.
-5. The UI opens at `http://127.0.0.1:8765`.
+5. The local Preview opens.
+
+Let the launcher create `.venv-preview` again on every new computer. Do not copy an already-created environment from another machine because a virtualenv may contain an absolute path to the source Python installation.
 
 ### 2. Portable Java without administrator rights
 For corporate Windows environments use portable Java.
@@ -123,20 +149,42 @@ Check the status before execution:
 
 If Design/Validation show **NOT READY**, high fidelity must not silently fall back to Screening. Check Java 17+, `preview/runtime/orekit-service.jar`, and `preview/runtime/orekit-data/`.
 
-### 6. Input review
+### 6. Engineering orbit view
+The primary spacecraft table displays quantities derived from authoritative mean equinoctial elements:
+- `T, h` — period derived from mean semi-major axis and scenario `mu`;
+- `a, km` — mean semi-major axis;
+- `i, deg` — inclination;
+- `Ω, deg` — RAAN;
+- `u_mean, deg = λ - Ω` — mean phase coordinate `M + ω`;
+- mass and propellant.
+
+Important: `u_mean` is not an osculating argument of latitude. Raw `ex/ey/ix/iy/lambda_rad` remain available under **Expert / YAML** and **Normalized scenario**.
+
+### 7. Constellation Geometry Preflight
+Before a long run inspect **Constellation Geometry Preflight**. It reports the observed scenario geometry without inventing target requirements:
+- number of planes and spacecraft;
+- mean RAAN and inclination per plane;
+- mean in-plane `u_mean` spacing;
+- `ΔΩ` relative to the first plane;
+- phase offset modulo slot size for equal-population regular planes.
+
+If the intended constellation geometry, for example 8 spacecraft × 45° and 0/15/30° inter-plane phasing, differs from the observed values, review the scenario before a long propagation.
+
+### 8. Input review
 Before a run inspect:
 - epoch, frame and time scale;
 - duration and output step;
 - force-model fingerprint;
-- spacecraft table;
+- engineering spacecraft table;
+- **Constellation Geometry Preflight**;
 - **Expert / YAML**;
 - **Normalized scenario**.
 
-### 7. Run and results
+### 9. Run and results
 Click **Run selected scenario**. After completion use **Open engineering report**. Run evidence is retained under `preview/results/`.
 
-### 8. Physics rule
+### 10. Physics rule
 Secular behavior is evaluated using mean elements consistent with the same force model. Instantaneous osculating semi-major axis is not used as a secular drift/control criterion. Cartesian state is used for true physical distance, navigation geometry and ground-track evidence.
 
-### 9. Feedback
+### 11. Feedback
 Use `preview/EXPERT_FEEDBACK.md` or report: scenario → action → expected result → actual result → engineering comment.
