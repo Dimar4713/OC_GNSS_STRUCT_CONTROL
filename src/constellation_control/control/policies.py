@@ -55,7 +55,7 @@ def evaluate_correction_policy(
     policy: CorrectionPolicy,
     delta_u_rad: float,
     corridor_half_width_rad: float,
-    state: CorrectionPolicyState = CorrectionPolicyState(),
+    state: CorrectionPolicyState | None = None,
 ) -> tuple[CorrectionDecision, CorrectionPolicyState]:
     """Evaluate one deterministic correction-policy sample.
 
@@ -68,6 +68,7 @@ def evaluate_correction_policy(
     corridor. No hidden tolerance or hysteresis is introduced.
     """
 
+    current_state = CorrectionPolicyState() if state is None else state
     delta_u, half_width = _validate_inputs(delta_u_rad, corridor_half_width_rad)
     boundary_sign = _boundary_sign(delta_u, half_width)
     inside = boundary_sign is None
@@ -81,12 +82,12 @@ def evaluate_correction_policy(
             corridor_half_width_rad=half_width,
             crossed_boundary_sign=boundary_sign,
             guidance_target_delta_u_rad=None,
-            armed_before=state.armed,
-            armed_after=state.armed,
+            armed_before=current_state.armed,
+            armed_after=current_state.armed,
         )
-        return decision, state
+        return decision, current_state
 
-    if not state.armed:
+    if not current_state.armed:
         if inside:
             next_state = CorrectionPolicyState(armed=True)
             decision = CorrectionDecision(
@@ -112,7 +113,7 @@ def evaluate_correction_policy(
             armed_before=False,
             armed_after=False,
         )
-        return decision, state
+        return decision, current_state
 
     if inside:
         decision = CorrectionDecision(
@@ -126,7 +127,7 @@ def evaluate_correction_policy(
             armed_before=True,
             armed_after=True,
         )
-        return decision, state
+        return decision, current_state
 
     if policy == CorrectionPolicy.RETURN_TO_CENTER:
         target = 0.0
