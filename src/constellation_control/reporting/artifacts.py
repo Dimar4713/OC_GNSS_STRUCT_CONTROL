@@ -5,7 +5,11 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd
 import plotly.express as px
 
