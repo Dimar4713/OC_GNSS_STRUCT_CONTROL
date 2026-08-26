@@ -122,12 +122,14 @@ def constellation_geometry_preflight(
         reference = by_plane[reference_id]
         ref_phases = cast(list[float], reference["u_mean_deg_sorted"])
         ref_count = cast(int, reference["satellite_count"])
+        ref_raan_deg = cast(float, reference["raan_mean_deg"])
         ref_first = ref_phases[0] if ref_phases else 0.0
         for plane_id in plane_ids[1:]:
             current = by_plane[plane_id]
             current_phases = cast(list[float], current["u_mean_deg_sorted"])
             current_count = cast(int, current["satellite_count"])
-            raan_delta = wrap_deg(float(current["raan_mean_deg"]) - float(reference["raan_mean_deg"]))
+            current_raan_deg = cast(float, current["raan_mean_deg"])
+            raan_delta = wrap_deg(current_raan_deg - ref_raan_deg)
             record: dict[str, object] = {
                 "reference_plane_id": reference_id,
                 "plane_id": plane_id,
