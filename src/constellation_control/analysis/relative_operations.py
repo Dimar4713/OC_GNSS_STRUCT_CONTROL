@@ -22,6 +22,19 @@ class AngularRateEngineeringUnits:
 
 
 @dataclass(frozen=True)
+class PhaseCorridorForecast:
+    half_width_rad: float
+    half_width_deg: float
+    current_delta_u_rad: float
+    current_delta_u_deg: float
+    inside_corridor: bool
+    predicted_boundary_rad: float | None
+    predicted_boundary_deg: float | None
+    time_to_boundary_s: float | None
+    time_to_boundary_days: float | None
+
+
+@dataclass(frozen=True)
 class RelativeOperationsDiagnostics:
     initial_delta_u_rad: float
     final_delta_u_rad: float
@@ -85,6 +98,45 @@ def along_track_arc_proxy_m(delta_u_rad: np.ndarray, reference_a_m: np.ndarray) 
     if not np.all(np.isfinite(phase)) or not np.all(np.isfinite(radius)) or np.any(radius <= 0.0):
         raise ValueError("along-track proxy inputs must be finite and reference_a_m positive")
     return radius * phase
+
+
+def forecast_phase_corridor(
+    current_delta_u_rad: float,
+    secular_delta_u_rate_rad_s: float,
+    half_width_rad: float,
+) -> PhaseCorridorForecast:
+    current = float(current_delta_u_rad)
+    rate = float(secular_delta_u_rate_rad_s)
+    half_width = float(half_width_rad)
+    if not np.isfinite(current) or not np.isfinite(rate):
+        raise ValueError("phase corridor state and rate must be finite")
+    if not np.isfinite(half_width) or half_width <= 0.0 or half_width >= pi:
+        raise ValueError("phase corridor half-width must be finite and inside (0, pi)")
+
+    inside = abs(current) <= half_width
+    boundary: float | None = None
+    time_s: float | None = None
+    if not inside:
+        time_s = 0.0
+        boundary = half_width if current > 0.0 else -half_width
+    elif rate > 0.0:
+        boundary = half_width
+        time_s = max(0.0, (boundary - current) / rate)
+    elif rate < 0.0:
+        boundary = -half_width
+        time_s = max(0.0, (boundary - current) / rate)
+
+    return PhaseCorridorForecast(
+        half_width_rad=half_width,
+        half_width_deg=degrees(half_width),
+        current_delta_u_rad=current,
+        current_delta_u_deg=degrees(current),
+        inside_corridor=inside,
+        predicted_boundary_rad=boundary,
+        predicted_boundary_deg=None if boundary is None else degrees(boundary),
+        time_to_boundary_s=time_s,
+        time_to_boundary_days=None if time_s is None else time_s / DAY_S,
+    )
 
 
 def analyze_relative_operations(
