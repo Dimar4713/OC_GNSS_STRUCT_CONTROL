@@ -68,7 +68,8 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     assert corridor["time_to_boundary_s"] is None or corridor["time_to_boundary_s"] >= 0.0
 
     periodic = first_relative["periodic_delta_u"]
-    assert periodic["aggregate_semantics"] == "root-sum-square of component amplitudes; no single physical period"
+    assert "root-sum-square of fitted component amplitudes" in periodic["rss_semantics"]
+    assert "no single period" in periodic["rss_semantics"]
     assert len(periodic["components"]) == 4
     assert [item["basis"] for item in periodic["components"]] == [
         "orbital",
