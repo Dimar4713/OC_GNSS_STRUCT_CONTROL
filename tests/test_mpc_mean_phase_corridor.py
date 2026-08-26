@@ -9,7 +9,13 @@ from constellation_control.application.run import load_scenario
 from constellation_control.control.controllers import solve_impulsive_mpc
 from constellation_control.control.execution import RecedingHorizonMPCController
 from constellation_control.control.phase_target import delta_u_from_damico_roe
-from constellation_control.domain.models import OsculatingState, PropagationResult
+from constellation_control.domain.models import (
+    ConstraintConfig,
+    OsculatingState,
+    PropagationRequest,
+    PropagationResult,
+    SatelliteSpec,
+)
 from constellation_control.mean_elements.roe import RelativeOrbitalElements, mean_from_damico_roe
 
 
@@ -74,14 +80,28 @@ def test_linear_mpc_requires_complete_mean_phase_constraint_parameters() -> None
         )
 
 
-def _replay_case(relative: RelativeOrbitalElements) -> tuple[object, PropagationResult, object, object, object]:
+def _replay_case(
+    relative: RelativeOrbitalElements,
+) -> tuple[PropagationRequest, PropagationResult, ConstraintConfig, SatelliteSpec, SatelliteSpec]:
     scenario = load_scenario(Path(__file__).parents[1] / "scenarios" / "mvp_45deg.yaml")
     reference = next(sat for sat in scenario.constellation.satellites if sat.role == "reference")
     source_deputy = next(sat for sat in scenario.constellation.satellites if sat.role == "additional")
     deputy = source_deputy.model_copy(
         update={"mean_orbit": mean_from_damico_roe(reference.mean_orbit, relative)}
     )
-    request = scenario.propagation_request().model_copy(update={"satellites": (reference, deputy)})
+    request = PropagationRequest(
+        scenario_id=scenario.scenario_id,
+        epoch=scenario.epoch,
+        frame=scenario.frame,
+        time_scale=scenario.time_scale,
+        satellites=(reference, deputy),
+        maneuvers=scenario.maneuvers,
+        duration_s=scenario.duration_s,
+        output_step_s=scenario.output_step_s,
+        force_model=scenario.force_model,
+        integrator=scenario.integrator,
+        seed=scenario.seed,
+    )
     zero_v = (0.0, 0.0, 0.0)
     ref_cart = OsculatingState(epoch_s=0.0, r_m=(0.0, 0.0, 0.0), v_m_s=zero_v)
     dep_cart = OsculatingState(epoch_s=0.0, r_m=(5000.0, 0.0, 0.0), v_m_s=zero_v)
@@ -99,10 +119,20 @@ def _replay_case(relative: RelativeOrbitalElements) -> tuple[object, Propagation
 def test_nonlinear_replay_accepts_delta_lambda_outside_when_actual_delta_u_inside() -> None:
     scenario = load_scenario(Path(__file__).parents[1] / "scenarios" / "mvp_45deg.yaml")
     reference = next(sat for sat in scenario.constellation.satellites if sat.role == "reference")
+    half_width = scenario.constraints.phase_corridor_rad
     cot_i = RecedingHorizonMPCController._mean_phase_cot_i(reference)  # noqa: SLF001
-    relative = RelativeOrbitalElements(0.0, 0.15, 0.0, 0.0, 0.0, (0.15 - 0.05) / cot_i)
-    assert abs(relative.delta_lambda_rad) > scenario.constraints.phase_corridor_rad
-    assert abs(delta_u_from_damico_roe(reference.mean_orbit, relative)) < scenario.constraints.phase_corridor_rad
+    raw_delta_lambda = 1.025 * half_width
+    target_delta_u = 0.975 * half_width
+    relative = RelativeOrbitalElements(
+        0.0,
+        raw_delta_lambda,
+        0.0,
+        0.0,
+        0.0,
+        (raw_delta_lambda - target_delta_u) / cot_i,
+    )
+    assert abs(relative.delta_lambda_rad) > half_width
+    assert abs(delta_u_from_damico_roe(reference.mean_orbit, relative)) < half_width
 
     request, replay, constraints, deputy, reference = _replay_case(relative)
     reason, minimum_distance = RecedingHorizonMPCController._nonlinear_constraint_reason(  # noqa: SLF001
@@ -115,10 +145,20 @@ def test_nonlinear_replay_accepts_delta_lambda_outside_when_actual_delta_u_insid
 def test_nonlinear_replay_rejects_delta_lambda_inside_when_actual_delta_u_outside() -> None:
     scenario = load_scenario(Path(__file__).parents[1] / "scenarios" / "mvp_45deg.yaml")
     reference = next(sat for sat in scenario.constellation.satellites if sat.role == "reference")
+    half_width = scenario.constraints.phase_corridor_rad
     cot_i = RecedingHorizonMPCController._mean_phase_cot_i(reference)  # noqa: SLF001
-    relative = RelativeOrbitalElements(0.0, 0.05, 0.0, 0.0, 0.0, (0.05 - 0.15) / cot_i)
-    assert abs(relative.delta_lambda_rad) < scenario.constraints.phase_corridor_rad
-    assert abs(delta_u_from_damico_roe(reference.mean_orbit, relative)) > scenario.constraints.phase_corridor_rad
+    raw_delta_lambda = 0.975 * half_width
+    target_delta_u = 1.025 * half_width
+    relative = RelativeOrbitalElements(
+        0.0,
+        raw_delta_lambda,
+        0.0,
+        0.0,
+        0.0,
+        (raw_delta_lambda - target_delta_u) / cot_i,
+    )
+    assert abs(relative.delta_lambda_rad) < half_width
+    assert abs(delta_u_from_damico_roe(reference.mean_orbit, relative)) > half_width
 
     request, replay, constraints, deputy, reference = _replay_case(relative)
     reason, _ = RecedingHorizonMPCController._nonlinear_constraint_reason(  # noqa: SLF001
@@ -130,6 +170,8 @@ def test_nonlinear_replay_rejects_delta_lambda_inside_when_actual_delta_u_outsid
 def test_execution_mean_phase_linear_mapping_fails_closed_near_equator() -> None:
     scenario = load_scenario(Path(__file__).parents[1] / "scenarios" / "mvp_45deg.yaml")
     reference = next(sat for sat in scenario.constellation.satellites if sat.role == "reference")
-    equatorial = reference.model_copy(update={"mean_orbit": reference.mean_orbit.model_copy(update={"ix": 0.0, "iy": 0.0})})
+    equatorial = reference.model_copy(
+        update={"mean_orbit": reference.mean_orbit.model_copy(update={"ix": 0.0, "iy": 0.0})}
+    )
     with pytest.raises(ValueError, match="ill-conditioned near equatorial inclination"):
         RecedingHorizonMPCController._mean_phase_cot_i(equatorial)  # noqa: SLF001
