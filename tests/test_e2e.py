@@ -32,6 +32,9 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
         "07_ground_track.png",
         "09_maneuver_delta_v.png",
         "10_propellant_reserve.png",
+        "11_delta_u_mean.png",
+        "12_along_track_mean_arc_proxy.png",
+        "interactive_delta_u_mean.html",
     )
     for name in required:
         path = run_dir / name
