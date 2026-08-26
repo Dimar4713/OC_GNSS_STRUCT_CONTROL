@@ -158,7 +158,7 @@ def test_progress_reports_simulated_fraction_remaining_and_usable_fuel_without_r
     assert progress.cumulative_delta_v_m_s == pytest.approx(0.25)
     assert progress.cumulative_propellant_used_kg == pytest.approx(3.0)
     assert progress.usable_propellant_above_reserve_kg == pytest.approx(30.0)
-    assert progress.last_policy_reason == "rearmed_inside_corridor"
+    assert progress.last_policy_reason == "phase_boundary_reached_coast_to_opposite_boundary"
     assert progress.checkpoint_sequence == 3
     assert progress.runtime_eta_available is False
     assert "not inferred from simulated time" in progress.runtime_eta_reason
