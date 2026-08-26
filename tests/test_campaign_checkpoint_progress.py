@@ -45,7 +45,7 @@ def _request() -> PropagationRequest:
 
 
 def _constraints() -> ConstraintConfig:
-    return _scenario().constraints
+    return _scenario().constraints.model_copy(update={"phase_corridor_rad": 0.1})
 
 
 def _execution_policy() -> MPCExecutionPolicy:
