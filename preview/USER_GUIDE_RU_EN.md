@@ -1,4 +1,4 @@
-# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.2
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.3
 # Руководство пользователя / User Guide
 
 ## Русский
@@ -75,7 +75,30 @@ Orekit JAR уже входит в Engineering Preview. Отдельная уст
 
 Если ожидаемая схема ОГ, например 8 КА × 45° и межплоскостное фазирование 0/15/30°, не совпадает с фактической, сценарий следует проверить до длительного расчёта.
 
-### 8. Проверка входных данных
+### 8. Относительная динамика и граница коррекции
+После завершения расчёта Preview показывает для каждой пары `additional/reference`:
+- `Δu, °` — конечную разность средних фазовых координат `u_mean`;
+- `дрейф, °/сут` и `°/год` — линейную вековую оценку изменения `Δu`;
+- `Δs, км ≈ a_ref·Δu` — среднюю вдольорбитальную дуговую оценку;
+- `Δv вдоль, м/с` — скорость изменения этой дуговой оценки;
+- `±коридор, °` — фактический `constraints.phase_corridor_rad`, переведённый в градусы;
+- состояние **В коридоре** или **ВНЕ КОРИДОРА**;
+- прогнозируемую сторону границы и время до неё в сутках.
+
+`Δu` не следует смешивать с D'Amico `delta_lambda`: это разные относительные координаты. В D'Amico `delta_lambda` присутствует вклад `cos(i_ref)·ΔΩ`.
+
+`Δs` не является декартовым расстоянием между КА. Для физического расстояния используются Cartesian states и отдельная метрика pair distance.
+
+Если вековая скорость `Δu` равна нулю, Preview показывает неопределённое время до границы вместо искусственно заданного значения. Если КА уже вне коридора, время до границы равно нулю.
+
+Под таблицей доступны:
+- **График Δu и коридора**;
+- **График Δs**;
+- **Интерактивный Δu**.
+
+Эти данные являются диагностикой. В 0.1.3 они ещё не запускают автоматически коррекцию и не выбирают стратегию управления.
+
+### 9. Проверка входных данных
 Перед расчётом просмотрите:
 - эпоху, frame и time scale;
 - длительность и шаг;
@@ -85,13 +108,13 @@ Orekit JAR уже входит в Engineering Preview. Отдельная уст
 - **Эксперт / YAML**;
 - **Нормализованный сценарий**.
 
-### 9. Запуск и результаты
-Нажмите **Запустить выбранный сценарий**. После завершения появится ссылка **Открыть инженерный отчёт**. Результаты сохраняются в `preview/results/`.
+### 10. Запуск и результаты
+Нажмите **Запустить выбранный сценарий**. После завершения появятся блок относительной динамики, ссылки на новые графики и ссылка **Открыть инженерный отчёт**. Результаты сохраняются в `preview/results/`.
 
-### 10. Физическое правило
+### 11. Физическое правило
 Вековое поведение оценивается по средним элементам, согласованным с той же моделью сил. Мгновенная оскулирующая большая полуось не используется как критерий векового ухода/управления. Cartesian state применяется для истинных физических расстояний, навигационной геометрии и ground track.
 
-### 11. Обратная связь
+### 12. Обратная связь
 Заполняйте `preview/EXPERT_FEEDBACK.md` либо присылайте: сценарий → действие → ожидаемый результат → фактический результат → замечание.
 
 ---
@@ -170,7 +193,30 @@ Before a long run inspect **Constellation Geometry Preflight**. It reports the o
 
 If the intended constellation geometry, for example 8 spacecraft × 45° and 0/15/30° inter-plane phasing, differs from the observed values, review the scenario before a long propagation.
 
-### 8. Input review
+### 8. Relative operations and correction boundary
+After a run the Preview reports for every `additional/reference` pair:
+- `Δu, deg` — final difference between the two mean `u_mean` phase coordinates;
+- drift in `deg/day` and `deg/year` — linear secular estimate of `Δu` evolution;
+- `Δs, km ≈ a_ref·Δu` — mean along-track arc proxy;
+- along-track `Δv, m/s` — rate of that proxy;
+- `±corridor, deg` — actual configured `constraints.phase_corridor_rad` converted to degrees;
+- **Inside corridor** or **OUTSIDE CORRIDOR** state;
+- predicted boundary sign and time to boundary in days.
+
+Do not confuse `Δu` with D'Amico `delta_lambda`; they are distinct relative coordinates. D'Amico `delta_lambda` includes a `cos(i_ref)·ΔΩ` contribution.
+
+`Δs` is not Cartesian spacecraft separation. Physical separation continues to use Cartesian states and the separate pair-distance metric.
+
+If secular `Δu` rate is zero, Preview leaves time-to-boundary unavailable instead of inventing a value. If the pair is already outside the corridor, time-to-boundary is zero.
+
+Below the table the Preview exposes:
+- **Δu and corridor plot**;
+- **Δs plot**;
+- **Interactive Δu**.
+
+These are diagnostics. Version 0.1.3 does not automatically execute a correction or choose a control strategy.
+
+### 9. Input review
 Before a run inspect:
 - epoch, frame and time scale;
 - duration and output step;
@@ -180,11 +226,11 @@ Before a run inspect:
 - **Expert / YAML**;
 - **Normalized scenario**.
 
-### 9. Run and results
-Click **Run selected scenario**. After completion use **Open engineering report**. Run evidence is retained under `preview/results/`.
+### 10. Run and results
+Click **Run selected scenario**. After completion inspect the relative-operations block, the new plots and **Open engineering report**. Run evidence is retained under `preview/results/`.
 
-### 10. Physics rule
+### 11. Physics rule
 Secular behavior is evaluated using mean elements consistent with the same force model. Instantaneous osculating semi-major axis is not used as a secular drift/control criterion. Cartesian state is used for true physical distance, navigation geometry and ground-track evidence.
 
-### 11. Feedback
+### 12. Feedback
 Use `preview/EXPERT_FEEDBACK.md` or report: scenario → action → expected result → actual result → engineering comment.
