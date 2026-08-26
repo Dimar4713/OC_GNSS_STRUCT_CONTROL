@@ -170,8 +170,8 @@ def generate_engineering_plots(
     _save_line(
         timeseries,
         "time_s",
-        ["delta_u_mean_deg"],
-        "Operator mean phase difference Delta u",
+        ["delta_u_mean_deg", "phase_corridor_upper_deg", "phase_corridor_lower_deg"],
+        "Operator mean phase difference Delta u and configured corridor",
         output_dir / "11_delta_u_mean.png",
         group="pair_id",
     )
