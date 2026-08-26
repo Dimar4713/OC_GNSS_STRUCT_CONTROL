@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from math import isfinite
 
 import numpy as np
@@ -29,7 +30,7 @@ from constellation_control.control.transition import (
     AuthoritativeTransitionSnapshot,
     CorrectionResourceRecord,
 )
-from constellation_control.domain.models import ConstraintConfig, PropagationRequest
+from constellation_control.domain.models import ConstraintConfig, PropagationRequest, PropagationResult
 from constellation_control.domain.protocols import Propagator
 from constellation_control.dynamics.orbits import wrap_pi
 
@@ -157,6 +158,35 @@ def _request_delta_u(request: PropagationRequest, deputy_id: str, reference_id: 
     return wrap_pi(
         mean_phase_rad(by_id[deputy_id].mean_orbit)
         - mean_phase_rad(by_id[reference_id].mean_orbit)
+    )
+
+
+def _request_from_result_sample(
+    source: PropagationRequest,
+    result: PropagationResult,
+    index: int,
+) -> PropagationRequest:
+    """Advance an immutable baseline request to one authoritative result sample."""
+
+    if result.force_model_fingerprint != source.force_model.fingerprint():
+        raise ValueError("coast result force-model fingerprint does not match source request")
+    if not result.times_s:
+        raise ValueError("coast result must contain at least one time sample")
+    resolved_index = index if index >= 0 else len(result.times_s) + index
+    if resolved_index < 0 or resolved_index >= len(result.times_s):
+        raise IndexError("coast result sample index is outside the time grid")
+    rebuilt = []
+    for satellite in source.satellites:
+        history = result.mean_orbits.get(satellite.satellite_id)
+        if history is None or len(history) <= resolved_index:
+            raise ValueError(f"coast result lacks mean state for {satellite.satellite_id} at terminal sample")
+        rebuilt.append(satellite.model_copy(update={"mean_orbit": history[resolved_index]}))
+    return source.model_copy(
+        update={
+            "epoch": source.epoch + timedelta(seconds=float(result.times_s[resolved_index])),
+            "satellites": tuple(rebuilt),
+            "maneuvers": (),
+        }
     )
 
 
@@ -424,6 +454,7 @@ def run_closed_loop_campaign(
         policy_state = scan.final_policy_state
         if scan.event is None:
             coast_elapsed = float(coast_result.times_s[-1])
+            current_request = _request_from_result_sample(current_request, coast_result, -1)
             elapsed += coast_elapsed
             reason = (
                 "campaign-horizon-reached"
