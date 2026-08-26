@@ -48,6 +48,7 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     resources = json.loads((run_dir / "resources.json").read_text(encoding="utf-8"))
     assert manifest["force_model_mode"] == "screening"
     assert manifest["algorithm_versions"]["relative_mean_phase"] == "u-mean-lambda-minus-raan-v1"
+    assert manifest["algorithm_versions"]["phase_corridor_forecast"] == "linear-secular-rate-v1"
     assert ground_track
     assert resources
     assert summary["relative_operations"]
@@ -55,9 +56,14 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     assert first_relative["phase_coordinate"] == "u_mean=lambda-Omega"
     assert "not osculating argument of latitude" in first_relative["phase_semantics"]
     assert "not Cartesian separation" in first_relative["along_track_semantics"]
+    corridor = first_relative["phase_corridor"]
+    assert corridor["half_width_rad"] == summary["constraints"]["phase_corridor_rad"]
+    assert corridor["time_to_boundary_s"] is None or corridor["time_to_boundary_s"] >= 0.0
     assert {
         "delta_u_mean_rad",
         "delta_u_mean_deg",
+        "phase_corridor_upper_deg",
+        "phase_corridor_lower_deg",
         "along_track_mean_arc_proxy_m",
     }.issubset(timeseries.columns)
     assert summary["mean_element_rule"] == (
