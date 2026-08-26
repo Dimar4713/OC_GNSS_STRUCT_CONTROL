@@ -12,7 +12,6 @@ from constellation_control.control.closed_loop import (
     CoastPolicyEvent,
     continuation_request_from_snapshot,
     event_request_from_coast,
-    scan_coast_for_policy_event,
 )
 from constellation_control.control.execution import MPCExecutionPolicy, ManeuverAuthorityEvidence
 from constellation_control.control.policies import (
@@ -25,6 +24,10 @@ from constellation_control.control.policy_execution import (
     PolicyManeuverAttemptEvidence,
     append_authorized_resource_record,
     authorize_policy_correction,
+)
+from constellation_control.control.policy_trace import (
+    PolicyTraceRecord,
+    scan_coast_for_policy_event_with_trace,
 )
 from constellation_control.control.transition import (
     AuthoritativeTransitionSnapshot,
@@ -48,6 +51,23 @@ class CampaignPolicyEventRecord(BaseModel):
     guidance_target_delta_u_rad: float | None
     armed_before: bool
     armed_after: bool
+
+
+class CampaignPolicyTraceRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    elapsed_time_s: float = Field(ge=0.0)
+    local_sample_index: int = Field(ge=0)
+    local_time_s: float = Field(ge=0.0)
+    delta_u_rad: float
+    decision_reason: str
+    correction_requested: bool
+    crossed_boundary_sign: int | None
+    guidance_target_delta_u_rad: float | None
+    armed_before: bool
+    armed_after: bool
+    grid_resolution_s: float = Field(gt=0.0)
+    timing_semantics: str
 
 
 class CampaignAuthorityRecord(BaseModel):
@@ -80,6 +100,7 @@ class ClosedLoopCampaignResult(BaseModel):
     termination_reason: str
     final_policy_armed: bool
     policy_events: tuple[CampaignPolicyEventRecord, ...]
+    policy_trace: tuple[CampaignPolicyTraceRecord, ...] = ()
     authority_attempts: tuple[CampaignAuthorityRecord, ...]
     transitions: tuple[AuthoritativeTransitionSnapshot, ...]
     resource_ledger: tuple[CorrectionResourceRecord, ...]
@@ -212,6 +233,26 @@ def _event_record(
     )
 
 
+def _global_trace_record(
+    record: PolicyTraceRecord,
+    coast_start_elapsed_s: float,
+) -> CampaignPolicyTraceRecord:
+    return CampaignPolicyTraceRecord(
+        elapsed_time_s=float(coast_start_elapsed_s + record.time_s),
+        local_sample_index=record.sample_index,
+        local_time_s=record.time_s,
+        delta_u_rad=record.delta_u_rad,
+        decision_reason=record.decision_reason,
+        correction_requested=record.correction_requested,
+        crossed_boundary_sign=record.crossed_boundary_sign,
+        guidance_target_delta_u_rad=record.guidance_target_delta_u_rad,
+        armed_before=record.armed_before,
+        armed_after=record.armed_after,
+        grid_resolution_s=record.grid_resolution_s,
+        timing_semantics=record.timing_semantics,
+    )
+
+
 def _authority_record(
     attempt: PolicyManeuverAttemptEvidence,
     *,
@@ -275,6 +316,7 @@ def _final_result(
     transitions: list[AuthoritativeTransitionSnapshot],
     ledger: tuple[CorrectionResourceRecord, ...],
     deputy_id: str,
+    trace: list[CampaignPolicyTraceRecord] | None = None,
 ) -> ClosedLoopCampaignResult:
     deputy = next(sat for sat in current_request.satellites if sat.satellite_id == deputy_id)
     cumulative_dv = ledger[-1].cumulative_delta_v_m_s if ledger else 0.0
@@ -291,6 +333,7 @@ def _final_result(
         termination_reason=termination_reason,
         final_policy_armed=policy_state.armed,
         policy_events=tuple(events),
+        policy_trace=tuple(() if trace is None else trace),
         authority_attempts=tuple(attempts),
         transitions=tuple(transitions),
         resource_ledger=ledger,
@@ -333,6 +376,7 @@ def run_closed_loop_campaign(
     elapsed = 0.0
     coast_calls = 0
     events: list[CampaignPolicyEventRecord] = []
+    trace: list[CampaignPolicyTraceRecord] = []
     attempts: list[CampaignAuthorityRecord] = []
     transitions: list[AuthoritativeTransitionSnapshot] = []
     ledger: tuple[CorrectionResourceRecord, ...] = ()
@@ -359,6 +403,7 @@ def run_closed_loop_campaign(
             transitions=transitions,
             ledger=ledger,
             deputy_id=controlled_id,
+            trace=trace,
         )
 
     pending_decision: CorrectionDecision | None = decision if decision.correction_requested else None
@@ -440,9 +485,10 @@ def run_closed_loop_campaign(
                     "maneuvers": (),
                 }
             )
+        coast_start_elapsed = elapsed
         coast_result = propagator.propagate(current_request)
         coast_calls += 1
-        scan = scan_coast_for_policy_event(
+        traced = scan_coast_for_policy_event_with_trace(
             coast_result,
             reference_id=reference_id,
             deputy_id=controlled_id,
@@ -451,6 +497,8 @@ def run_closed_loop_campaign(
             initial_state=policy_state,
             output_step_s=current_request.output_step_s,
         )
+        scan = traced.scan
+        trace.extend(_global_trace_record(record, coast_start_elapsed) for record in traced.trace)
         policy_state = scan.final_policy_state
         if scan.event is None:
             coast_elapsed = float(coast_result.times_s[-1])
@@ -496,4 +544,5 @@ def run_closed_loop_campaign(
         transitions=transitions,
         ledger=ledger,
         deputy_id=controlled_id,
+        trace=trace,
     )
