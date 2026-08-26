@@ -15,6 +15,7 @@ from constellation_control.adapters.synthetic.propagator import SyntheticMeanPro
 from constellation_control.analysis.drift import default_harmonic_frequencies, harmonic_regression, linear_rate
 from constellation_control.analysis.fuel import propellant_used_kg
 from constellation_control.analysis.navigation_geometry import evaluate_navigation_geometry, inertial_to_ecef_m
+from constellation_control.analysis.relative_operations import analyze_relative_operations
 from constellation_control.domain.models import (
     ExperimentRunManifest,
     ForceMode,
@@ -300,6 +301,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
 
     satellite_by_id = {sat.satellite_id: sat for sat in scenario.constellation.satellites}
     metrics = []
+    relative_operations: list[dict[str, object]] = []
     rows: list[dict[str, float | str]] = []
 
     for deputy in scenario.constellation.satellites:
@@ -327,6 +329,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             )
         )
         raan_fit = harmonic_regression(times, delta_raan, frequencies)
+        operations, delta_u, along_track = analyze_relative_operations(times, ref_series, dep_series)
 
         ref_cart = result.cartesian_states[reference.satellite_id]
         dep_cart = result.cartesian_states[deputy.satellite_id]
@@ -368,6 +371,17 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             pdop=representative_pdop,
         )
         metrics.append(metric)
+        relative_operations.append(
+            {
+                "pair_id": pair_id,
+                "reference_id": reference.satellite_id,
+                "deputy_id": deputy.satellite_id,
+                "phase_coordinate": "u_mean=lambda-Omega",
+                "phase_semantics": "mean phase M+omega; not osculating argument of latitude",
+                "along_track_semantics": "near-circular mean arc proxy a_ref*Delta_u; not Cartesian separation",
+                **operations.__dict__,
+            }
+        )
         for index, (time_s, roe) in enumerate(zip(times, roes, strict=True)):
             rows.append(
                 {
@@ -376,6 +390,9 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                     "delta_lambda_rad": float(unwrapped_phase[index]),
                     "trend_rad": float(phase_fit.trend_rad[index]),
                     "harmonic_rad": float(phase_fit.harmonic_rad[index]),
+                    "delta_u_mean_rad": float(delta_u[index]),
+                    "delta_u_mean_deg": float(np.degrees(delta_u[index])),
+                    "along_track_mean_arc_proxy_m": float(along_track[index]),
                     "delta_a_mean_m": float(dep_series[index].a_m - ref_series[index].a_m),
                     "delta_ex": roe.delta_ex,
                     "delta_ey": roe.delta_ey,
@@ -416,6 +433,8 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         algorithm_versions={
             "phase_drift": "harmonic-lstsq-v1",
             "raan_drift": "harmonic-lstsq-v1",
+            "relative_mean_phase": "u-mean-lambda-minus-raan-v1",
+            "along_track_proxy": "mean-arc-a-delta-u-v1",
             "roe": "damico-v1",
             "screening": "j2-first-order-v1",
             "navigation_geometry": "ellipsoid-ecef-enu-dop-v1",
@@ -425,6 +444,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     )
     summary = {
         "metrics": [metric.model_dump(mode="json") for metric in metrics],
+        "relative_operations": relative_operations,
         "constraints": scenario.constraints.model_dump(mode="json"),
         "navigation_geometry": navigation_summary,
         "provenance": {
