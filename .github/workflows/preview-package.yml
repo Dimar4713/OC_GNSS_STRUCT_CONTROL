@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
-      BUNDLE_NAME: engineering-preview-python-0.1.1-win10
+      BUNDLE_NAME: engineering-preview-python-0.1.2-win10
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +98,7 @@ jobs:
           test "$actual_sha" = "$OREKIT_DATA_SHA256"
       - name: Build authoritative Orekit sidecar
         run: mvn -B -f sidecar/orekit-service/pom.xml test package
-      - name: Stage Windows Engineering Preview 0.1.1
+      - name: Stage Windows Engineering Preview 0.1.2
         shell: bash
         run: |
           set -euo pipefail
@@ -127,7 +127,7 @@ jobs:
               files.append({'path': rel, 'sha256': digest, 'size': path.stat().st_size})
           manifest = {
               'product': 'OC GNSS STRUCT CONTROL',
-              'release': 'Engineering Preview Python 0.1.1',
+              'release': 'Engineering Preview Python 0.1.2',
               'target': 'Windows 10 expert preview',
               'commit': os.environ['PREVIEW_SOURCE_SHA'],
               'python': '3.12',
@@ -136,6 +136,7 @@ jobs:
               'orekit_data_revision': os.environ['OREKIT_DATA_REVISION'],
               'orekit_data_sha256': os.environ['OREKIT_DATA_SHA256'],
               'language': ['ru', 'en'],
+              'engineering_view': ['period', 'inclination', 'raan', 'u_mean', 'geometry_preflight'],
               'files': files,
           }
           (root / 'preview-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -157,13 +158,15 @@ jobs:
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/README.md" | grep '## Русский'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/README.md" | grep '## English'
           manifest_sha="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
           test "$manifest_sha" = "$PREVIEW_SOURCE_SHA"
-      - name: Upload Engineering Preview 0.1.1
+          test "$manifest_release" = 'Engineering Preview Python 0.1.2'
+      - name: Upload Engineering Preview 0.1.2
         uses: actions/upload-artifact@v4
         with:
-          name: engineering-preview-python-0.1.1-win10
+          name: engineering-preview-python-0.1.2-win10
           retention-days: 14
           if-no-files-found: error
           path: |
-            engineering-preview-python-0.1.1-win10.zip
-            engineering-preview-python-0.1.1-win10.zip.sha256
+            engineering-preview-python-0.1.2-win10.zip
+            engineering-preview-python-0.1.2-win10.zip.sha256
