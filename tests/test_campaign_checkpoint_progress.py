@@ -18,12 +18,17 @@ from constellation_control.control.checkpoint import (
     create_campaign_checkpoint,
     pending_decision_from_campaign,
 )
+from constellation_control.control.execution import MPCExecutionPolicy
 from constellation_control.control.policies import CorrectionPolicy
-from constellation_control.domain.models import PropagationRequest
+from constellation_control.domain.models import ConstraintConfig, PropagationRequest
+
+
+def _scenario():
+    return load_scenario(Path(__file__).parents[1] / "scenarios" / "mvp_45deg.yaml")
 
 
 def _request() -> PropagationRequest:
-    scenario = load_scenario(Path(__file__).parents[1] / "scenarios" / "mvp_45deg.yaml")
+    scenario = _scenario()
     return PropagationRequest(
         scenario_id=scenario.scenario_id,
         epoch=scenario.epoch,
@@ -36,6 +41,20 @@ def _request() -> PropagationRequest:
         force_model=scenario.force_model,
         integrator=scenario.integrator,
         seed=scenario.seed,
+    )
+
+
+def _constraints() -> ConstraintConfig:
+    return _scenario().constraints
+
+
+def _execution_policy() -> MPCExecutionPolicy:
+    return MPCExecutionPolicy(
+        max_abs_impulse_rtn_m_s=(0.2, 0.2, 0.2),
+        min_impulse_bit_m_s=1.0e-3,
+        trust_tolerances_roe=(1.0e-6, 1.0e-3, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6),
+        w_tracking=10.0,
+        w_max=0.5,
     )
 
 
@@ -96,6 +115,21 @@ def _campaign(*, elapsed_s: float, event_elapsed_s: float) -> ClosedLoopCampaign
     )
 
 
+def _checkpoint(campaign: ClosedLoopCampaignResult, *, sequence: int = 0) -> ClosedLoopCampaignCheckpoint:
+    return create_campaign_checkpoint(
+        campaign,
+        constraints=_constraints(),
+        base_execution_policy=_execution_policy(),
+        campaign_horizon_s=720.0,
+        coast_horizon_s=120.0,
+        coast_output_step_s=60.0,
+        authority_times_s=np.asarray([0.0, 60.0]),
+        maneuver_windows=np.asarray([True]),
+        max_corrections=4,
+        checkpoint_sequence=sequence,
+    )
+
+
 def test_boundary_before_authority_checkpoint_retains_exact_pending_decision() -> None:
     campaign = _campaign(elapsed_s=360.0, event_elapsed_s=360.0)
     pending = pending_decision_from_campaign(campaign)
@@ -118,25 +152,19 @@ def test_non_boundary_terminal_state_does_not_fabricate_pending_decision() -> No
 
 def test_checkpoint_json_round_trip_preserves_continuation_identity_and_evidence() -> None:
     campaign = _campaign(elapsed_s=360.0, event_elapsed_s=360.0)
-    checkpoint = create_campaign_checkpoint(
-        campaign,
-        campaign_horizon_s=720.0,
-        coast_horizon_s=120.0,
-        coast_output_step_s=60.0,
-        authority_times_s=np.asarray([0.0, 60.0]),
-        maneuver_windows=np.asarray([True]),
-        max_corrections=4,
-        checkpoint_sequence=2,
-    )
+    checkpoint = _checkpoint(campaign, sequence=2)
 
     restored = ClosedLoopCampaignCheckpoint.model_validate_json(checkpoint.model_dump_json())
     assert restored == checkpoint
     assert restored.schema_version == CHECKPOINT_SCHEMA_VERSION
+    assert restored.campaign_initial_epoch_iso == campaign.initial_epoch_iso
     assert restored.current_request == campaign.final_request
     assert restored.force_model_fingerprint == campaign.final_request.force_model.fingerprint()
     assert restored.frame == campaign.final_request.frame.value
     assert restored.time_scale == campaign.final_request.time_scale.value
     assert restored.integrator == campaign.final_request.integrator
+    assert restored.constraints == _constraints()
+    assert restored.base_execution_policy == _execution_policy()
     assert restored.authority_times_s == (0.0, 60.0)
     assert restored.maneuver_windows == (True,)
     assert restored.pending_decision is not None
@@ -173,13 +201,22 @@ def test_checkpoint_creation_is_pure_evidence_construction() -> None:
 
     bomb = BombPropagator()
     del bomb
-    checkpoint = create_campaign_checkpoint(
-        campaign,
-        campaign_horizon_s=720.0,
-        coast_horizon_s=120.0,
-        coast_output_step_s=60.0,
-        authority_times_s=np.asarray([0.0, 60.0]),
-        maneuver_windows=np.asarray([True]),
-        max_corrections=4,
-    )
+    checkpoint = _checkpoint(campaign)
     assert checkpoint.current_request == campaign.final_request
+
+
+def test_checkpoint_rejects_mismatched_phase_corridor() -> None:
+    campaign = _campaign(elapsed_s=360.0, event_elapsed_s=360.0)
+    constraints = _constraints().model_copy(update={"phase_corridor_rad": 0.2})
+    with pytest.raises(ValueError, match="phase corridor does not match"):
+        create_campaign_checkpoint(
+            campaign,
+            constraints=constraints,
+            base_execution_policy=_execution_policy(),
+            campaign_horizon_s=720.0,
+            coast_horizon_s=120.0,
+            coast_output_step_s=60.0,
+            authority_times_s=np.asarray([0.0, 60.0]),
+            maneuver_windows=np.asarray([True]),
+            max_corrections=4,
+        )
