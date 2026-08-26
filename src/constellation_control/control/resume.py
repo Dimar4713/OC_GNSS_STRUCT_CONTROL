@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 import numpy as np
 
 from constellation_control.control.campaign import (
@@ -24,6 +27,42 @@ from constellation_control.control.policy_execution import (
 )
 from constellation_control.control.transition import CorrectionResourceRecord
 from constellation_control.domain.protocols import Propagator
+
+
+@dataclass(frozen=True)
+class ResumeSafeBoundary:
+    stage: str
+    elapsed_simulated_s: float
+    correction_count: int
+    policy_armed: bool
+    pending_decision: bool
+
+
+ResumeSafeStopHook = Callable[[ResumeSafeBoundary], bool]
+
+
+def _safe_stop_requested(
+    hook: ResumeSafeStopHook | None,
+    *,
+    stage: str,
+    elapsed_simulated_s: float,
+    correction_count: int,
+    policy_armed: bool,
+    pending_decision: bool,
+) -> bool:
+    if hook is None:
+        return False
+    return bool(
+        hook(
+            ResumeSafeBoundary(
+                stage=stage,
+                elapsed_simulated_s=elapsed_simulated_s,
+                correction_count=correction_count,
+                policy_armed=policy_armed,
+                pending_decision=pending_decision,
+            )
+        )
+    )
 
 
 def _validate_checkpoint(checkpoint: ClosedLoopCampaignCheckpoint) -> None:
@@ -271,6 +310,7 @@ def resume_closed_loop_campaign(
     checkpoint: ClosedLoopCampaignCheckpoint,
     *,
     deputy_id: str | None = None,
+    safe_stop: ResumeSafeStopHook | None = None,
 ) -> ClosedLoopCampaignResult:
     """Resume from checkpoint using existing authority and campaign primitives."""
 
@@ -296,6 +336,19 @@ def resume_closed_loop_campaign(
     policy_state = CorrectionPolicyState(armed=checkpoint.policy_armed)
 
     if checkpoint.pending_decision is not None:
+        if _safe_stop_requested(
+            safe_stop,
+            stage="before-authority",
+            elapsed_simulated_s=segment_offset,
+            correction_count=len(prefix_ledger),
+            policy_armed=policy_state.armed,
+            pending_decision=True,
+        ):
+            return _checkpoint_terminal_result(
+                checkpoint,
+                termination_reason="operator-safe-stop",
+            )
+
         decision = _pending_decision(checkpoint.pending_decision)
         authority_times = np.asarray(checkpoint.authority_times_s, dtype=float)
         maneuver_windows = np.asarray(checkpoint.maneuver_windows, dtype=bool)
@@ -340,6 +393,24 @@ def resume_closed_loop_campaign(
                 duration_s=checkpoint.coast_output_step_s,
                 output_step_s=checkpoint.coast_output_step_s,
             )
+            if _safe_stop_requested(
+                safe_stop,
+                stage="after-transition",
+                elapsed_simulated_s=segment_offset,
+                correction_count=len(prefix_ledger),
+                policy_armed=decision.armed_after,
+                pending_decision=False,
+            ):
+                return _checkpoint_terminal_result(
+                    checkpoint,
+                    termination_reason="operator-safe-stop",
+                    authority_attempts=prefix_authority,
+                    transitions=prefix_transitions,
+                    ledger=prefix_ledger,
+                    elapsed_time_s=segment_offset,
+                    final_request=continuation,
+                    final_policy_armed=decision.armed_after,
+                )
             return _checkpoint_terminal_result(
                 checkpoint,
                 termination_reason="campaign-horizon-reached",
@@ -359,6 +430,24 @@ def resume_closed_loop_campaign(
         )
         policy_state = CorrectionPolicyState(armed=decision.armed_after)
         remaining_corrections -= 1
+        if _safe_stop_requested(
+            safe_stop,
+            stage="after-transition",
+            elapsed_simulated_s=segment_offset,
+            correction_count=len(prefix_ledger),
+            policy_armed=policy_state.armed,
+            pending_decision=False,
+        ):
+            return _checkpoint_terminal_result(
+                checkpoint,
+                termination_reason="operator-safe-stop",
+                authority_attempts=prefix_authority,
+                transitions=prefix_transitions,
+                ledger=prefix_ledger,
+                elapsed_time_s=segment_offset,
+                final_request=current_request,
+                final_policy_armed=policy_state.armed,
+            )
         if remaining_corrections <= 0:
             return _checkpoint_terminal_result(
                 checkpoint,
@@ -386,7 +475,7 @@ def resume_closed_loop_campaign(
         initial_policy_state=policy_state,
         deputy_id=deputy_id,
     )
-    return _full_result_from_segment(
+    full = _full_result_from_segment(
         checkpoint,
         segment,
         segment_offset_s=segment_offset,
@@ -394,3 +483,18 @@ def resume_closed_loop_campaign(
         prefix_transitions=prefix_transitions,
         prefix_ledger=prefix_ledger,
     )
+    if _safe_stop_requested(
+        safe_stop,
+        stage="after-segment-reduction",
+        elapsed_simulated_s=full.elapsed_time_s,
+        correction_count=full.correction_count,
+        policy_armed=full.final_policy_armed,
+        pending_decision=(
+            bool(full.policy_events)
+            and abs(full.policy_events[-1].elapsed_time_s - full.elapsed_time_s) <= 1.0e-9
+            and full.policy_events[-1].guidance_target_delta_u_rad is not None
+            and not full.policy_events[-1].armed_after
+        ),
+    ):
+        return full.model_copy(update={"termination_reason": "operator-safe-stop"})
+    return full
