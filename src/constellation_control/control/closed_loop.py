@@ -176,12 +176,19 @@ def scan_coast_for_policy_event(
 ) -> CoastScanResult:
     """Return the first correction request observed on the authoritative coast output grid."""
 
-    _, step = _validate_local_horizon(max(float(result.times_s[-1]), step := float(output_step_s)), step)
+    step = float(output_step_s)
+    if not isfinite(step) or step <= 0.0:
+        raise ValueError("output_step_s must be finite and positive")
     times = np.asarray(result.times_s, dtype=float)
     if times.ndim != 1 or times.size == 0 or np.any(~np.isfinite(times)):
         raise ValueError("coast result times_s must be a non-empty finite one-dimensional grid")
-    if np.any(np.diff(times) <= 0.0):
+    if abs(float(times[0])) > 1.0e-9:
+        raise ValueError("coast result time grid must start at zero")
+    intervals = np.diff(times)
+    if np.any(intervals <= 0.0):
         raise ValueError("coast result times_s must be strictly increasing")
+    if intervals.size and np.any(intervals > step + 1.0e-9):
+        raise ValueError("coast result time intervals exceed declared output_step_s")
     if reference_id not in result.mean_orbits or deputy_id not in result.mean_orbits:
         raise ValueError("coast result does not contain the requested reference/deputy pair")
     ref_history = result.mean_orbits[reference_id]
