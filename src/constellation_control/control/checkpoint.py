@@ -63,6 +63,7 @@ class ClosedLoopCampaignCheckpoint(BaseModel):
     schema_version: str = CHECKPOINT_SCHEMA_VERSION
     checkpoint_sequence: int = Field(ge=0)
     source_termination_reason: str
+    campaign_initial_epoch_iso: str
     force_model_fingerprint: str
     frame: str
     time_scale: str
@@ -222,6 +223,7 @@ def create_campaign_checkpoint(
     return ClosedLoopCampaignCheckpoint(
         checkpoint_sequence=checkpoint_sequence,
         source_termination_reason=campaign.termination_reason,
+        campaign_initial_epoch_iso=campaign.initial_epoch_iso,
         force_model_fingerprint=request.force_model.fingerprint(),
         frame=request.frame.value,
         time_scale=request.time_scale.value,
