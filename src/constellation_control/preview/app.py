@@ -13,8 +13,12 @@ from pydantic import BaseModel, ValidationError
 from constellation_control.adapters.orekit.http import open_orekit_url
 from constellation_control.application.run import load_scenario, run_scenario
 from constellation_control.domain.models import ForceMode, ScenarioConfig
+from constellation_control.preview.engineering import (
+    constellation_geometry_preflight,
+    mean_orbit_engineering_elements,
+)
 
-PREVIEW_VERSION = "0.1.1"
+PREVIEW_VERSION = "0.1.2"
 
 
 class PreviewRunRequest(BaseModel):
@@ -125,23 +129,26 @@ def _load_preview_scenario(scenario_root: Path, scenario_name: str) -> tuple[Pat
 
 def scenario_preview_payload(scenario_root: Path, scenario_name: str) -> dict[str, object]:
     path, scenario = _load_preview_scenario(scenario_root, scenario_name)
-    satellites = [
-        {
-            "satellite_id": satellite.satellite_id,
-            "plane_id": satellite.plane_id,
-            "role": satellite.role,
-            "reference_id": satellite.reference_id,
-            "a_mean_m": satellite.mean_orbit.a_m,
-            "ex": satellite.mean_orbit.ex,
-            "ey": satellite.mean_orbit.ey,
-            "ix": satellite.mean_orbit.ix,
-            "iy": satellite.mean_orbit.iy,
-            "lambda_rad": satellite.mean_orbit.lambda_rad,
-            "initial_mass_kg": satellite.spacecraft.initial_mass_kg,
-            "propellant_mass_kg": satellite.spacecraft.propellant_mass_kg,
-        }
-        for satellite in scenario.constellation.satellites
-    ]
+    mu_m3_s2 = scenario.force_model.mu_m3_s2
+    satellites = []
+    for satellite in scenario.constellation.satellites:
+        engineering = mean_orbit_engineering_elements(satellite.mean_orbit, mu_m3_s2)
+        satellites.append(
+            {
+                "satellite_id": satellite.satellite_id,
+                "plane_id": satellite.plane_id,
+                "role": satellite.role,
+                "reference_id": satellite.reference_id,
+                **engineering,
+                "ex": satellite.mean_orbit.ex,
+                "ey": satellite.mean_orbit.ey,
+                "ix": satellite.mean_orbit.ix,
+                "iy": satellite.mean_orbit.iy,
+                "initial_mass_kg": satellite.spacecraft.initial_mass_kg,
+                "propellant_mass_kg": satellite.spacecraft.propellant_mass_kg,
+            }
+        )
+    geometry = constellation_geometry_preflight(scenario.constellation.satellites, mu_m3_s2)
     return {
         "scenario_name": scenario_name,
         "scenario_id": scenario.scenario_id,
@@ -154,6 +161,7 @@ def scenario_preview_payload(scenario_root: Path, scenario_name: str) -> dict[st
         "duration_s": scenario.duration_s,
         "output_step_s": scenario.output_step_s,
         "satellites": satellites,
+        "geometry_preflight": geometry,
         "navigation_sites": [site.model_dump(mode="json") for site in scenario.navigation_sites],
         "normalized": scenario.model_dump(mode="json"),
         "yaml_text": path.read_text(encoding="utf-8"),
@@ -232,10 +240,10 @@ def _page() -> str:
 body{{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#f4f6f8;color:#17202a}}
 header{{background:#17202a;color:white;padding:14px 24px;display:flex;justify-content:space-between;gap:20px;align-items:center}}
 header small{{opacity:.78}} .lang{{display:flex;gap:6px}} .lang button{{width:auto;margin:0;padding:7px 12px}}
-main{{padding:20px;display:grid;grid-template-columns:320px 1fr;gap:18px}} .card{{background:white;border:1px solid #d9dee3;border-radius:8px;padding:16px;margin-bottom:14px}}
+main{{padding:20px;display:grid;grid-template-columns:320px minmax(0,1fr);gap:18px}} .card{{background:white;border:1px solid #d9dee3;border-radius:8px;padding:16px;margin-bottom:14px}}
 select,button{{width:100%;padding:9px;margin-top:8px}} button{{cursor:pointer;font-weight:600}} .badge{{display:inline-block;padding:6px 10px;border-radius:6px;background:#eef2f5;font-weight:700}}
-table{{border-collapse:collapse;width:100%;font-size:13px}} th,td{{border-bottom:1px solid #e5e8eb;padding:7px;text-align:right}} th:first-child,td:first-child{{text-align:left}}
-pre{{white-space:pre-wrap;word-break:break-word;background:#111820;color:#d9e2ec;padding:12px;border-radius:6px;max-height:360px;overflow:auto}} .status{{padding:9px;border-radius:6px;background:#eef2f5;margin-top:10px}} .danger{{background:#ffe8e8}} .ok{{background:#e8f7ed}} a.result{{display:block;margin-top:10px;font-weight:700}}
+.table-wrap{{overflow-x:auto}} table{{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}} th,td{{border-bottom:1px solid #e5e8eb;padding:7px;text-align:right}} th:first-child,td:first-child{{text-align:left}}
+pre{{white-space:pre-wrap;word-break:break-word;background:#111820;color:#d9e2ec;padding:12px;border-radius:6px;max-height:360px;overflow:auto}} .status{{padding:9px;border-radius:6px;background:#eef2f5;margin-top:10px}} .danger{{background:#ffe8e8}} .ok{{background:#e8f7ed}} a.result{{display:block;margin-top:10px;font-weight:700}} .hint{{font-size:12px;color:#566573}} .geometry-plane{{margin:8px 0;padding:8px;background:#f7f9fa;border-radius:6px}}
 @media(max-width:800px){{main{{grid-template-columns:1fr}} header{{align-items:flex-start;flex-direction:column}}}}
 </style></head>
 <body>
@@ -246,24 +254,26 @@ pre{{white-space:pre-wrap;word-break:break-word;background:#111820;color:#d9e2ec
 <div class="card"><b data-i18n="other"></b><div id="other">—</div></div>
 </aside><section>
 <div class="card"><h2 id="title"></h2><div id="meta"></div></div>
-<div class="card"><h3 data-i18n="constellation"></h3><div id="fleet"></div></div>
+<div class="card"><h3 data-i18n="constellation"></h3><p class="hint" data-i18n="engineeringHint"></p><div id="fleet" class="table-wrap"></div></div>
+<div class="card"><h3 data-i18n="geometry"></h3><div id="geometry"></div></div>
 <div class="card"><h3 data-i18n="expert"></h3><pre id="yaml"></pre></div>
 <div class="card"><h3 data-i18n="normalized"></h3><pre id="normalized"></pre></div>
 </section></main>
 <script>
 const T={{
-ru:{{subtitle:'Локальная инженерная оболочка. Уровень физической достоверности всегда показан явно и работает fail-closed.',scenario:'Сценарий',open:'Открыть сценарий',run:'Запустить выбранный сценарий',ready:'Готово.',loading:'Загрузка…',validated:'Сценарий проверен.',running:'Выполняется расчёт…',completed:'Завершено',report:'Открыть инженерный отчёт',authority:'Расчётная authority',other:'Другие YAML-входы',constellation:'Орбитальная группировка',expert:'Эксперт / YAML',normalized:'Нормализованный сценарий',select:'Выберите сценарий',none:'Нет',notReady:'НЕ ГОТОВО',isReady:'ГОТОВО',epoch:'Эпоха',frame:'СК / время',duration:'Длительность',step:'шаг',fingerprint:'Fingerprint модели сил',sat:'КА',plane:'Плоскость',role:'Роль',meanA:'Средняя a, м',mass:'Масса, кг',fuel:'Топливо, кг',loadFail:'Ошибка загрузки',runFail:'Ошибка расчёта'}},
-en:{{subtitle:'Local engineering shell. Physics authority remains explicit and fail-closed.',scenario:'Scenario',open:'Open scenario',run:'Run selected scenario',ready:'Ready.',loading:'Loading…',validated:'Scenario validated.',running:'Running scenario…',completed:'Completed',report:'Open engineering report',authority:'Authority',other:'Other YAML inputs',constellation:'Constellation',expert:'Expert / YAML',normalized:'Normalized scenario',select:'Select a scenario',none:'None',notReady:'NOT READY',isReady:'READY',epoch:'Epoch',frame:'Frame / time',duration:'Duration',step:'step',fingerprint:'Force fingerprint',sat:'Satellite',plane:'Plane',role:'Role',meanA:'Mean a, m',mass:'Mass, kg',fuel:'Fuel, kg',loadFail:'Load failed',runFail:'Run failed'}}
+ru:{{subtitle:'Локальная инженерная оболочка. Уровень физической достоверности всегда показан явно и работает fail-closed.',scenario:'Сценарий',open:'Открыть сценарий',run:'Запустить выбранный сценарий',ready:'Готово.',loading:'Загрузка…',validated:'Сценарий проверен.',running:'Выполняется расчёт…',completed:'Завершено',report:'Открыть инженерный отчёт',authority:'Расчётная authority',other:'Другие YAML-входы',constellation:'Орбитальная группировка',geometry:'Проверка геометрии ОГ',engineeringHint:'Основной вид показывает инженерные производные от авторитетных средних эквиноциальных элементов. Исходные ex/ey/ix/iy/λ доступны ниже в Expert/normalized.',expert:'Эксперт / YAML',normalized:'Нормализованный сценарий',select:'Выберите сценарий',none:'Нет',notReady:'НЕ ГОТОВО',isReady:'ГОТОВО',epoch:'Эпоха',frame:'СК / время',duration:'Длительность',step:'шаг',fingerprint:'Fingerprint модели сил',sat:'КА',plane:'Плоскость',role:'Роль',period:'T, ч',meanA:'Средняя a, км',inclination:'i, °',raan:'Ω, °',phase:'u_mean, °',mass:'Масса, кг',fuel:'Топливо, кг',planes:'Плоскостей',spacecraft:'КА всего',count:'КА',spacing:'Шаг u_mean',raanOffset:'ΔΩ от P1',phaseOffset:'Фаза mod slot',loadFail:'Ошибка загрузки',runFail:'Ошибка расчёта'}},
+en:{{subtitle:'Local engineering shell. Physics authority remains explicit and fail-closed.',scenario:'Scenario',open:'Open scenario',run:'Run selected scenario',ready:'Ready.',loading:'Loading…',validated:'Scenario validated.',running:'Running scenario…',completed:'Completed',report:'Open engineering report',authority:'Authority',other:'Other YAML inputs',constellation:'Constellation',geometry:'Constellation geometry preflight',engineeringHint:'Primary view shows engineering quantities derived from authoritative mean equinoctial elements. Raw ex/ey/ix/iy/λ remain available in Expert/normalized below.',expert:'Expert / YAML',normalized:'Normalized scenario',select:'Select a scenario',none:'None',notReady:'NOT READY',isReady:'READY',epoch:'Epoch',frame:'Frame / time',duration:'Duration',step:'step',fingerprint:'Force fingerprint',sat:'Satellite',plane:'Plane',role:'Role',period:'T, h',meanA:'Mean a, km',inclination:'i, deg',raan:'Ω, deg',phase:'u_mean, deg',mass:'Mass, kg',fuel:'Fuel, kg',planes:'Planes',spacecraft:'Spacecraft',count:'Count',spacing:'u_mean spacing',raanOffset:'ΔΩ from P1',phaseOffset:'Phase mod slot',loadFail:'Load failed',runFail:'Run failed'}}
 }};
 let lang=localStorage.getItem('preview-lang')||'ru'; let current=null; let catalog=null; let preflight=null;
-const esc=v=>String(v).replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c])); const tr=k=>T[lang][k]||k;
+const esc=v=>String(v).replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c])); const tr=k=>T[lang][k]||k; const fmt=(v,n=3)=>v===null||v===undefined?'—':Number(v).toFixed(n);
 function setStatus(t,k=''){{const e=document.getElementById('status');e.textContent=t;e.className='status '+k}}
 function setLang(v){{lang=v;localStorage.setItem('preview-lang',v);document.documentElement.lang=v;renderLanguage();}}
 function renderLanguage(){{document.getElementById('subtitle').textContent=tr('subtitle');document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=tr(e.dataset.i18n));document.getElementById('openBtn').textContent=tr('open');document.getElementById('runBtn').textContent=tr('run');if(!current)document.getElementById('title').textContent=tr('select');renderOther();renderCurrent();}}
 function renderOther(){{if(!catalog)return;document.getElementById('other').innerHTML=catalog.other_inputs.length?catalog.other_inputs.map(x=>`<div><b>${{esc(x.name)}}</b><br><small>${{esc(x.kind)}} — ${{esc(x.diagnostic)}}</small></div>`).join('<hr>'):tr('none')}}
 function authorityText(mode){{if(lang==='ru')return mode==='screening'?'SCREENING — аналитическая authority средних элементов':mode==='design'?'DESIGN — требуется Orekit DSST authority':'VALIDATION — требуется численная Orekit authority';return current?current.authority:'—'}}
-function renderFleet(rows){{let h=`<table><tr><th>${{tr('sat')}}</th><th>${{tr('plane')}}</th><th>${{tr('role')}}</th><th>${{tr('meanA')}}</th><th>λ, rad</th><th>${{tr('mass')}}</th><th>${{tr('fuel')}}</th></tr>`;for(const x of rows)h+=`<tr><td>${{esc(x.satellite_id)}}</td><td>${{esc(x.plane_id)}}</td><td>${{esc(x.role)}}</td><td>${{esc(x.a_mean_m)}}</td><td>${{esc(x.lambda_rad)}}</td><td>${{esc(x.initial_mass_kg)}}</td><td>${{esc(x.propellant_mass_kg)}}</td></tr>`;return h+'</table>'}}
-function renderCurrent(){{if(!current)return;document.getElementById('title').textContent=current.scenario_id;document.getElementById('authority').textContent=authorityText(current.force_mode);document.getElementById('physics').textContent=lang==='ru'?current.mean_element_rule_ru:current.mean_element_rule_en;document.getElementById('meta').innerHTML=`${{tr('epoch')}}: ${{esc(current.epoch)}}<br>${{tr('frame')}}: ${{esc(current.frame)}} / ${{esc(current.time_scale)}}<br>${{tr('duration')}}: ${{esc(current.duration_s)}} s; ${{tr('step')}}: ${{esc(current.output_step_s)}} s<br>${{tr('fingerprint')}}: <code>${{esc(current.force_model_fingerprint)}}</code>`;document.getElementById('fleet').innerHTML=renderFleet(current.satellites);document.getElementById('yaml').textContent=current.yaml_text;document.getElementById('normalized').textContent=JSON.stringify(current.normalized,null,2);renderPreflight();}}
+function renderFleet(rows){{let h=`<table><tr><th>${{tr('sat')}}</th><th>${{tr('plane')}}</th><th>${{tr('role')}}</th><th>${{tr('period')}}</th><th>${{tr('meanA')}}</th><th>${{tr('inclination')}}</th><th>${{tr('raan')}}</th><th>${{tr('phase')}}</th><th>${{tr('mass')}}</th><th>${{tr('fuel')}}</th></tr>`;for(const x of rows)h+=`<tr><td>${{esc(x.satellite_id)}}</td><td>${{esc(x.plane_id)}}</td><td>${{esc(x.role)}}</td><td>${{fmt(x.period_h,4)}}</td><td>${{fmt(x.a_mean_km,3)}}</td><td>${{fmt(x.inclination_deg,4)}}</td><td>${{fmt(x.raan_deg,4)}}</td><td>${{fmt(x.u_mean_deg,4)}}</td><td>${{fmt(x.initial_mass_kg,2)}}</td><td>${{fmt(x.propellant_mass_kg,2)}}</td></tr>`;return h+'</table>'}}
+function renderGeometry(g){{if(!g)return '—';let h=`<p><b>${{tr('planes')}}:</b> ${{g.plane_count}} &nbsp; <b>${{tr('spacecraft')}}:</b> ${{g.satellite_count}}</p>`;for(const p of g.planes){{h+=`<div class="geometry-plane"><b>${{esc(p.plane_id)}}</b>: ${{tr('count')}}=${{p.satellite_count}}, Ω=${{fmt(p.raan_mean_deg,4)}}°, i=${{fmt(p.inclination_mean_deg,4)}}°, ${{tr('spacing')}}=${{fmt(p.in_plane_spacing_mean_deg,4)}}°</div>`}}if(g.interplane.length){{h+='<div class="table-wrap"><table><tr><th>'+tr('plane')+'</th><th>'+tr('raanOffset')+'</th><th>'+tr('phaseOffset')+'</th></tr>';for(const x of g.interplane)h+=`<tr><td>${{esc(x.plane_id)}}</td><td>${{fmt(x.raan_offset_deg,4)}}°</td><td>${{fmt(x.phase_offset_mod_slot_deg,4)}}°</td></tr>`;h+='</table></div>'}}h+=`<p class="hint">${{esc(lang==='ru'?g.semantics_ru:g.semantics_en)}}</p>`;return h}}
+function renderCurrent(){{if(!current)return;document.getElementById('title').textContent=current.scenario_id;document.getElementById('authority').textContent=authorityText(current.force_mode);document.getElementById('physics').textContent=lang==='ru'?current.mean_element_rule_ru:current.mean_element_rule_en;document.getElementById('meta').innerHTML=`${{tr('epoch')}}: ${{esc(current.epoch)}}<br>${{tr('frame')}}: ${{esc(current.frame)}} / ${{esc(current.time_scale)}}<br>${{tr('duration')}}: ${{esc(current.duration_s)}} s; ${{tr('step')}}: ${{esc(current.output_step_s)}} s<br>${{tr('fingerprint')}}: <code>${{esc(current.force_model_fingerprint)}}</code>`;document.getElementById('fleet').innerHTML=renderFleet(current.satellites);document.getElementById('geometry').innerHTML=renderGeometry(current.geometry_preflight);document.getElementById('yaml').textContent=current.yaml_text;document.getElementById('normalized').textContent=JSON.stringify(current.normalized,null,2);renderPreflight();}}
 function renderPreflight(){{if(!preflight)return;const e=document.getElementById('preflight');const reason=lang==='ru'?preflight.reason_ru:preflight.reason_en;e.textContent=preflight.ready?tr('isReady')+': '+(preflight.orekit_version?`Orekit ${{preflight.orekit_version}}`:reason||''):tr('notReady')+': '+(reason||'authority metadata incomplete');e.className=preflight.ready?'ok':'danger'}}
 async function bootstrap(){{const r=await fetch('/api/scenarios');catalog=await r.json();const s=document.getElementById('scenario');s.replaceChildren(...catalog.scenarios.map(x=>{{const o=document.createElement('option');o.value=x;o.textContent=x;return o}}));renderLanguage();setStatus(tr('ready'));if(catalog.scenarios.length)await loadScenario()}}
 async function loadScenario(){{const n=document.getElementById('scenario').value;if(!n)return;setStatus(tr('loading'));document.getElementById('result').textContent='';const r=await fetch('/api/scenarios/'+encodeURIComponent(n));const d=await r.json();if(!r.ok){{setStatus(d.detail||tr('loadFail'),'danger');return}}current=d;const p=await fetch('/api/preflight/'+encodeURIComponent(n));preflight=await p.json();renderCurrent();setStatus(tr('validated'),'ok')}}
