@@ -5,7 +5,11 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd
 import plotly.express as px
 
@@ -102,7 +106,7 @@ def generate_engineering_plots(
         timeseries,
         "time_s",
         ["delta_lambda_rad", "trend_rad", "harmonic_rad"],
-        "Relative phase",
+        "D'Amico relative longitude coordinate",
         output_dir / "01_delta_lambda.png",
         group="pair_id",
     )
@@ -167,15 +171,40 @@ def generate_engineering_plots(
             output_dir / "10_propellant_reserve.png",
             group="satellite_id",
         )
+    _save_line(
+        timeseries,
+        "time_s",
+        ["delta_u_mean_deg", "phase_corridor_upper_deg", "phase_corridor_lower_deg"],
+        "Operator mean phase difference Delta u and configured corridor",
+        output_dir / "11_delta_u_mean.png",
+        group="pair_id",
+    )
+    _save_line(
+        timeseries,
+        "time_s",
+        ["along_track_mean_arc_proxy_m"],
+        "Mean along-track arc proxy a_ref * Delta u",
+        output_dir / "12_along_track_mean_arc_proxy.png",
+        group="pair_id",
+    )
     if {"time_s", "delta_lambda_rad", "pair_id"}.issubset(timeseries.columns):
         figure = px.line(
             timeseries,
             x="time_s",
             y="delta_lambda_rad",
             color="pair_id",
-            title="Interactive relative phase",
+            title="Interactive D'Amico relative longitude coordinate",
         )
         figure.write_html(output_dir / "interactive_delta_lambda.html", include_plotlyjs="cdn")
+    if {"time_s", "delta_u_mean_deg", "pair_id"}.issubset(timeseries.columns):
+        figure = px.line(
+            timeseries,
+            x="time_s",
+            y="delta_u_mean_deg",
+            color="pair_id",
+            title="Interactive operator mean phase difference Delta u",
+        )
+        figure.write_html(output_dir / "interactive_delta_u_mean.html", include_plotlyjs="cdn")
 
 
 def _write_optional_table(output_dir: Path, name: str, frame: pd.DataFrame | None) -> None:
