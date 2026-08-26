@@ -1,121 +1,80 @@
-# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.3
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.4
 # Руководство пользователя / User Guide
 
 ## Русский
 
 ### 1. Запуск
 1. Распакуйте ZIP в локальный каталог Windows 10.
-2. Убедитесь, что установлен Python 3.12.
-3. Для Design/Validation дополнительно требуется Java 17+.
-4. Запустите `start-preview.bat`.
-5. Откроется локальный Preview.
+2. Убедитесь, что установлен Python 3.12; для DESIGN/VALIDATION дополнительно требуется Java 17+.
+3. Запустите `start-preview.bat`.
+4. На каждом новом компьютере launcher должен создать `.venv-preview` заново — не переносите готовое окружение с другой машины.
 
-На каждом новом компьютере launcher должен создать `.venv-preview` заново. Не копируйте готовую `.venv-preview` с другой машины: virtualenv может содержать абсолютный путь к исходному Python.
+### 2. Authority и физическая постановка
+Перед расчётом проверьте:
+- **SCREENING** — Python analytical/synthetic mean-element authority;
+- **DESIGN** — Orekit DSST authority;
+- **VALIDATION** — Orekit Numerical authority.
 
-### 2. Java Runtime без прав администратора
-Для корпоративных компьютеров рекомендуется portable Java.
+DESIGN/VALIDATION работают fail-closed: недоступный Orekit не подменяется Screening.
 
-Не требуется установка через MSI, права администратора и изменение системного PATH.
+Основной инженерный вид показывает `T`, `a`, `i`, `Ω`, `u_mean = λ - Ω`. `u_mean = M + ω` — средняя фазовая координата, не оскулирующий аргумент широты. Исходные эквиноциальные элементы остаются в **Эксперт / YAML** и **Нормализованный сценарий**.
 
-Структура:
+### 3. Проверка геометрии ОГ
+**Проверка геометрии ОГ** показывает фактические число плоскостей/КА, средние RAAN и наклонение, внутриплоскостной шаг `u_mean` и межплоскостное фазирование. Она не придумывает нормативную геометрию.
 
-```
-runtime/
-  java17/
-    bin/
-      java.exe
-```
+### 4. Выбор горизонта расчёта
+В 0.1.4 доступны:
+- **Scenario** — длительность из YAML;
+- **1 d** — 86 400 с;
+- **8 d** — 691 200 с;
+- **30 d** — 2 592 000 с;
+- **90 d** — 7 776 000 с;
+- **1 y** — 31 557 600 с (юлианский год);
+- **5 y** — 157 788 000 с;
+- **Custom** — положительное конечное значение в секундах.
 
-Проверка:
+После выбора Preview показывает:
+- эффективный `duration_s`;
+- **неизменный** `output_step_s`;
+- ожидаемое число выходных точек.
 
-```powershell
-runtime\java17\bin\java.exe -version
-```
+Число точек вычисляется по действующему контракту сетки: `ceil(duration_s / output_step_s) + 1`. Если горизонт не кратен шагу, backend добавляет точную конечную точку.
 
-Ожидаемый результат:
+#### Жёсткий инвариант
+Выбор горизонта меняет только эффективный `duration_s`. Не меняются скрыто:
+- fidelity / `force_model.mode`;
+- force model и его fingerprint;
+- integrator;
+- `output_step_s`;
+- epoch, frame, time scale;
+- геометрия ОГ;
+- заданные манёвры.
 
-```
-openjdk version "17.x.x"
-```
+Исходный YAML не перезаписывается. Эффективный сценарий сохраняется в результате как `scenario.normalized.json`.
 
-Orekit JAR уже входит в Engineering Preview. Отдельная установка Orekit не требуется.
+Если сокращённый горизонт оказался меньше времени уже заданного манёвра, запуск отклоняется валидацией. Preview **не** переносит манёвр, не удаляет его и не расширяет горизонт автоматически.
 
-### 3. Язык
-В правом верхнем углу выберите **Русский** или **English**. Выбор сохраняется в браузере.
+Preview также не выполняет автоматическое огрубление output step для 1- или 5-летнего расчёта. Большое число точек показывается оператору до запуска.
 
-### 4. Сценарии
-В списке **Сценарий** показываются только YAML, которые проходят проверку как `ScenarioConfig`. Конфигурации Design pipeline и Robustness campaign вынесены в блок **Другие YAML-входы** и не запускаются кнопкой обычного сценария.
+### 5. Относительная динамика
+После расчёта для каждой пары `additional/reference` показываются:
+- `Δu, °`;
+- вековой дрейф `°/сут` и `°/год`;
+- `Δs, км ≈ a_ref·Δu`;
+- вдольорбитальная proxy-скорость, м/с;
+- настроенный фазовый коридор;
+- состояние внутри/вне коридора;
+- прогнозируемая граница и время до неё.
 
-### 5. Authority
-Перед запуском проверьте статус:
-- SCREENING — Python analytical/synthetic mean-element authority;
-- DESIGN — требуется Orekit DSST;
-- VALIDATION — требуется Orekit Numerical.
+`Δu` не тождественна D'Amico `delta_lambda`. `Δs` — средняя дуговая инженерная оценка, не Cartesian distance.
 
-Если Design/Validation показывают **НЕ ГОТОВО**, запуск high fidelity не должен подменяться Screening. Проверьте Java 17+, `preview/runtime/orekit-service.jar` и `preview/runtime/orekit-data/`.
+Периодические компоненты отчёта имеют собственные period/amplitude/peak-to-peak; peak-to-peak всегда `2 × amplitude`. RSS нескольких компонент не имеет одного физического периода.
 
-### 6. Инженерный вид орбиты
-Основная таблица КА показывает производные от авторитетных средних эквиноциальных элементов:
-- `T, ч` — период, вычисленный из средней большой полуоси и `mu` сценария;
-- `a, км` — средняя большая полуось;
-- `i, °` — наклонение;
-- `Ω, °` — RAAN;
-- `u_mean, ° = λ - Ω` — средняя фазовая координата `M + ω`;
-- массу и запас топлива.
+### 6. Результаты
+После запуска используйте блок **Относительная динамика и граница коррекции**, графики и **Открыть инженерный отчёт**. Результаты сохраняются в `preview/results/`.
 
-Важно: `u_mean` — не оскулирующий аргумент широты. Исходные `ex/ey/ix/iy/lambda_rad` всегда остаются доступными в **Эксперт / YAML** и **Нормализованный сценарий**.
-
-### 7. Проверка геометрии ОГ
-Перед расчётом изучите блок **Проверка геометрии ОГ**. Он показывает фактическую геометрию входного сценария, не навязывая нормативные значения:
-- число плоскостей и КА;
-- средний RAAN и наклонение каждой плоскости;
-- средний внутриплоскостной шаг по `u_mean`;
-- `ΔΩ` относительно первой плоскости;
-- фазовый сдвиг modulo slot для равнонаселённых регулярных плоскостей.
-
-Если ожидаемая схема ОГ, например 8 КА × 45° и межплоскостное фазирование 0/15/30°, не совпадает с фактической, сценарий следует проверить до длительного расчёта.
-
-### 8. Относительная динамика и граница коррекции
-После завершения расчёта Preview показывает для каждой пары `additional/reference`:
-- `Δu, °` — конечную разность средних фазовых координат `u_mean`;
-- `дрейф, °/сут` и `°/год` — линейную вековую оценку изменения `Δu`;
-- `Δs, км ≈ a_ref·Δu` — среднюю вдольорбитальную дуговую оценку;
-- `Δv вдоль, м/с` — скорость изменения этой дуговой оценки;
-- `±коридор, °` — фактический `constraints.phase_corridor_rad`, переведённый в градусы;
-- состояние **В коридоре** или **ВНЕ КОРИДОРА**;
-- прогнозируемую сторону границы и время до неё в сутках.
-
-`Δu` не следует смешивать с D'Amico `delta_lambda`: это разные относительные координаты. В D'Amico `delta_lambda` присутствует вклад `cos(i_ref)·ΔΩ`.
-
-`Δs` не является декартовым расстоянием между КА. Для физического расстояния используются Cartesian states и отдельная метрика pair distance.
-
-Если вековая скорость `Δu` равна нулю, Preview показывает неопределённое время до границы вместо искусственно заданного значения. Если КА уже вне коридора, время до границы равно нулю.
-
-Под таблицей доступны:
-- **График Δu и коридора**;
-- **График Δs**;
-- **Интерактивный Δu**.
-
-Эти данные являются диагностикой. В 0.1.3 они ещё не запускают автоматически коррекцию и не выбирают стратегию управления.
-
-### 9. Проверка входных данных
-Перед расчётом просмотрите:
-- эпоху, frame и time scale;
-- длительность и шаг;
-- force-model fingerprint;
-- инженерную таблицу КА;
-- **Проверку геометрии ОГ**;
-- **Эксперт / YAML**;
-- **Нормализованный сценарий**.
-
-### 10. Запуск и результаты
-Нажмите **Запустить выбранный сценарий**. После завершения появятся блок относительной динамики, ссылки на новые графики и ссылка **Открыть инженерный отчёт**. Результаты сохраняются в `preview/results/`.
-
-### 11. Физическое правило
-Вековое поведение оценивается по средним элементам, согласованным с той же моделью сил. Мгновенная оскулирующая большая полуось не используется как критерий векового ухода/управления. Cartesian state применяется для истинных физических расстояний, навигационной геометрии и ground track.
-
-### 12. Обратная связь
-Заполняйте `preview/EXPERT_FEEDBACK.md` либо присылайте: сценарий → действие → ожидаемый результат → фактический результат → замечание.
+### 7. Обратная связь
+Используйте `preview/EXPERT_FEEDBACK.md`: сценарий → выбранный горизонт → действие → ожидаемый результат → фактический результат → инженерное замечание.
 
 ---
 
@@ -123,114 +82,73 @@ Orekit JAR уже входит в Engineering Preview. Отдельная уст
 
 ### 1. Start
 1. Extract the ZIP to a local Windows 10 directory.
-2. Make sure Python 3.12 is installed.
-3. Design/Validation additionally require Java 17+.
-4. Run `start-preview.bat`.
-5. The local Preview opens.
+2. Make sure Python 3.12 is installed; DESIGN/VALIDATION additionally require Java 17+.
+3. Run `start-preview.bat`.
+4. Let the launcher create `.venv-preview` again on every target PC; do not copy a prepared virtual environment between machines.
 
-Let the launcher create `.venv-preview` again on every new computer. Do not copy an already-created environment from another machine because a virtualenv may contain an absolute path to the source Python installation.
+### 2. Authority and physics
+Before execution verify:
+- **SCREENING** — Python analytical/synthetic mean-element authority;
+- **DESIGN** — Orekit DSST authority;
+- **VALIDATION** — Orekit Numerical authority.
 
-### 2. Portable Java without administrator rights
-For corporate Windows environments use portable Java.
+DESIGN/VALIDATION remain fail-closed; unavailable Orekit is never silently replaced by Screening.
 
-MSI installation, administrator rights and system PATH changes are not required.
+The primary engineering view shows `T`, `a`, `i`, `Ω`, and `u_mean = λ - Ω`. `u_mean = M + ω` is a mean phase coordinate, not osculating argument of latitude. Raw equinoctial elements remain available under **Expert / YAML** and **Normalized scenario**.
 
-Recommended layout:
+### 3. Constellation Geometry Preflight
+**Constellation Geometry Preflight** reports observed plane/spacecraft counts, mean RAAN/inclination, in-plane `u_mean` spacing and inter-plane phasing. It does not invent target geometry.
 
-```
-runtime/
-  java17/
-    bin/
-      java.exe
-```
+### 4. Propagation horizon
+Version 0.1.4 provides:
+- **Scenario** — duration declared by YAML;
+- **1 d** — 86,400 s;
+- **8 d** — 691,200 s;
+- **30 d** — 2,592,000 s;
+- **90 d** — 7,776,000 s;
+- **1 y** — 31,557,600 s (Julian year);
+- **5 y** — 157,788,000 s;
+- **Custom** — a positive finite duration in seconds.
 
-Verify:
+Before execution the Preview shows:
+- effective `duration_s`;
+- the **unchanged** `output_step_s`;
+- predicted output sample count.
 
-```powershell
-runtime\java17\bin\java.exe -version
-```
+Sample count follows the active grid contract: `ceil(duration_s / output_step_s) + 1`. If the horizon is not divisible by the step, the backend appends the exact final time.
 
-Expected:
+#### Hard invariant
+Selecting a horizon changes only effective `duration_s`. It must not silently change:
+- fidelity / `force_model.mode`;
+- force model or fingerprint;
+- integrator;
+- `output_step_s`;
+- epoch, frame or time scale;
+- constellation geometry;
+- configured maneuvers.
 
-```
-openjdk version "17.x.x"
-```
+The source YAML is never overwritten. The effective scenario is retained in run evidence as `scenario.normalized.json`.
 
-Orekit JAR is already included in Engineering Preview. No separate Orekit installation is required.
+If a shortened horizon would place an existing maneuver outside the run duration, validation rejects the run. The Preview does not move/delete the maneuver or extend the horizon automatically.
 
-### 3. Language
-Select **Русский** or **English** in the upper-right corner. The choice is stored in the browser.
+There is also no automatic output-step coarsening for 1- or 5-year horizons. Large sample counts are exposed to the operator before execution.
 
-### 4. Scenarios
-The **Scenario** selector contains only YAML files that validate as `ScenarioConfig`. Design pipeline and Robustness campaign configurations are listed under **Other YAML inputs** and are not executed with the normal scenario button.
+### 5. Relative operations
+After a run, every `additional/reference` pair exposes:
+- `Δu, deg`;
+- secular drift in `deg/day` and `deg/year`;
+- `Δs, km ≈ a_ref·Δu`;
+- along-track proxy rate in m/s;
+- configured phase corridor;
+- inside/outside state;
+- predicted boundary and time-to-boundary.
 
-### 5. Authority
-Check the status before execution:
-- SCREENING — Python analytical/synthetic mean-element authority;
-- DESIGN — Orekit DSST required;
-- VALIDATION — Orekit Numerical required.
+`Δu` remains distinct from D'Amico `delta_lambda`. `Δs` is a mean-arc engineering proxy, not Cartesian separation.
 
-If Design/Validation show **NOT READY**, high fidelity must not silently fall back to Screening. Check Java 17+, `preview/runtime/orekit-service.jar`, and `preview/runtime/orekit-data/`.
+Periodic report components have their own period/amplitude/peak-to-peak; peak-to-peak is always `2 × amplitude`. The RSS of multiple components has no single physical period.
 
-### 6. Engineering orbit view
-The primary spacecraft table displays quantities derived from authoritative mean equinoctial elements:
-- `T, h` — period derived from mean semi-major axis and scenario `mu`;
-- `a, km` — mean semi-major axis;
-- `i, deg` — inclination;
-- `Ω, deg` — RAAN;
-- `u_mean, deg = λ - Ω` — mean phase coordinate `M + ω`;
-- mass and propellant.
+### 6. Results
+After execution inspect **Relative operations and correction boundary**, generated plots and **Open engineering report**. UI evidence is stored under `preview/results/`.
 
-Important: `u_mean` is not an osculating argument of latitude. Raw `ex/ey/ix/iy/lambda_rad` remain available under **Expert / YAML** and **Normalized scenario**.
-
-### 7. Constellation Geometry Preflight
-Before a long run inspect **Constellation Geometry Preflight**. It reports the observed scenario geometry without inventing target requirements:
-- number of planes and spacecraft;
-- mean RAAN and inclination per plane;
-- mean in-plane `u_mean` spacing;
-- `ΔΩ` relative to the first plane;
-- phase offset modulo slot size for equal-population regular planes.
-
-If the intended constellation geometry, for example 8 spacecraft × 45° and 0/15/30° inter-plane phasing, differs from the observed values, review the scenario before a long propagation.
-
-### 8. Relative operations and correction boundary
-After a run the Preview reports for every `additional/reference` pair:
-- `Δu, deg` — final difference between the two mean `u_mean` phase coordinates;
-- drift in `deg/day` and `deg/year` — linear secular estimate of `Δu` evolution;
-- `Δs, km ≈ a_ref·Δu` — mean along-track arc proxy;
-- along-track `Δv, m/s` — rate of that proxy;
-- `±corridor, deg` — actual configured `constraints.phase_corridor_rad` converted to degrees;
-- **Inside corridor** or **OUTSIDE CORRIDOR** state;
-- predicted boundary sign and time to boundary in days.
-
-Do not confuse `Δu` with D'Amico `delta_lambda`; they are distinct relative coordinates. D'Amico `delta_lambda` includes a `cos(i_ref)·ΔΩ` contribution.
-
-`Δs` is not Cartesian spacecraft separation. Physical separation continues to use Cartesian states and the separate pair-distance metric.
-
-If secular `Δu` rate is zero, Preview leaves time-to-boundary unavailable instead of inventing a value. If the pair is already outside the corridor, time-to-boundary is zero.
-
-Below the table the Preview exposes:
-- **Δu and corridor plot**;
-- **Δs plot**;
-- **Interactive Δu**.
-
-These are diagnostics. Version 0.1.3 does not automatically execute a correction or choose a control strategy.
-
-### 9. Input review
-Before a run inspect:
-- epoch, frame and time scale;
-- duration and output step;
-- force-model fingerprint;
-- engineering spacecraft table;
-- **Constellation Geometry Preflight**;
-- **Expert / YAML**;
-- **Normalized scenario**.
-
-### 10. Run and results
-Click **Run selected scenario**. After completion inspect the relative-operations block, the new plots and **Open engineering report**. Run evidence is retained under `preview/results/`.
-
-### 11. Physics rule
-Secular behavior is evaluated using mean elements consistent with the same force model. Instantaneous osculating semi-major axis is not used as a secular drift/control criterion. Cartesian state is used for true physical distance, navigation geometry and ground-track evidence.
-
-### 12. Feedback
-Use `preview/EXPERT_FEEDBACK.md` or report: scenario → action → expected result → actual result → engineering comment.
+### 7. Feedback
+Use `preview/EXPERT_FEEDBACK.md`: scenario → selected horizon → action → expected result → actual result → engineering comment.
