@@ -88,13 +88,13 @@ def test_high_fidelity_preflight_fails_closed_without_sidecar_url() -> None:
     assert result["reason_en"] == "orekit_sidecar_url is not configured."
 
 
-def test_preview_http_shell_runs_screening_and_serves_report(tmp_path: Path) -> None:
+def test_preview_http_shell_runs_screening_and_serves_operations_and_artifacts(tmp_path: Path) -> None:
     app = create_preview_app(_repo_root() / "scenarios", tmp_path)
     client = TestClient(app)
 
     health = client.get("/health")
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "preview": "0.1.2"}
+    assert health.json() == {"status": "ok", "preview": "0.1.3"}
 
     catalog = client.get("/api/scenarios")
     assert catalog.status_code == 200
@@ -120,9 +120,40 @@ def test_preview_http_shell_runs_screening_and_serves_report(tmp_path: Path) -> 
     assert (run_dir / "manifest.json").is_file()
     assert (run_dir / "report.html").is_file()
 
+    operations = payload["operations"]
+    assert operations["available"] is True
+    assert operations["pairs"]
+    pair = operations["pairs"][0]
+    assert pair["final_delta_u_deg"] is not None
+    assert pair["drift_deg_day"] is not None
+    assert pair["drift_deg_julian_year"] is not None
+    assert pair["final_along_track_proxy_km"] is not None
+    assert pair["corridor_half_width_deg"] is not None
+    assert isinstance(pair["inside_corridor"], bool)
+    assert "not osculating argument of latitude" in pair["phase_semantics"]
+    assert "not Cartesian separation" in pair["along_track_semantics"]
+
     report = client.get(payload["report_url"])
     assert report.status_code == 200
     assert "Constellation Control run" in report.text
+
+    phase_plot = client.get(payload["artifacts"]["phase_plot"])
+    assert phase_plot.status_code == 200
+    assert phase_plot.headers["content-type"].startswith("image/png")
+    assert phase_plot.content
+
+    along_track_plot = client.get(payload["artifacts"]["along_track_plot"])
+    assert along_track_plot.status_code == 200
+    assert along_track_plot.headers["content-type"].startswith("image/png")
+    assert along_track_plot.content
+
+    interactive = client.get(payload["artifacts"]["interactive_phase"])
+    assert interactive.status_code == 200
+    assert interactive.headers["content-type"].startswith("text/html")
+    assert "plotly" in interactive.text.lower()
+
+    blocked = client.get(payload["report_url"].replace("report.html", "summary.json"))
+    assert blocked.status_code == 404
 
 
 def test_preview_rejects_path_escape_and_non_yaml_inputs(tmp_path: Path) -> None:
@@ -145,9 +176,9 @@ def test_preview_result_access_stays_inside_output_root(tmp_path: Path) -> None:
         _safe_result_file(tmp_path, "..", "run", "report.html")
 
 
-def test_preview_page_is_bilingual_and_exposes_engineering_view() -> None:
+def test_preview_page_is_bilingual_and_exposes_engineering_and_operations_views() -> None:
     page = render_preview_page_for_test()
-    assert "OC GNSS STRUCT CONTROL — Engineering Preview 0.1.2" in page
+    assert "OC GNSS STRUCT CONTROL — Engineering Preview 0.1.3" in page
     assert "Русский" in page
     assert "English" in page
     assert "Локальная инженерная оболочка" in page
@@ -158,5 +189,11 @@ def test_preview_page_is_bilingual_and_exposes_engineering_view() -> None:
     assert "Expert / YAML" in page
     assert "Проверка геометрии ОГ" in page
     assert "Constellation geometry preflight" in page
+    assert "Относительная динамика и граница коррекции" in page
+    assert "Relative operations and correction boundary" in page
+    assert "Δu" in page
+    assert "Δs" in page
+    assert "°/сут" in page
+    assert "deg/day" in page
     assert "u_mean" in page
     assert "Ω" in page
