@@ -140,6 +140,19 @@ def pending_decision_from_campaign(
     )
 
 
+def _latest_policy_reason(campaign: ClosedLoopCampaignResult) -> str | None:
+    candidates: list[tuple[float, int, str]] = []
+    if campaign.policy_trace:
+        trace = campaign.policy_trace[-1]
+        candidates.append((trace.elapsed_time_s, 0, trace.decision_reason))
+    if campaign.policy_events:
+        event = campaign.policy_events[-1]
+        candidates.append((event.elapsed_time_s, 1, event.decision_reason))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (item[0], item[1]))[2]
+
+
 def campaign_progress(
     campaign: ClosedLoopCampaignResult,
     *,
@@ -160,11 +173,6 @@ def campaign_progress(
         0.0,
         campaign.controlled_propellant_remaining_kg - campaign.controlled_required_reserve_kg,
     )
-    last_reason: str | None = None
-    if campaign.policy_trace:
-        last_reason = campaign.policy_trace[-1].decision_reason
-    elif campaign.policy_events:
-        last_reason = campaign.policy_events[-1].decision_reason
     return CampaignProgressEvidence(
         elapsed_simulated_s=elapsed,
         campaign_horizon_s=horizon,
@@ -179,7 +187,7 @@ def campaign_progress(
         required_reserve_kg=campaign.controlled_required_reserve_kg,
         usable_propellant_above_reserve_kg=usable,
         policy_armed=campaign.final_policy_armed,
-        last_policy_reason=last_reason,
+        last_policy_reason=_latest_policy_reason(campaign),
         coast_propagation_calls=campaign.coast_propagation_calls,
         checkpoint_sequence=checkpoint_sequence,
     )
