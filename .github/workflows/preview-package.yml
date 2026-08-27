@@ -31,13 +31,13 @@ jobs:
           Write-Host 'PowerShell 5.1 UTF-8 bootstrap parse: OK'
       - name: Run Preview HTTP and loopback tests on Windows
         shell: pwsh
-        run: pytest -q tests/test_preview.py tests/test_preview_operations.py tests/test_preview_duration.py tests/test_duration_run.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
+        run: pytest -q tests/test_preview.py tests/test_preview_operations.py tests/test_preview_duration.py tests/test_duration_run.py tests/test_preview_closed_loop.py tests/test_preview_closed_loop_http.py tests/test_preview_closed_loop_ui.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
 
   build-preview-bundle:
     runs-on: ubuntu-latest
     env:
       OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
-      BUNDLE_NAME: engineering-preview-python-0.1.4-win10
+      BUNDLE_NAME: engineering-preview-python-0.1.5-win10
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +98,7 @@ jobs:
           test "$actual_sha" = "$OREKIT_DATA_SHA256"
       - name: Build authoritative Orekit sidecar
         run: mvn -B -f sidecar/orekit-service/pom.xml test package
-      - name: Stage Windows Engineering Preview 0.1.4
+      - name: Stage Windows Engineering Preview 0.1.5
         shell: bash
         run: |
           set -euo pipefail
@@ -127,7 +127,7 @@ jobs:
               files.append({'path': rel, 'sha256': digest, 'size': path.stat().st_size})
           manifest = {
               'product': 'OC GNSS STRUCT CONTROL',
-              'release': 'Engineering Preview Python 0.1.4',
+              'release': 'Engineering Preview Python 0.1.5',
               'target': 'Windows 10 expert preview',
               'commit': os.environ['PREVIEW_SOURCE_SHA'],
               'python': '3.12',
@@ -147,8 +147,12 @@ jobs:
                   'phase_corridor_forecast',
                   'duration_presets',
                   'output_sample_count_forecast',
+                  'closed_loop_p2_policies',
+                  'explicit_control_profile',
+                  'delta_v_propellant_lifetime_evidence',
               ],
               'duration_invariant': 'duration override only; fidelity/force/integrator/output_step unchanged',
+              'closed_loop_invariant': 'operator-supplied profile only; no hidden control constants',
               'files': files,
           }
           (root / 'preview-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -164,23 +168,25 @@ jobs:
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/start-preview-bootstrap.ps1'
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/USER_GUIDE_RU_EN.md'
-          unzip -l "$BUNDLE_NAME.zip" | grep "$BUNDLE_NAME/README.md"
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/README.md" | grep '## Русский'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/README.md" | grep '## English'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/README.md" | grep '## Русский'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/README.md" | grep '## English'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/USER_GUIDE_RU_EN.md" | grep 'Closed-loop'
           manifest_sha="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
           manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
           manifest_duration="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["duration_invariant"])')"
+          manifest_closed_loop="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["closed_loop_invariant"])')"
           test "$manifest_sha" = "$PREVIEW_SOURCE_SHA"
-          test "$manifest_release" = 'Engineering Preview Python 0.1.4'
+          test "$manifest_release" = 'Engineering Preview Python 0.1.5'
           test "$manifest_duration" = 'duration override only; fidelity/force/integrator/output_step unchanged'
-      - name: Upload Engineering Preview 0.1.4
+          test "$manifest_closed_loop" = 'operator-supplied profile only; no hidden control constants'
+      - name: Upload Engineering Preview 0.1.5
         uses: actions/upload-artifact@v4
         with:
-          name: engineering-preview-python-0.1.4-win10
+          name: engineering-preview-python-0.1.5-win10
           retention-days: 14
           if-no-files-found: error
           path: |
-            engineering-preview-python-0.1.4-win10.zip
-            engineering-preview-python-0.1.4-win10.zip.sha256
+            engineering-preview-python-0.1.5-win10.zip
+            engineering-preview-python-0.1.5-win10.zip.sha256
