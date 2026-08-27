@@ -24,22 +24,20 @@ from constellation_control.domain.models import ForceMode, Maneuver, Propagation
 from constellation_control.domain.protocols import Propagator
 from constellation_control.optimization.operational_robustness import (
     StrategyRobustnessEvidence,
+    uncertainty_sampling_model_sha256,
 )
-from constellation_control.optimization.operational_robustness_binding import (
-    robustness_uncertainty_model_id,
-)
+from constellation_control.optimization.operational_robustness_binding import robustness_uncertainty_model_id
 from constellation_control.optimization.operational_robustness_execution import (
     CompletedOperationalRealization,
     OperationalRobustnessStudyResult,
+    SampleGenerator,
     StrategySampleExecutor,
     run_operational_robustness_study,
 )
-from constellation_control.optimization.operations import OperationalStrategyEvaluation
 from constellation_control.preview.optimal_operations_authority import PreviewOptimizedAuthorityReduction
 from constellation_control.preview.optimal_operations_execution import PreviewOptimalOperationsFoundationRun
 from constellation_control.preview.optimal_operations_profile import PreviewOptimalOperationsStudyProfile
 from constellation_control.preview.optimized_campaign import PreviewOptimizedCampaignEvidence
-from constellation_control.uncertainty.campaign import RobustnessCampaignConfig
 
 
 class PreviewPairedRobustnessResult(BaseModel):
@@ -57,27 +55,18 @@ def _ledger_plan(
     campaign: ClosedLoopCampaignResult,
     controlled_deputy_id: str,
 ) -> tuple[Maneuver, ...]:
-    return tuple(
-        Maneuver(
-            satellite_id=controlled_deputy_id,
-            time_s=record.event_time_s,
-            dv_rtn_m_s=record.dv_rtn_m_s,
+    maneuvers: list[Maneuver] = []
+    for record in campaign.resource_ledger:
+        if not record.replay_backend.startswith("orekit-numerical"):
+            raise ValueError("paired robustness nominal plan requires numerically authorized ledger entries")
+        maneuvers.append(
+            Maneuver(
+                satellite_id=controlled_deputy_id,
+                time_s=record.event_time_s,
+                dv_rtn_m_s=record.dv_rtn_m_s,
+            )
         )
-        for record in campaign.resource_ledger
-    )
-
-
-def _strategy_plans(
-    foundation: PreviewOptimalOperationsFoundationRun,
-    optimized: PreviewOptimizedCampaignEvidence,
-) -> dict[str, tuple[Maneuver, ...]]:
-    controlled_id = foundation.preflight.controlled_deputy_id
-    plans = {
-        item.strategy.strategy_id: _ledger_plan(item.campaign, controlled_id)
-        for item in foundation.baselines
-    }
-    plans[optimized.outcome.strategy_id if hasattr(optimized.outcome, "strategy_id") else ""] = ()
-    return plans
+    return tuple(maneuvers)
 
 
 def _strategy_plan_mapping(
@@ -85,18 +74,29 @@ def _strategy_plan_mapping(
     authority: PreviewOptimizedAuthorityReduction,
     optimized: PreviewOptimizedCampaignEvidence,
 ) -> dict[str, tuple[Maneuver, ...]]:
+    if authority.selection.preflight_sha256 != foundation.preflight.preflight_sha256:
+        raise ValueError("paired robustness optimized selection does not match foundation preflight")
+    if authority.selection.screening_evidence_sha256 != foundation.screening.evidence_sha256:
+        raise ValueError("paired robustness optimized selection does not match foundation screening evidence")
+    if authority.evaluation.strategy_id != authority.selection.strategy_id:
+        raise ValueError("paired robustness optimized strategy id does not match selected strategy")
+    if authority.evaluation.candidate_id != authority.selection.candidate_id:
+        raise ValueError("paired robustness optimized evaluation does not match selected candidate")
+    if optimized.candidate_id != authority.selection.candidate_id:
+        raise ValueError("paired robustness optimized campaign does not match selected candidate")
+    if (
+        optimized.trigger_fraction != authority.selection.screening_candidate.trigger_fraction
+        or optimized.target_fraction != authority.selection.screening_candidate.target_fraction
+    ):
+        raise ValueError("paired robustness optimized campaign parameters do not match selected candidate")
+
     controlled_id = foundation.preflight.controlled_deputy_id
     plans: dict[str, tuple[Maneuver, ...]] = {
         item.strategy.strategy_id: _ledger_plan(item.campaign, controlled_id)
         for item in foundation.baselines
     }
-    if authority.evaluation.strategy_id != authority.selection.candidate_id:
-        # Strategy id and candidate id are intentionally distinct namespaces in some studies.
-        pass
     plans[authority.evaluation.strategy_id] = _ledger_plan(optimized.campaign, controlled_id)
-    expected = {
-        item.strategy.strategy_id for item in foundation.baselines
-    } | {authority.evaluation.strategy_id}
+    expected = {item.strategy.strategy_id for item in foundation.baselines} | {authority.evaluation.strategy_id}
     if set(plans) != expected or len(plans) != 4:
         raise ValueError("paired robustness requires exactly three P2 baselines and one optimized strategy")
     return plans
@@ -108,7 +108,7 @@ def _validate_template(
     foundation: PreviewOptimalOperationsFoundationRun,
     config: RobustnessApplicationConfig,
     plans: Mapping[str, tuple[Maneuver, ...]],
-) -> None:
+) -> str:
     preflight = foundation.preflight
     if scenario.force_model.mode != ForceMode.VALIDATION:
         raise ValueError("paired operational robustness requires VALIDATION force mode")
@@ -119,8 +119,6 @@ def _validate_template(
     if preflight.robustness_campaign_id != config.campaign.campaign_id:
         raise ValueError("paired robustness campaign id does not match preflight")
 
-    from constellation_control.optimization.operational_robustness import uncertainty_sampling_model_sha256
-
     sampling_hash = uncertainty_sampling_model_sha256(config.campaign)
     if preflight.robustness_sampling_model_sha256 != sampling_hash:
         raise ValueError("paired robustness sampling model does not match preflight")
@@ -128,15 +126,19 @@ def _validate_template(
     if preflight.identity.uncertainty_model_id != expected_uncertainty:
         raise ValueError("paired robustness uncertainty identity does not match study identity")
 
+    # Legacy baseline_maneuvers in the YAML is only a schema carrier here. Validate
+    # uncertainty variable names against the longest actual authorized comparator plan.
     maximum_plan = max(plans.values(), key=len)
     validation_config = config.model_copy(update={"baseline_maneuvers": maximum_plan})
     validate_uncertainty_contract(scenario, validation_config)
+    known_satellites = {sat.satellite_id for sat in scenario.constellation.satellites}
     for plan in plans.values():
         for maneuver in plan:
-            if maneuver.satellite_id not in {sat.satellite_id for sat in scenario.constellation.satellites}:
+            if maneuver.satellite_id not in known_satellites:
                 raise ValueError("paired robustness nominal plan targets unknown satellite")
             if maneuver.time_s > profile.campaign_horizon_s:
                 raise ValueError("paired robustness nominal maneuver lies outside study horizon")
+    return sampling_hash
 
 
 def _perturbed_request(
@@ -175,12 +177,14 @@ def _perturbed_request(
 
 def _resource_metrics(
     request: PropagationRequest,
-    constraints_reserve_fraction: float,
+    reserve_fraction: float,
     controlled_deputy_id: str,
 ) -> tuple[dict[str, float], bool]:
     by_id = {sat.satellite_id: sat for sat in request.satellites}
     maneuvers_by_satellite: dict[str, list[Maneuver]] = {sat_id: [] for sat_id in by_id}
     for maneuver in request.maneuvers:
+        if maneuver.satellite_id not in maneuvers_by_satellite:
+            raise ValueError("paired robustness perturbed maneuver targets unknown satellite")
         maneuvers_by_satellite[maneuver.satellite_id].append(maneuver)
 
     total_delta_v = 0.0
@@ -193,7 +197,7 @@ def _resource_metrics(
             for item in maneuvers_by_satellite[satellite_id]
         )
         used = propellant_used_kg(satellite.spacecraft.initial_mass_kg, delta_v, satellite.spacecraft.isp_s)
-        reserve = satellite.spacecraft.propellant_mass_kg * constraints_reserve_fraction
+        reserve = satellite.spacecraft.propellant_mass_kg * reserve_fraction
         residual = satellite.spacecraft.propellant_mass_kg - used
         margin = residual - reserve
         reserve_violation |= margin < 0.0
@@ -218,17 +222,10 @@ def _sample_executor(
     profile: PreviewOptimalOperationsStudyProfile,
     config: RobustnessApplicationConfig,
     plan: tuple[Maneuver, ...],
+    reference_id: str,
     *,
     propagator: Propagator,
 ) -> StrategySampleExecutor:
-    preflight_reference_id = next(
-        satellite.reference_id
-        for satellite in scenario.constellation.satellites
-        if satellite.satellite_id == profile.controlled_deputy_id
-    )
-    if preflight_reference_id is None:
-        raise ValueError("paired robustness controlled deputy requires reference_id")
-
     def execute(sample: Mapping[str, object]) -> CompletedOperationalRealization:
         request, dropped = _perturbed_request(scenario, profile, plan, sample)
         result = propagator.propagate(request)
@@ -236,7 +233,7 @@ def _sample_executor(
         margins = reduce_trajectory_hard_margins(
             result,
             scenario.constraints,
-            reference_id=preflight_reference_id,
+            reference_id=reference_id,
             deputy_id=profile.controlled_deputy_id,
         )
         if margins.minimum_fleet_distance_margin_m is None:
@@ -246,11 +243,6 @@ def _sample_executor(
             scenario.constraints.propellant_reserve_fraction,
             profile.controlled_deputy_id,
         )
-        metrics = {
-            **resource_metrics,
-            "operator_delta_u_phase_corridor_margin_rad": margins.phase_corridor_margin_rad,
-            "minimum_fleet_distance_margin_m": margins.minimum_fleet_distance_margin_m,
-        }
         realization = sample.get("realization")
         sample_sha = sample.get("sample_sha256")
         if isinstance(realization, bool) or not isinstance(realization, int):
@@ -260,7 +252,11 @@ def _sample_executor(
         return CompletedOperationalRealization(
             realization=realization,
             sample_sha256=sample_sha,
-            metrics=metrics,
+            metrics={
+                **resource_metrics,
+                "operator_delta_u_phase_corridor_margin_rad": margins.phase_corridor_margin_rad,
+                "minimum_fleet_distance_margin_m": margins.minimum_fleet_distance_margin_m,
+            },
             violations={
                 "phase_corridor": margins.phase_corridor_margin_rad < 0.0,
                 "minimum_pair_distance": margins.minimum_fleet_distance_margin_m < 0.0,
@@ -283,17 +279,21 @@ def run_preview_paired_fixed_plan_robustness(
     optimized: PreviewOptimizedCampaignEvidence,
     *,
     propagator: Propagator | None = None,
+    sample_generator: SampleGenerator | None = None,
 ) -> PreviewPairedRobustnessResult:
     """Replay exact nominal strategy plans under one common uncertainty sample set.
 
     This is fixed-plan robustness, not adaptive closed-loop recourse. No strategy is
-    re-optimized or re-authorized inside a realization.
+    re-optimized or re-authorized inside a realization. The legacy
+    `accepted_candidate_id` and `baseline_maneuvers` fields of the robustness YAML
+    do not define comparator identity in this paired study; the persisted strategy
+    ledgers do.
     """
 
     scenario = load_scenario(scenario_path)
     config = load_robustness_application_config(robustness_config_path)
     plans = _strategy_plan_mapping(foundation, authority, optimized)
-    _validate_template(scenario, profile, foundation, config, plans)
+    sampling_hash = _validate_template(scenario, profile, foundation, config, plans)
     resolved = propagator or OrekitSidecarPropagator(scenario.orekit_sidecar_url or "", timeout_s=300.0)
     executors = {
         strategy_id: _sample_executor(
@@ -301,15 +301,25 @@ def run_preview_paired_fixed_plan_robustness(
             profile,
             config,
             plan,
+            foundation.preflight.reference_id,
             propagator=resolved,
         )
         for strategy_id, plan in plans.items()
     }
-    study: OperationalRobustnessStudyResult = run_operational_robustness_study(
-        config.campaign,
-        executors,
-    )
+    if sample_generator is None:
+        study: OperationalRobustnessStudyResult = run_operational_robustness_study(
+            config.campaign,
+            executors,
+        )
+    else:
+        study = run_operational_robustness_study(
+            config.campaign,
+            executors,
+            sample_generator=sample_generator,
+        )
     common = study.strategies[0].common_samples
+    if common.sampling_model_sha256 != sampling_hash:
+        raise ValueError("paired robustness common sample identity drifted from validated sampling model")
     if robustness_uncertainty_model_id(study.strategies[0]) != foundation.preflight.identity.uncertainty_model_id:
         raise ValueError("paired robustness result uncertainty identity drifted from preflight")
     return PreviewPairedRobustnessResult(
