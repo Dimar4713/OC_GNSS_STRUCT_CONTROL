@@ -209,6 +209,7 @@ def run_hybrid_strategy_validation(
     for job in jobs:
         key = job.exact_key()
         cached = resolved_cache.get(key)
+        evidence: HybridEventExecutionEvidence | None
         if cached is not None:
             evidence = cached
             reused = True
