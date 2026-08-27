@@ -1,4 +1,4 @@
-# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.4
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.1.5
 # Руководство пользователя / User Guide
 
 ## Русский
@@ -17,64 +17,92 @@
 
 DESIGN/VALIDATION работают fail-closed: недоступный Orekit не подменяется Screening.
 
-Основной инженерный вид показывает `T`, `a`, `i`, `Ω`, `u_mean = λ - Ω`. `u_mean = M + ω` — средняя фазовая координата, не оскулирующий аргумент широты. Исходные эквиноциальные элементы остаются в **Эксперт / YAML** и **Нормализованный сценарий**.
+Основной инженерный вид показывает `T`, `a`, `i`, `Ω`, `u_mean = λ - Ω`. `u_mean = M + ω` — средняя фазовая координата, не оскулирующий аргумент широты. `Δu` — прямая разность этой средней фазы и не тождественна D'Amico `delta_lambda`.
 
 ### 3. Проверка геометрии ОГ
 **Проверка геометрии ОГ** показывает фактические число плоскостей/КА, средние RAAN и наклонение, внутриплоскостной шаг `u_mean` и межплоскостное фазирование. Она не придумывает нормативную геометрию.
 
-### 4. Выбор горизонта расчёта
-В 0.1.4 доступны:
-- **Scenario** — длительность из YAML;
-- **1 d** — 86 400 с;
-- **8 d** — 691 200 с;
-- **30 d** — 2 592 000 с;
-- **90 d** — 7 776 000 с;
-- **1 y** — 31 557 600 с (юлианский год);
-- **5 y** — 157 788 000 с;
-- **Custom** — положительное конечное значение в секундах.
+### 4. Propagation horizon
+Сохраняются горизонты 0.1.4:
+- Scenario;
+- 1 d / 8 d / 30 d / 90 d;
+- 1 Julian year / 5 Julian years;
+- Custom.
 
-После выбора Preview показывает:
-- эффективный `duration_s`;
-- **неизменный** `output_step_s`;
-- ожидаемое число выходных точек.
+Выбор горизонта меняет только эффективный `duration_s`. `force_model`, fingerprint, integrator, `output_step_s`, epoch/frame/time scale, геометрия и манёвры скрыто не меняются. Автоматического огрубления output step нет.
 
-Число точек вычисляется по действующему контракту сетки: `ceil(duration_s / output_step_s) + 1`. Если горизонт не кратен шагу, backend добавляет точную конечную точку.
+### 5. Относительная динамика P1
+После обычного запуска для каждой пары `additional/reference` показываются `Δu`, дрейф, `Δs ≈ a_ref·Δu`, proxy-скорость, коридор, inside/outside и линейный прогноз времени до границы.
 
-#### Жёсткий инвариант
-Выбор горизонта меняет только эффективный `duration_s`. Не меняются скрыто:
-- fidelity / `force_model.mode`;
-- force model и его fingerprint;
-- integrator;
-- `output_step_s`;
-- epoch, frame, time scale;
-- геометрия ОГ;
-- заданные манёвры.
+`Δs` — средняя дуговая инженерная оценка, не Cartesian distance. P1 прогноз времени до границы не является решением closed-loop управления.
 
-Исходный YAML не перезаписывается. Эффективный сценарий сохраняется в результате как `scenario.normalized.json`.
+### 6. Closed-loop control P2
+В 0.1.5 появился отдельный блок **Замкнутый контур управления / Closed-loop control**.
 
-Если сокращённый горизонт оказался меньше времени уже заданного манёвра, запуск отклоняется валидацией. Preview **не** переносит манёвр, не удаляет его и не расширяет горизонт автоматически.
+Поддерживаются:
+- `NO CONTROL`;
+- `RETURN-TO-CENTER`;
+- `BOUNDARY-TO-BOUNDARY`.
 
-Preview также не выполняет автоматическое огрубление output step для 1- или 5-летнего расчёта. Большое число точек показывается оператору до запуска.
+`OPTIMIZED` относится к P3 и не маскируется под P2 политику.
 
-### 5. Относительная динамика
-После расчёта для каждой пары `additional/reference` показываются:
-- `Δu, °`;
-- вековой дрейф `°/сут` и `°/год`;
-- `Δs, км ≈ a_ref·Δu`;
-- вдольорбитальная proxy-скорость, м/с;
-- настроенный фазовый коридор;
-- состояние внутри/вне коридора;
-- прогнозируемая граница и время до неё.
+#### 6.1. Явный control profile
+Preview **не содержит численных control defaults**. Перед запуском оператор должен вставить JSON-профиль со всеми требуемыми полями:
+- `campaign_horizon_s`;
+- `coast_horizon_s`;
+- `coast_output_step_s`;
+- `max_corrections`;
+- `authority_times_s`;
+- `maneuver_windows`;
+- `max_abs_impulse_rtn_m_s`;
+- `min_impulse_bit_m_s`;
+- `trust_tolerances_roe`;
+- `target_roe`;
+- `w_tracking`;
+- `w_max`;
+- при необходимости `deputy_id`.
 
-`Δu` не тождественна D'Amico `delta_lambda`. `Δs` — средняя дуговая инженерная оценка, не Cartesian distance.
+Политика выбирается отдельным selector и передаётся в тот же валидируемый `PreviewClosedLoopProfile`. Если обязательного поля нет или значение не проходит P2/MPC contract, запуск отклоняется до authority work.
 
-Периодические компоненты отчёта имеют собственные period/amplitude/peak-to-peak; peak-to-peak всегда `2 × amplitude`. RSS нескольких компонент не имеет одного физического периода.
+#### 6.2. Проверка перед запуском
+Блок показывает из выбранного ScenarioConfig:
+- force mode;
+- frame/time scale;
+- force-model fingerprint;
+- `phase_corridor_rad`;
+- `min_pair_distance_m`;
+- `propellant_reserve_fraction`.
 
-### 6. Результаты
-После запуска используйте блок **Относительная динамика и граница коррекции**, графики и **Открыть инженерный отчёт**. Результаты сохраняются в `preview/results/`.
+Correction-capable политики разрешены только для `VALIDATION` scenario с настроенной Orekit numerical authority. Screening/Design не получают скрытого fallback. `NO CONTROL` не вызывает maneuver authority.
 
-### 7. Обратная связь
-Используйте `preview/EXPERT_FEEDBACK.md`: сценарий → выбранный горизонт → действие → ожидаемый результат → фактический результат → инженерное замечание.
+#### 6.3. Что показывает результат
+UI не пересчитывает физику или ресурсные оценки. Он отображает принятые API/backend evidence:
+- policy и termination reason;
+- число corrections и authority attempts;
+- cumulative ΔV;
+- cumulative propellant used;
+- remaining propellant и required reserve;
+- annualization availability и ΔV/fuel per Julian year, если evidence достаточно;
+- lifetime projection availability и projected years to reserve, если evidence поддерживает прогноз;
+- rearm/settling availability/reason;
+- authority backend(s), force fingerprint, frame/time scale;
+- таблицу каждой авторизованной коррекции.
+
+Если annualization/lifetime недоступны, UI показывает `—`/unavailable, а не нулевой риск или нулевое потребление.
+
+#### 6.4. Артефакты
+Для closed-loop запуска доступны:
+- `closed_loop_profile.json`;
+- `closed_loop_campaign.json`;
+- `closed_loop_metrics.json`;
+- `closed_loop_corrections.json/csv/parquet`;
+- `report.md`;
+- `report.html`.
+
+Эти файлы публикуются существующим принятым P2 artifact pipeline.
+
+### 7. Результаты и обратная связь
+Результаты сохраняются в `preview/results/`. Для обратной связи используйте `preview/EXPERT_FEEDBACK.md`: сценарий → профиль/горизонт → действие → ожидаемый результат → фактический результат → инженерное замечание.
 
 ---
 
@@ -94,61 +122,85 @@ Before execution verify:
 
 DESIGN/VALIDATION remain fail-closed; unavailable Orekit is never silently replaced by Screening.
 
-The primary engineering view shows `T`, `a`, `i`, `Ω`, and `u_mean = λ - Ω`. `u_mean = M + ω` is a mean phase coordinate, not osculating argument of latitude. Raw equinoctial elements remain available under **Expert / YAML** and **Normalized scenario**.
+The primary engineering view shows `T`, `a`, `i`, `Ω`, and `u_mean = λ - Ω`. `u_mean = M + ω` is a mean phase coordinate, not osculating argument of latitude. Direct `Δu` remains distinct from D'Amico `delta_lambda`.
 
 ### 3. Constellation Geometry Preflight
 **Constellation Geometry Preflight** reports observed plane/spacecraft counts, mean RAAN/inclination, in-plane `u_mean` spacing and inter-plane phasing. It does not invent target geometry.
 
 ### 4. Propagation horizon
-Version 0.1.4 provides:
-- **Scenario** — duration declared by YAML;
-- **1 d** — 86,400 s;
-- **8 d** — 691,200 s;
-- **30 d** — 2,592,000 s;
-- **90 d** — 7,776,000 s;
-- **1 y** — 31,557,600 s (Julian year);
-- **5 y** — 157,788,000 s;
-- **Custom** — a positive finite duration in seconds.
+Version 0.1.5 retains the explicit Scenario / 1 d / 8 d / 30 d / 90 d / 1 Julian year / 5 Julian years / Custom horizon controls from 0.1.4.
 
-Before execution the Preview shows:
-- effective `duration_s`;
-- the **unchanged** `output_step_s`;
-- predicted output sample count.
+Selecting a horizon changes only effective `duration_s`. Force model/fingerprint, integrator, `output_step_s`, epoch/frame/time scale, constellation geometry and maneuvers are not silently changed. No automatic output-step coarsening is performed.
 
-Sample count follows the active grid contract: `ceil(duration_s / output_step_s) + 1`. If the horizon is not divisible by the step, the backend appends the exact final time.
+### 5. Relative operations P1
+After a normal run, every `additional/reference` pair exposes `Δu`, drift, `Δs ≈ a_ref·Δu`, along-track proxy rate, corridor state and linear time-to-boundary forecast.
 
-#### Hard invariant
-Selecting a horizon changes only effective `duration_s`. It must not silently change:
-- fidelity / `force_model.mode`;
-- force model or fingerprint;
-- integrator;
-- `output_step_s`;
-- epoch, frame or time scale;
-- constellation geometry;
-- configured maneuvers.
+`Δs` is a mean-arc engineering proxy, not Cartesian separation. P1 time-to-boundary forecast is not a closed-loop control decision.
 
-The source YAML is never overwritten. The effective scenario is retained in run evidence as `scenario.normalized.json`.
+### 6. Closed-loop control P2
+Engineering Preview 0.1.5 adds a separate **Closed-loop control / Замкнутый контур управления** section.
 
-If a shortened horizon would place an existing maneuver outside the run duration, validation rejects the run. The Preview does not move/delete the maneuver or extend the horizon automatically.
+Supported policies:
+- `NO CONTROL`;
+- `RETURN-TO-CENTER`;
+- `BOUNDARY-TO-BOUNDARY`.
 
-There is also no automatic output-step coarsening for 1- or 5-year horizons. Large sample counts are exposed to the operator before execution.
+`OPTIMIZED` belongs to P3 and is not relabeled as a P2 policy.
 
-### 5. Relative operations
-After a run, every `additional/reference` pair exposes:
-- `Δu, deg`;
-- secular drift in `deg/day` and `deg/year`;
-- `Δs, km ≈ a_ref·Δu`;
-- along-track proxy rate in m/s;
-- configured phase corridor;
-- inside/outside state;
-- predicted boundary and time-to-boundary.
+#### 6.1 Explicit control profile
+The Preview contains **no numerical control defaults**. Before execution the operator must supply JSON containing all required fields:
+- `campaign_horizon_s`;
+- `coast_horizon_s`;
+- `coast_output_step_s`;
+- `max_corrections`;
+- `authority_times_s`;
+- `maneuver_windows`;
+- `max_abs_impulse_rtn_m_s`;
+- `min_impulse_bit_m_s`;
+- `trust_tolerances_roe`;
+- `target_roe`;
+- `w_tracking`;
+- `w_max`;
+- optional `deputy_id` when needed.
 
-`Δu` remains distinct from D'Amico `delta_lambda`. `Δs` is a mean-arc engineering proxy, not Cartesian separation.
+The policy selector is submitted through the same validated `PreviewClosedLoopProfile`. Missing/invalid values are rejected before authority work.
 
-Periodic report components have their own period/amplitude/peak-to-peak; peak-to-peak is always `2 × amplitude`. The RSS of multiple components has no single physical period.
+#### 6.2 Pre-run evidence
+The section displays from the selected ScenarioConfig:
+- force mode;
+- frame/time scale;
+- force-model fingerprint;
+- `phase_corridor_rad`;
+- `min_pair_distance_m`;
+- `propellant_reserve_fraction`.
 
-### 6. Results
-After execution inspect **Relative operations and correction boundary**, generated plots and **Open engineering report**. UI evidence is stored under `preview/results/`.
+Correction-capable policies require a `VALIDATION` scenario and configured numerical Orekit authority. Screening/Design receive no hidden fallback. `NO CONTROL` invokes no maneuver authority.
 
-### 7. Feedback
-Use `preview/EXPERT_FEEDBACK.md`: scenario → selected horizon → action → expected result → actual result → engineering comment.
+#### 6.3 Result evidence
+The UI does not recompute physics or resource projections. It renders accepted API/backend evidence only:
+- policy and termination reason;
+- correction and authority-attempt counts;
+- cumulative ΔV;
+- cumulative propellant used;
+- remaining propellant and required reserve;
+- annualization availability and ΔV/fuel per Julian year when supported;
+- lifetime projection availability and projected years to reserve when supported;
+- rearm/settling availability/reason;
+- authority backend(s), force fingerprint, frame/time scale;
+- one row per authorized correction.
+
+Unavailable annualization/lifetime remains unavailable (`—`), never converted into zero risk or zero consumption.
+
+#### 6.4 Artifacts
+Closed-loop runs expose:
+- `closed_loop_profile.json`;
+- `closed_loop_campaign.json`;
+- `closed_loop_metrics.json`;
+- `closed_loop_corrections.json/csv/parquet`;
+- `report.md`;
+- `report.html`.
+
+These files are produced by the accepted P2 artifact pipeline.
+
+### 7. Results and feedback
+UI evidence is stored under `preview/results/`. Use `preview/EXPERT_FEEDBACK.md` for scenario → profile/horizon → action → expected result → actual result → engineering comment.
