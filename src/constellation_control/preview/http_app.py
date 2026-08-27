@@ -7,7 +7,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from constellation_control.preview.app import _safe_result_file, create_preview_app as create_base_preview_app
+from constellation_control.preview.app import (
+    _load_preview_scenario,
+    _safe_result_file,
+    create_preview_app as create_base_preview_app,
+)
 from constellation_control.preview.closed_loop import PreviewClosedLoopProfile, run_preview_closed_loop
 
 _CLOSED_LOOP_ARTIFACT_MEDIA_TYPES = {
@@ -42,13 +46,7 @@ def create_preview_app(
     @app.post("/api/closed-loop-runs")
     def closed_loop_run(request: PreviewClosedLoopHttpRequest) -> dict[str, object]:
         try:
-            scenario_path = scenario_root.resolve() / request.scenario_name
-            # Reuse the base Preview path/classification guard before entering the P2 runner.
-            from constellation_control.preview.app import _load_preview_scenario
-
             safe_path, _ = _load_preview_scenario(scenario_root, request.scenario_name)
-            if safe_path.resolve() != scenario_path.resolve():
-                raise ValueError("resolved scenario path mismatch")
             execution = run_preview_closed_loop(safe_path, output_root, request.profile)
             run_dir = Path(execution.run_dir)
             relative = run_dir.resolve().relative_to(output_root.resolve())
