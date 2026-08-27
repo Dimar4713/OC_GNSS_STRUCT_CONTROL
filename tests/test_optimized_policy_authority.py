@@ -8,11 +8,7 @@ from constellation_control.application.run import load_scenario
 from constellation_control.control.execution import MPCExecutionPolicy
 from constellation_control.control.optimized_policy import evaluate_optimized_correction_policy
 from constellation_control.control.phase_target import delta_u_from_damico_roe
-from constellation_control.control.policies import (
-    CorrectionPolicy,
-    CorrectionPolicyState,
-    evaluate_correction_policy,
-)
+from constellation_control.control.policies import CorrectionPolicy, evaluate_correction_policy
 from constellation_control.control.policy_execution import build_policy_execution_target
 from constellation_control.domain.models import PropagationRequest
 from constellation_control.mean_elements.roe import damico_roe
