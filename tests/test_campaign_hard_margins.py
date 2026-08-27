@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from constellation_control.analysis.campaign_hard_margins import reduce_trajectory_hard_margins
 from constellation_control.application.run import load_scenario
 from constellation_control.domain.models import OsculatingState, PropagationResult
 
 
+def _scenario_path() -> Path:
+    return Path(__file__).parents[1] / "scenarios" / "orekit_validation_smoke.yaml"
+
+
 def _result() -> PropagationResult:
-    scenario = load_scenario(__import__("pathlib").Path(__file__).parents[1] / "scenarios" / "orekit_validation_smoke.yaml")
+    scenario = load_scenario(_scenario_path())
     ref, dep = scenario.constellation.satellites
     dep0 = dep.mean_orbit.model_copy(update={"lambda_rad": 0.10})
     dep1 = dep.mean_orbit.model_copy(update={"lambda_rad": 0.19})
@@ -33,27 +41,23 @@ def _result() -> PropagationResult:
 
 
 def test_reduces_direct_mean_phase_and_fleet_distance_margins() -> None:
-    from pathlib import Path
-
-    scenario = load_scenario(Path(__file__).parents[1] / "scenarios" / "orekit_validation_smoke.yaml")
+    scenario = load_scenario(_scenario_path())
     evidence = reduce_trajectory_hard_margins(
         _result(),
         scenario.constraints,
         reference_id="SYNTH-REF",
         deputy_id="SYNTH-ADD-45",
     )
-    assert evidence.phase_corridor_margin_rad == __import__("pytest").approx(0.01)
-    assert evidence.minimum_fleet_distance_margin_m == __import__("pytest").approx(800.0)
+    assert evidence.phase_corridor_margin_rad == pytest.approx(0.01)
+    assert evidence.minimum_fleet_distance_margin_m == pytest.approx(800.0)
     assert evidence.samples == 2
     assert evidence.pair_distance_samples == 2
 
 
-def test_rejects_history_length_mismatch() -> None:
-    from pathlib import Path
-    import pytest
-
-    scenario = load_scenario(Path(__file__).parents[1] / "scenarios" / "orekit_validation_smoke.yaml")
-    result = _result().model_copy(update={"mean_orbits": {"SYNTH-REF": _result().mean_orbits["SYNTH-REF"]}})
+def test_rejects_missing_pair_history() -> None:
+    scenario = load_scenario(_scenario_path())
+    base = _result()
+    result = base.model_copy(update={"mean_orbits": {"SYNTH-REF": base.mean_orbits["SYNTH-REF"]}})
     with pytest.raises(ValueError, match="lacks reference/deputy"):
         reduce_trajectory_hard_margins(
             result,
