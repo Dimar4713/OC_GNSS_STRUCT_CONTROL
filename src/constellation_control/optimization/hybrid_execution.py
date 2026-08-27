@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 
 from constellation_control.control.closed_loop import (
+    CoastPolicyEvent,
     continuation_request_from_snapshot,
     scan_coast_for_policy_event,
 )
@@ -19,6 +21,15 @@ from constellation_control.optimization.hybrid import (
     StateAnchorKind,
     ValidationOutcomeKind,
 )
+
+
+@dataclass(frozen=True)
+class AuthoritativePhaseWindowResult:
+    """One high-fidelity window result retaining exact event state for downstream authority."""
+
+    evidence: EventValidationEvidence
+    validation_request: PropagationRequest
+    event: CoastPolicyEvent | None
 
 
 def _digest_payload(payload: object) -> str:
@@ -170,7 +181,7 @@ def _authority_evidence_id(
     )[:24]
 
 
-def validate_phase_boundary_window(
+def validate_phase_boundary_window_with_state(
     propagator: Propagator,
     source_request: PropagationRequest,
     snapshot: AuthoritativeTransitionSnapshot,
@@ -184,8 +195,8 @@ def validate_phase_boundary_window(
     initial_policy_state: CorrectionPolicyState,
     validation_output_step_s: float,
     authority_config_identity: str,
-) -> EventValidationEvidence:
-    """Replay one screening bracket from accepted P2 state and validate the actual phase event."""
+) -> AuthoritativePhaseWindowResult:
+    """Replay one bracket and retain the exact high-fidelity event state without extra propagation."""
 
     _validate_transition_anchor(source_request, snapshot, anchor)
     if anchor.anchor_time_s > screening.bracket_start_s + 1.0e-9:
@@ -216,7 +227,7 @@ def validate_phase_boundary_window(
     validation_start = anchor.anchor_time_s
     validation_end = anchor.anchor_time_s + duration_s
     if scan.event is None:
-        return EventValidationEvidence(
+        evidence = EventValidationEvidence(
             strategy_id=screening.strategy_id,
             event_id=screening.event_id,
             outcome=ValidationOutcomeKind.EVENT_ABSENT,
@@ -230,6 +241,8 @@ def validate_phase_boundary_window(
             authority_config_identity=authority_config_identity,
             authority_evidence_id=_authority_evidence_id(result, screening, None),
         )
+        return AuthoritativePhaseWindowResult(evidence=evidence, validation_request=request, event=None)
+
     event = scan.event
     authoritative_time = anchor.anchor_time_s + event.time_s
     timing_error = authoritative_time - screening.predicted_time_s
@@ -238,7 +251,7 @@ def validate_phase_boundary_window(
         if abs(timing_error) <= 1.0e-9
         else ValidationOutcomeKind.SHIFTED
     )
-    return EventValidationEvidence(
+    evidence = EventValidationEvidence(
         strategy_id=screening.strategy_id,
         event_id=screening.event_id,
         outcome=outcome,
@@ -256,3 +269,37 @@ def validate_phase_boundary_window(
         timing_error_s=timing_error,
         authority_evidence_id=_authority_evidence_id(result, screening, authoritative_time),
     )
+    return AuthoritativePhaseWindowResult(evidence=evidence, validation_request=request, event=event)
+
+
+def validate_phase_boundary_window(
+    propagator: Propagator,
+    source_request: PropagationRequest,
+    snapshot: AuthoritativeTransitionSnapshot,
+    anchor: AuthoritativeStateAnchor,
+    screening: ScreeningEventBracket,
+    *,
+    reference_id: str,
+    deputy_id: str,
+    policy: CorrectionPolicy,
+    corridor_half_width_rad: float,
+    initial_policy_state: CorrectionPolicyState,
+    validation_output_step_s: float,
+    authority_config_identity: str,
+) -> EventValidationEvidence:
+    """Compatibility wrapper returning only immutable event evidence."""
+
+    return validate_phase_boundary_window_with_state(
+        propagator,
+        source_request,
+        snapshot,
+        anchor,
+        screening,
+        reference_id=reference_id,
+        deputy_id=deputy_id,
+        policy=policy,
+        corridor_half_width_rad=corridor_half_width_rad,
+        initial_policy_state=initial_policy_state,
+        validation_output_step_s=validation_output_step_s,
+        authority_config_identity=authority_config_identity,
+    ).evidence
