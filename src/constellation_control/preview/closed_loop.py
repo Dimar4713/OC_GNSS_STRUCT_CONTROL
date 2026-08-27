@@ -51,10 +51,14 @@ class PreviewClosedLoopProfile(BaseModel):
         times = np.asarray(self.authority_times_s, dtype=float)
         if times.ndim != 1 or times.size < 2 or np.any(~np.isfinite(times)):
             raise ValueError("authority_times_s must contain at least two finite samples")
-        if abs(float(times[0])) > 1.0e-9 or np.any(np.diff(times) <= 0.0):
+        intervals = np.diff(times)
+        if abs(float(times[0])) > 1.0e-9 or np.any(intervals <= 0.0):
             raise ValueError("authority_times_s must start at zero and be strictly increasing")
+        if not np.allclose(intervals, intervals[0], rtol=0.0, atol=1.0e-9):
+            raise ValueError("authority_times_s must use a uniform output grid")
         if len(self.maneuver_windows) != len(self.authority_times_s) - 1:
             raise ValueError("maneuver_windows must have one entry per authority interval")
+        self.execution_policy()
         return self
 
     def execution_policy(self) -> MPCExecutionPolicy:
@@ -125,7 +129,7 @@ def run_preview_closed_loop(
     if propagator is not None:
         resolved_propagator = propagator
     elif profile.policy == CorrectionPolicy.NO_CONTROL:
-        # The P2 campaign returns before any propagation/authority call for NO_CONTROL.
+        # The accepted P2 campaign returns before any propagation/authority call for NO_CONTROL.
         resolved_propagator = SyntheticMeanPropagator()
     else:
         assert scenario.orekit_sidecar_url is not None
