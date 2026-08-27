@@ -9,6 +9,7 @@ class CorrectionPolicy(StrEnum):
     NO_CONTROL = "no_control"
     RETURN_TO_CENTER = "return_to_center"
     BOUNDARY_TO_BOUNDARY = "boundary_to_boundary"
+    OPTIMIZED = "optimized"
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ def evaluate_correction_policy(
     corridor_half_width_rad: float,
     state: CorrectionPolicyState | None = None,
 ) -> tuple[CorrectionDecision, CorrectionPolicyState]:
-    """Evaluate one deterministic correction-policy sample.
+    """Evaluate one deterministic P2 correction-policy sample.
 
     The policy layer decides only whether guidance is requested and which mean-phase
     objective should guide the ensuing controlled coast. It intentionally does not
@@ -66,7 +67,14 @@ def evaluate_correction_policy(
     A correction request disarms RETURN_TO_CENTER and BOUNDARY_TO_BOUNDARY. They
     rearm only after a later observation lies strictly inside the configured phase
     corridor. No hidden tolerance or hysteresis is introduced.
+
+    OPTIMIZED is an explicit P3 identity and must be evaluated by the dedicated
+    optimized-policy trigger function because its trigger threshold is distinct
+    from the hard execution corridor.
     """
+
+    if policy == CorrectionPolicy.OPTIMIZED:
+        raise ValueError("optimized policy requires dedicated optimized trigger evaluation")
 
     current_state = CorrectionPolicyState() if state is None else state
     delta_u, half_width = _validate_inputs(delta_u_rad, corridor_half_width_rad)
