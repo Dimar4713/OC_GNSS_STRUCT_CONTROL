@@ -141,9 +141,9 @@ def test_wrong_scenario_authority_fails_before_application(monkeypatch, tmp_path
 def test_workflow_page_is_bilingual_and_catalog_driven(tmp_path: Path) -> None:
     app = workflow_app.create_preview_app(_repo_root() / "scenarios", tmp_path)
     client = TestClient(app)
-    assert client.get("/health").json() == {"status": "ok", "preview": "0.1.6"}
+    assert client.get("/health").json() == {"status": "ok", "preview": "0.1.5"}
     page = client.get("/").text
-    assert "Engineering Preview 0.1.6" in page
+    assert "Engineering Preview 0.1.5" in page
     assert "Design / Robustness workflows — Проектирование / Робастность" in page
     assert "run_design_application" not in page
     assert "catalog.other_inputs" in page
