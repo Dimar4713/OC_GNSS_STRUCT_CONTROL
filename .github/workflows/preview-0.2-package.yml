@@ -1,0 +1,179 @@
+name: preview-0.2-package
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-preview-020-smoke:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Preview 0.2 test environment
+        shell: pwsh
+        run: |
+          python -m pip install -U pip
+          pip install -e '.[dev]'
+      - name: Validate Windows PowerShell 5.1 UTF-8 launcher path
+        shell: powershell
+        run: |
+          $bootstrap = Get-Content -LiteralPath preview\start-preview-bootstrap.ps1 -Raw
+          [void][scriptblock]::Create($bootstrap)
+          $text = [System.IO.File]::ReadAllText((Resolve-Path preview\start-preview.ps1), [System.Text.Encoding]::UTF8)
+          [void][scriptblock]::Create($text)
+          Write-Host 'PowerShell 5.1 UTF-8 bootstrap parse: OK'
+      - name: Run Preview 0.2 HTTP and legacy regression smoke
+        shell: pwsh
+        run: pytest -q tests/test_preview_release_http.py tests/test_preview.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
+
+  build-preview-020-bundle:
+    runs-on: ubuntu-latest
+    env:
+      OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
+      BUNDLE_NAME: engineering-preview-python-0.2.0-win10
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: sidecar/orekit-service/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Load reviewed Orekit data authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-revision.txt)"
+          physical_sha="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-sha256.txt)"
+          mirror_revision="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-mirror-revision.txt)"
+          [[ "$pinned" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$physical_sha" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$mirror_revision" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "OREKIT_DATA_REVISION=$pinned" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_SHA256=$physical_sha" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_MIRROR_REVISION=$mirror_revision" >> "$GITHUB_ENV"
+          echo "PREVIEW_SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
+      - name: Fetch reviewed Orekit data with verified fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$OREKIT_DATA_PATH"
+          git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
+          fetched=false
+          for attempt in 1 2 3 4; do
+            if timeout 30s git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
+              fetched=true
+              break
+            fi
+            sleep "$((attempt * 2))"
+          done
+          if test "$fetched" = true; then
+            git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
+            test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
+          else
+            rm -rf "$OREKIT_DATA_PATH"
+            mirror_dir="$RUNNER_TEMP/orekit-data-mirror"
+            git init "$mirror_dir"
+            git -C "$mirror_dir" remote add origin https://github.com/fndtnl/orekit-data-snapshot.git
+            git -C "$mirror_dir" fetch --depth 1 origin "$OREKIT_DATA_MIRROR_REVISION"
+            git -C "$mirror_dir" checkout --detach FETCH_HEAD
+            test "$(git -C "$mirror_dir" rev-parse HEAD)" = "$OREKIT_DATA_MIRROR_REVISION"
+            mkdir -p "$OREKIT_DATA_PATH"
+            cp -a "$mirror_dir/orekit/orekit-data/." "$OREKIT_DATA_PATH/"
+          fi
+          actual_sha="$(python scripts/fingerprint_orekit_data.py "$OREKIT_DATA_PATH")"
+          test "$actual_sha" = "$OREKIT_DATA_SHA256"
+      - name: Build authoritative Orekit sidecar
+        run: mvn -B -f sidecar/orekit-service/pom.xml test package
+      - name: Stage Windows Engineering Preview 0.2.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/$BUNDLE_NAME"
+          rm -rf "$root"
+          mkdir -p "$root/preview/runtime/orekit-data" "$root/sidecar/orekit-service" "$root/scripts" "$root/preview/results"
+          cp start-preview.bat pyproject.toml README.md "$root/"
+          cp -a src scenarios "$root/"
+          cp preview/start-preview-bootstrap.ps1 preview/start-preview.ps1 preview/requirements-preview.lock preview/README.md preview/USER_GUIDE_RU_EN.md preview/EXPERT_FEEDBACK.md preview/ENGINEERING_PREVIEW_0.2_RU_EN.md "$root/preview/"
+          cp scripts/fingerprint_orekit_data.py "$root/scripts/"
+          cp sidecar/orekit-service/orekit-data-revision.txt sidecar/orekit-service/orekit-data-sha256.txt sidecar/orekit-service/orekit-data-mirror-revision.txt "$root/sidecar/orekit-service/"
+          cp sidecar/orekit-service/target/orekit-service-0.1.0-SNAPSHOT.jar "$root/preview/runtime/orekit-service.jar"
+          (cd "$OREKIT_DATA_PATH" && tar --exclude=.git -cf - .) | (cd "$root/preview/runtime/orekit-data" && tar -xf -)
+          touch "$root/preview/results/.gitkeep"
+          ROOT="$root" python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ['ROOT'])
+          files = []
+          for path in sorted(p for p in root.rglob('*') if p.is_file()):
+              rel = path.relative_to(root).as_posix()
+              files.append({'path': rel, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'size': path.stat().st_size})
+          manifest = {
+              'product': 'OC GNSS STRUCT CONTROL',
+              'release': 'Engineering Preview Python 0.2.0',
+              'target': 'Windows 10/11 engineering evaluation',
+              'commit': os.environ['PREVIEW_SOURCE_SHA'],
+              'python': '3.12',
+              'java_high_fidelity_requirement': '17+',
+              'orekit': '13.1.7',
+              'orekit_data_revision': os.environ['OREKIT_DATA_REVISION'],
+              'orekit_data_sha256': os.environ['OREKIT_DATA_SHA256'],
+              'language': ['ru', 'en'],
+              'optimal_operations_chain': [
+                  'explicit_study_profile',
+                  'authoritative_p2_baselines',
+                  'orekit_dsst_screening_only_search',
+                  'numerical_hybrid_authority',
+                  'numerical_long_horizon_optimized_campaign',
+                  'paired_common_random_number_fixed_plan_robustness',
+                  'credible_pareto',
+                  'explicit_decision_policy_recommendation',
+              ],
+              'authority_invariant': 'screening never authority; operational credibility requires Orekit numerical validation',
+              'defaults_invariant': 'no hidden control/search/robustness/decision numerical defaults in the 0.2 operator surface',
+              'venv_invariant': 'never copy .venv-preview between PCs; bootstrap creates it on the target PC from local Python 3.12',
+              'files': files,
+          }
+          (root / 'preview-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          (cd "$RUNNER_TEMP" && zip -q -r "$GITHUB_WORKSPACE/$BUNDLE_NAME.zip" "$BUNDLE_NAME")
+          sha256sum "$BUNDLE_NAME.zip" | tee "$BUNDLE_NAME.zip.sha256"
+      - name: Verify Preview 0.2 bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$BUNDLE_NAME.zip"
+          test -s "$BUNDLE_NAME.zip.sha256"
+          unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
+          unzip -l "$BUNDLE_NAME.zip" | grep 'preview/ENGINEERING_PREVIEW_0.2_RU_EN.md'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep 'PREVIEW_VERSION = "0.2.0"'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep 'Optimal Operations Workspace 0.2'
+          manifest_sha="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
+          manifest_authority="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["authority_invariant"])')"
+          test "$manifest_sha" = "$PREVIEW_SOURCE_SHA"
+          test "$manifest_release" = 'Engineering Preview Python 0.2.0'
+          test "$manifest_authority" = 'screening never authority; operational credibility requires Orekit numerical validation'
+      - name: Upload Engineering Preview 0.2.0
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-preview-python-0.2.0-win10
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            engineering-preview-python-0.2.0-win10.zip
+            engineering-preview-python-0.2.0-win10.zip.sha256
