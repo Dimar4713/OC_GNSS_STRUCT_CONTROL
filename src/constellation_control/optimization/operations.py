@@ -81,6 +81,35 @@ class HardConstraintEvidence(BaseModel):
         return self.margin >= 0.0
 
 
+class OperationalRobustnessSummary(BaseModel):
+    """Structured uncertainty evidence attached to one operational strategy."""
+
+    model_config = ConfigDict(frozen=True)
+
+    campaign_id: str = Field(min_length=1)
+    sampling_model_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    total_realizations: int = Field(gt=0)
+    completed_realizations: int = Field(ge=0)
+    failed_realizations: int = Field(ge=0)
+    missing_realizations: int = Field(ge=0)
+    conservative_violation_probability: dict[str, float]
+    metric_statistics: dict[str, dict[str, float | int]]
+    authority_backend: str = Field(min_length=1)
+    authority_force_model_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_counts_and_probabilities(self) -> OperationalRobustnessSummary:
+        if self.completed_realizations + self.failed_realizations + self.missing_realizations != self.total_realizations:
+            raise ValueError("robustness realization counts must sum to total_realizations")
+        if any(not 0.0 <= value <= 1.0 for value in self.conservative_violation_probability.values()):
+            raise ValueError("robustness violation probabilities must be in [0, 1]")
+        return self
+
+    @property
+    def complete(self) -> bool:
+        return self.failed_realizations == 0 and self.missing_realizations == 0
+
+
 class OperationalStrategyEvaluation(BaseModel):
     """One baseline/candidate evaluation with hard authority separated from soft objectives."""
 
@@ -105,6 +134,7 @@ class OperationalStrategyEvaluation(BaseModel):
     coast_mean_s: float | None = Field(default=None, ge=0.0)
     robustness_available: bool = False
     robustness_reason: str | None = "uncertainty campaign not supplied"
+    robustness_evidence: OperationalRobustnessSummary | None = None
     objectives: tuple[NamedObjectiveValue, ...]
     hard_constraints: tuple[HardConstraintEvidence, ...]
     authority_backend: str | None = None
@@ -121,6 +151,10 @@ class OperationalStrategyEvaluation(BaseModel):
             raise ValueError("objective definitions must be unique")
         if not self.hard_constraints:
             raise ValueError("operational evaluation requires explicit hard constraints")
+        if self.robustness_available and self.robustness_evidence is None:
+            raise ValueError("robustness_available requires structured robustness evidence")
+        if not self.robustness_available and self.robustness_evidence is not None:
+            raise ValueError("unavailable robustness cannot carry structured evidence")
         if self.kind == OperationalStrategyKind.OPTIMIZED_CANDIDATE and self.candidate_id is None:
             raise ValueError("optimized candidate requires candidate_id")
         if self.credibility_state == CredibilityState.AUTHORITATIVE_BASELINE:
@@ -158,6 +192,7 @@ class OperationalStrategyStudy(BaseModel):
     study_id: str
     evaluations: tuple[OperationalStrategyEvaluation, ...]
     recommendation_strategy_id: str | None = None
+    robustness_required_for_recommendation: bool = False
 
     @model_validator(mode="after")
     def validate_study(self) -> OperationalStrategyStudy:
@@ -186,6 +221,11 @@ class OperationalStrategyStudy(BaseModel):
                 raise ValueError("recommendation_strategy_id is unknown")
             if not selected.operationally_credible:
                 raise ValueError("final recommendation must be operationally credible")
+            if self.robustness_required_for_recommendation:
+                if not selected.robustness_available or selected.robustness_evidence is None:
+                    raise ValueError("final recommendation requires robustness evidence")
+                if not selected.robustness_evidence.complete:
+                    raise ValueError("final recommendation requires complete robustness realizations")
             if selected.strategy_id not in credible_pareto_strategy_ids(self):
                 raise ValueError("final recommendation must belong to the credible Pareto set")
         return self
