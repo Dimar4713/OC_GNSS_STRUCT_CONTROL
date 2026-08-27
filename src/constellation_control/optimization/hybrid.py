@@ -9,6 +9,7 @@ from constellation_control.optimization.operations import CredibilityState, Hard
 
 class ScreeningEventKind(StrEnum):
     PHASE_BOUNDARY = "phase-boundary"
+    OPTIMIZED_TRIGGER = "optimized-trigger"
     REARM = "rearm"
     SAFETY_MARGIN = "safety-margin"
     RESOURCE_MARGIN = "resource-margin"
