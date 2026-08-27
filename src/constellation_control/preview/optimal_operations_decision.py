@@ -141,6 +141,16 @@ def build_preview_operational_decision(
         violation_probability_objectives=policy.violation_probability_objectives,
     )
 
+    bound_by_strategy = {item.strategy_id: item for item in (*bound_baselines, bound_candidate)}
+    selected = bound_by_strategy.get(policy.recommendation_strategy_id)
+    if selected is None:
+        raise ValueError("final recommendation strategy id is unknown")
+    if policy.robustness_required:
+        if selected.robustness_evidence is None or not selected.robustness_evidence.complete:
+            raise ValueError("final recommendation requires complete robustness realizations")
+    if not selected.hard_constraints_passed:
+        raise ValueError("final recommendation violates explicit hard constraints")
+
     study = assemble_optimal_operations_study(
         study_id=foundation.preflight.study_id,
         baselines=bound_baselines,
