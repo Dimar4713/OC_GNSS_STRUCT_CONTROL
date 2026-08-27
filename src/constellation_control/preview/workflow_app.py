@@ -20,7 +20,7 @@ from constellation_control.preview.http_app import (
     render_preview_page_for_test as render_operations_page,
 )
 
-PREVIEW_VERSION = "0.1.6"
+PREVIEW_VERSION = "0.1.5"
 
 _DESIGN_ARTIFACTS = {
     "pipeline_manifest.json": "application/json",
@@ -129,7 +129,7 @@ def _artifact_urls(prefix: str, media_types: dict[str, str]) -> dict[str, str]:
 
 
 def render_preview_page_for_test() -> str:
-    page = render_operations_page().replace("Engineering Preview 0.1.5", f"Engineering Preview {PREVIEW_VERSION}")
+    page = render_operations_page()
     page = page.replace("</section></main>", f"{_WORKFLOW_CARD}</section></main>", 1)
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
