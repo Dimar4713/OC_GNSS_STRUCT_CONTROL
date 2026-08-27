@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import timedelta
 from math import cos, sin
 from pathlib import Path
@@ -24,6 +25,7 @@ from constellation_control.domain.models import (
     Maneuver,
     MeanOrbit,
     PropagationRequest,
+    PropagationResult,
     SatelliteSpec,
     ScenarioConfig,
 )
@@ -164,14 +166,14 @@ class _DesignFiniteDifferenceRoeLinearizer:
                     local_reference,
                     local_deputy,
                     dep_now,
-                    tuple(plus_dv),
+                    (plus_dv[0], plus_dv[1], plus_dv[2]),
                 )
                 minus_next = self._next_roe(
                     local_request,
                     local_reference,
                     local_deputy,
                     dep_now,
-                    tuple(minus_dv),
+                    (minus_dv[0], minus_dv[1], minus_dv[2]),
                 )
                 b_matrices[index, :, component] = self._difference(plus_next, minus_next) / (
                     2.0 * _IMPULSE_STEP_M_S
@@ -249,18 +251,15 @@ def _initial_request(scenario: ScenarioConfig, seed: int) -> PropagationRequest:
 
 def _request_from_result_sample(
     source: PropagationRequest,
-    result: object,
+    result: PropagationResult,
     sample_index: int,
 ) -> PropagationRequest:
-    from constellation_control.domain.models import PropagationResult
-
-    if not isinstance(result, PropagationResult):
-        raise TypeError("screening continuation requires PropagationResult")
-    rebuilt = []
-    for satellite in source.satellites:
-        rebuilt.append(
-            satellite.model_copy(update={"mean_orbit": result.mean_orbits[satellite.satellite_id][sample_index]})
+    rebuilt = [
+        satellite.model_copy(
+            update={"mean_orbit": result.mean_orbits[satellite.satellite_id][sample_index]}
         )
+        for satellite in source.satellites
+    ]
     return source.model_copy(
         update={
             "epoch": source.epoch + timedelta(seconds=float(result.times_s[sample_index])),
@@ -418,11 +417,13 @@ def run_dsst_screening_campaign(
     fingerprint: str | None = None
     pending_boundary_sign: int | None = None
 
+    deputy_classical = mean_to_classical(deputy.mean_orbit)
+    reference_classical = mean_to_classical(by_id[reference_id].mean_orbit)
     initial_delta_u = wrap_pi(
-        mean_to_classical(deputy.mean_orbit).mean_anomaly_rad
-        + mean_to_classical(deputy.mean_orbit).argp_rad
-        - mean_to_classical(by_id[reference_id].mean_orbit).mean_anomaly_rad
-        - mean_to_classical(by_id[reference_id].mean_orbit).argp_rad
+        deputy_classical.mean_anomaly_rad
+        + deputy_classical.argp_rad
+        - reference_classical.mean_anomaly_rad
+        - reference_classical.argp_rad
     )
     initial_decision, state = evaluate_optimized_correction_policy(
         candidate_id,
@@ -553,13 +554,15 @@ def run_dsst_screening_campaign(
 
     if backend is None or fingerprint is None:
         raise ValueError("screening campaign produced no DSST propagation evidence")
+    if elapsed <= 0.0:
+        raise ValueError("screening campaign produced no positive propagated evidence span")
     return PreviewScreeningCampaignEvidence(
         candidate_id=candidate_id,
         trigger_fraction=parameters.trigger_fraction,
         target_fraction=parameters.target_fraction,
         screening_backend=backend,
         screening_force_model_fingerprint=fingerprint,
-        elapsed_time_s=max(elapsed, 1.0e-12),
+        elapsed_time_s=elapsed,
         correction_count=correction_count,
         cumulative_delta_v_m_s=cumulative_dv,
         cumulative_propellant_used_kg=cumulative_propellant,
@@ -606,7 +609,7 @@ def build_real_dsst_screening_evaluator(
     profile: PreviewOptimalOperationsStudyProfile,
     *,
     propagator: Propagator | None = None,
-):
+) -> Callable[[OperationalPolicyParameters], OperationalPolicyEvaluation]:
     """Build the release evaluator used by policy search; no synthetic score path exists here."""
 
     def evaluate(parameters: OperationalPolicyParameters) -> OperationalPolicyEvaluation:
