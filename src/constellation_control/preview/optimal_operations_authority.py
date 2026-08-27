@@ -32,7 +32,9 @@ from constellation_control.optimization.optimized_hybrid_execution import (
     OptimizedTriggerBracketEvidence,
     discover_optimized_trigger_bracket,
 )
-from constellation_control.optimization.optimized_initial_validation import validate_initial_optimized_trigger_replay
+from constellation_control.optimization.optimized_initial_validation import (
+    validate_initial_optimized_trigger_replay,
+)
 from constellation_control.preview.optimal_operations_execution import (
     PreviewOptimalOperationsFoundationRun,
     PreviewScreeningCandidateEvidence,
@@ -68,6 +70,17 @@ class PreviewOptimizedAuthorityReduction(BaseModel):
     evaluation: OperationalStrategyEvaluation
     recommendation_strategy_id: None = None
     robustness_available: bool
+
+
+class PreviewOptimizedAuthorityArtifacts(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    run_dir: str
+    selection_path: str
+    hybrid_path: str
+    evaluation_path: str
+    manifest_path: str
+    authority_evidence_sha256: str
 
 
 def _digest(payload: object) -> str:
@@ -159,6 +172,12 @@ def discover_selected_initial_trigger(
     if profile.controlled_deputy_id != foundation.preflight.controlled_deputy_id:
         raise ValueError("selected candidate controlled deputy does not match foundation preflight")
     candidate = _candidate(selection)
+    times = np.asarray(screening_result.times_s, dtype=float)
+    if times.size < 2:
+        raise ValueError("screening result requires at least two output samples")
+    intervals = np.diff(times)
+    if np.any(intervals <= 0.0) or not np.allclose(intervals, intervals[0], rtol=0.0, atol=1.0e-9):
+        raise ValueError("screening result requires a strictly increasing uniform output grid")
     return discover_optimized_trigger_bracket(
         screening_result,
         strategy_id=selection.strategy_id,
@@ -168,7 +187,7 @@ def discover_selected_initial_trigger(
         deputy_id=foundation.preflight.controlled_deputy_id,
         hard_corridor_half_width_rad=scenario.constraints.phase_corridor_rad,
         initial_policy_state=initial_policy_state or CorrectionPolicyState(),
-        output_step_s=screening_result.times_s[1] - screening_result.times_s[0],
+        output_step_s=float(intervals[0]),
         screening_config_identity=screening_config_identity,
         bracket_padding_steps=bracket_padding_steps,
     )
@@ -188,6 +207,10 @@ def validate_and_authorize_initial_trigger(
 ) -> PreviewInitialHybridEventEvidence:
     if screening.candidate_id != selection.candidate_id or screening.bracket.strategy_id != selection.strategy_id:
         raise ValueError("optimized trigger evidence does not match selected candidate")
+    if selection.preflight_sha256 != foundation.preflight.preflight_sha256:
+        raise ValueError("candidate selection preflight does not match foundation preflight")
+    if selection.screening_evidence_sha256 != foundation.screening.evidence_sha256:
+        raise ValueError("candidate selection screening evidence does not match foundation evidence")
     scenario = load_scenario(scenario_path)
     if scenario.config_hash() != foundation.preflight.scenario_config_hash:
         raise ValueError("hybrid authority scenario does not match foundation preflight")
@@ -252,10 +275,7 @@ def reduce_selected_hybrid_evidence(
     if any(item.selection.selection_sha256 != selection.selection_sha256 for item in events):
         raise ValueError("hybrid event evidence belongs to a different candidate selection")
     jobs = tuple(item.validation_job for item in events)
-    evidence_by_key = {
-        item.validation_job.exact_key(): item.execution
-        for item in events
-    }
+    evidence_by_key = {item.validation_job.exact_key(): item.execution for item in events}
     return run_hybrid_strategy_validation(
         jobs,
         executor=lambda job: evidence_by_key.get(job.exact_key()),
@@ -270,6 +290,8 @@ def build_selected_authoritative_evaluation(
 ) -> PreviewOptimizedAuthorityReduction:
     if selection.preflight_sha256 != foundation.preflight.preflight_sha256:
         raise ValueError("selected candidate preflight lineage does not match foundation")
+    if selection.screening_evidence_sha256 != foundation.screening.evidence_sha256:
+        raise ValueError("selected candidate screening lineage does not match foundation")
     evaluation = build_optimized_operational_evaluation(
         strategy_id=selection.strategy_id,
         candidate=_candidate(selection),
@@ -286,4 +308,56 @@ def build_selected_authoritative_evaluation(
         evaluation=evaluation,
         recommendation_strategy_id=None,
         robustness_available=False,
+    )
+
+
+def write_preview_optimized_authority_evidence(
+    output_root: Path,
+    foundation: PreviewOptimalOperationsFoundationRun,
+    reduction: PreviewOptimizedAuthorityReduction,
+) -> PreviewOptimizedAuthorityArtifacts:
+    if reduction.selection.preflight_sha256 != foundation.preflight.preflight_sha256:
+        raise ValueError("authority reduction preflight lineage does not match foundation")
+    if reduction.selection.screening_evidence_sha256 != foundation.screening.evidence_sha256:
+        raise ValueError("authority reduction screening lineage does not match foundation")
+    if reduction.recommendation_strategy_id is not None or reduction.robustness_available:
+        raise ValueError("hybrid-authority evidence cannot contain recommendation or robustness")
+
+    payload = reduction.model_dump(mode="json")
+    authority_sha = _digest(payload)
+    run_dir = output_root / foundation.preflight.study_id / f"authority-{authority_sha[:16]}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    selection_path = run_dir / "optimized_candidate_selection.json"
+    hybrid_path = run_dir / "hybrid_authority.json"
+    evaluation_path = run_dir / "optimized_evaluation.json"
+    manifest_path = run_dir / "authority_manifest.json"
+
+    selection_path.write_text(reduction.selection.model_dump_json(indent=2), encoding="utf-8")
+    hybrid_path.write_text(reduction.hybrid.model_dump_json(indent=2), encoding="utf-8")
+    evaluation_path.write_text(reduction.evaluation.model_dump_json(indent=2), encoding="utf-8")
+    manifest = {
+        "study_id": foundation.preflight.study_id,
+        "preflight_sha256": foundation.preflight.preflight_sha256,
+        "screening_evidence_sha256": foundation.screening.evidence_sha256,
+        "selection_sha256": reduction.selection.selection_sha256,
+        "authority_evidence_sha256": authority_sha,
+        "strategy_id": reduction.evaluation.strategy_id,
+        "credibility_state": reduction.evaluation.credibility_state.value,
+        "high_fidelity_validation_id": reduction.evaluation.high_fidelity_validation_id,
+        "robustness_available": False,
+        "recommendation_strategy_id": None,
+        "semantics": (
+            "selected screening candidate reduced through numerical hybrid authority; "
+            "robustness unavailable and no final recommendation"
+        ),
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return PreviewOptimizedAuthorityArtifacts(
+        run_dir=str(run_dir),
+        selection_path=str(selection_path),
+        hybrid_path=str(hybrid_path),
+        evaluation_path=str(evaluation_path),
+        manifest_path=str(manifest_path),
+        authority_evidence_sha256=authority_sha,
     )
