@@ -62,8 +62,10 @@ def test_profile_round_trip_and_all_control_values_are_explicit() -> None:
 
 
 def test_profile_rejects_optimized_policy_and_bad_authority_grid() -> None:
+    optimized_payload = _profile().model_dump()
+    optimized_payload["policy"] = CorrectionPolicy.OPTIMIZED
     with pytest.raises(ValidationError, match="OPTIMIZED"):
-        _profile().model_copy(update={"policy": CorrectionPolicy.OPTIMIZED}, deep=True)
+        PreviewClosedLoopProfile.model_validate(optimized_payload)
 
     payload = _profile().model_dump()
     payload["authority_times_s"] = (0.0, 60.0, 60.0)
