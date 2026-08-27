@@ -139,10 +139,12 @@ class PreviewOptimalOperationsStudyProfile(BaseModel):
     schema_version: str = PREVIEW_OPTIMAL_OPERATIONS_PROFILE_SCHEMA
     study_id: str = Field(min_length=1)
     scenario_name: str = Field(min_length=1)
+    controlled_deputy_id: str = Field(min_length=1)
     seed: int
     campaign_horizon_s: float = Field(gt=0.0)
     coast_horizon_s: float = Field(gt=0.0)
     coast_output_step_s: float = Field(gt=0.0)
+    max_corrections: int = Field(gt=0)
     authority_times_s: tuple[float, ...]
     maneuver_windows: tuple[bool, ...]
     execution_policy: PreviewExecutionPolicyProfile
@@ -187,7 +189,10 @@ class PreviewOptimalOperationsPreflight(BaseModel):
     schema_version: str
     study_id: str
     scenario_name: str
+    controlled_deputy_id: str
+    reference_id: str
     scenario_config_hash: str
+    max_corrections: int
     identity: OperationalStudyIdentity
     search_config: dict[str, object]
     objective_definitions: tuple[PreviewObjectiveDefinition, ...]
@@ -217,6 +222,14 @@ def preflight_optimal_operations_study(
         raise ValueError("optimal-operations study requires VALIDATION force mode")
     if not scenario.orekit_sidecar_url:
         raise ValueError("optimal-operations study requires configured numerical Orekit authority")
+
+    by_id = {sat.satellite_id: sat for sat in scenario.constellation.satellites}
+    deputy = by_id.get(profile.controlled_deputy_id)
+    if deputy is None or deputy.role != "additional":
+        raise ValueError("controlled_deputy_id must name an additional satellite in ScenarioConfig")
+    if deputy.reference_id is None or deputy.reference_id not in by_id:
+        raise ValueError("controlled deputy requires a valid reference_id in ScenarioConfig")
+    reference_id = deputy.reference_id
 
     actual_force = scenario.force_model.fingerprint()
     actual_integrator = scenario_integrator_identity(scenario)
@@ -256,7 +269,10 @@ def preflight_optimal_operations_study(
         "schema_version": profile.schema_version,
         "study_id": profile.study_id,
         "scenario_name": profile.scenario_name,
+        "controlled_deputy_id": profile.controlled_deputy_id,
+        "reference_id": reference_id,
         "scenario_config_hash": scenario.config_hash(),
+        "max_corrections": profile.max_corrections,
         "identity": identity.model_dump(mode="json"),
         "search_config": search_payload,
         "objective_definitions": [item.model_dump(mode="json") for item in profile.objectives],
@@ -267,7 +283,10 @@ def preflight_optimal_operations_study(
         schema_version=profile.schema_version,
         study_id=profile.study_id,
         scenario_name=profile.scenario_name,
+        controlled_deputy_id=profile.controlled_deputy_id,
+        reference_id=reference_id,
         scenario_config_hash=scenario.config_hash(),
+        max_corrections=profile.max_corrections,
         identity=identity,
         search_config=search_payload,
         objective_definitions=profile.objectives,

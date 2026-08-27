@@ -26,6 +26,7 @@ def _scenario_path() -> Path:
 
 def _profile(*, robustness_enabled: bool = False) -> PreviewOptimalOperationsStudyProfile:
     scenario = load_scenario(_scenario_path())
+    additional = next(sat for sat in scenario.constellation.satellites if sat.role == "additional")
     execution = PreviewExecutionPolicyProfile(
         max_abs_impulse_rtn_m_s=(0.2, 0.2, 0.2),
         min_impulse_bit_m_s=0.001,
@@ -55,10 +56,12 @@ def _profile(*, robustness_enabled: bool = False) -> PreviewOptimalOperationsStu
         schema_version=PREVIEW_OPTIMAL_OPERATIONS_PROFILE_SCHEMA,
         study_id="preview-optimal-study-test",
         scenario_name=_scenario_path().name,
+        controlled_deputy_id=additional.satellite_id,
         seed=42,
         campaign_horizon_s=3600.0,
         coast_horizon_s=600.0,
         coast_output_step_s=60.0,
+        max_corrections=8,
         authority_times_s=(0.0, 60.0, 120.0),
         maneuver_windows=(True, True),
         execution_policy=execution,
@@ -74,13 +77,21 @@ def _profile(*, robustness_enabled: bool = False) -> PreviewOptimalOperationsStu
             seed=73,
         ),
         objectives=(
-            PreviewObjectiveDefinition(name="delta_v_per_year", unit="m/s/year", direction="minimize"),
-            PreviewObjectiveDefinition(name="corrections_per_year", unit="1/year", direction="minimize"),
+            PreviewObjectiveDefinition(
+                name="propellant_rate",
+                unit="kg/Julian-year",
+                direction="minimize",
+            ),
+            PreviewObjectiveDefinition(
+                name="correction_frequency",
+                unit="events/Julian-year",
+                direction="minimize",
+            ),
         ),
         hard_constraints=(
-            PreviewHardConstraintDefinition(name="phase_corridor", unit="rad"),
-            PreviewHardConstraintDefinition(name="minimum_fleet_distance", unit="m"),
-            PreviewHardConstraintDefinition(name="propellant_reserve", unit="kg"),
+            PreviewHardConstraintDefinition(name="phase_corridor_margin", unit="rad"),
+            PreviewHardConstraintDefinition(name="minimum_fleet_distance_margin", unit="m"),
+            PreviewHardConstraintDefinition(name="propellant_reserve_margin", unit="kg"),
         ),
         robustness=robustness,
         expected_force_model_fingerprint=scenario.force_model.fingerprint(),
@@ -114,6 +125,9 @@ def test_same_scenario_and_profile_produce_identical_preflight() -> None:
     assert first == second
     assert first.preflight_sha256 == second.preflight_sha256
     assert first.identity.execution_policy_identity == profile.execution_policy.identity()
+    assert first.controlled_deputy_id == "SYNTH-ADD-45"
+    assert first.reference_id == "SYNTH-REF"
+    assert first.max_corrections == 8
     assert first.robustness_enabled is False
     assert first.robustness_campaign_id is None
     assert first.robustness_sampling_model_sha256 is None
@@ -124,6 +138,14 @@ def test_preflight_rejects_identity_mismatch_before_execution() -> None:
     payload["expected_constraints_identity"] = "0" * 64
     mismatched = PreviewOptimalOperationsStudyProfile.model_validate(payload)
     with pytest.raises(ValueError, match="constraints identity mismatch"):
+        preflight_optimal_operations_study(_scenario_path(), mismatched)
+
+
+def test_preflight_rejects_unknown_controlled_deputy_before_execution() -> None:
+    payload = _profile().model_dump(mode="json")
+    payload["controlled_deputy_id"] = "SYNTH-REF"
+    mismatched = PreviewOptimalOperationsStudyProfile.model_validate(payload)
+    with pytest.raises(ValueError, match="additional satellite"):
         preflight_optimal_operations_study(_scenario_path(), mismatched)
 
 
