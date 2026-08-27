@@ -31,7 +31,7 @@ jobs:
           Write-Host 'PowerShell 5.1 UTF-8 bootstrap parse: OK'
       - name: Run Preview HTTP and loopback tests on Windows
         shell: pwsh
-        run: pytest -q tests/test_preview.py tests/test_preview_operations.py tests/test_preview_duration.py tests/test_duration_run.py tests/test_preview_closed_loop.py tests/test_preview_closed_loop_http.py tests/test_preview_closed_loop_ui.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
+        run: pytest -q tests/test_preview.py tests/test_preview_operations.py tests/test_preview_duration.py tests/test_duration_run.py tests/test_preview_closed_loop.py tests/test_preview_closed_loop_http.py tests/test_preview_closed_loop_ui.py tests/test_preview_workflow_http.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
 
   build-preview-bundle:
     runs-on: ubuntu-latest
@@ -150,9 +150,12 @@ jobs:
                   'closed_loop_p2_policies',
                   'explicit_control_profile',
                   'delta_v_propellant_lifetime_evidence',
+                  'design_pipeline_workflow',
+                  'robustness_campaign_workflow',
               ],
               'duration_invariant': 'duration override only; fidelity/force/integrator/output_step unchanged',
               'closed_loop_invariant': 'operator-supplied profile only; no hidden control constants',
+              'workflow_invariant': 'Preview routes explicit workflow inputs to accepted application runners; no duplicate search or Monte Carlo',
               'files': files,
           }
           (root / 'preview-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -177,10 +180,12 @@ jobs:
           manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
           manifest_duration="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["duration_invariant"])')"
           manifest_closed_loop="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["closed_loop_invariant"])')"
+          manifest_workflow="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["workflow_invariant"])')"
           test "$manifest_sha" = "$PREVIEW_SOURCE_SHA"
           test "$manifest_release" = 'Engineering Preview Python 0.1.5'
           test "$manifest_duration" = 'duration override only; fidelity/force/integrator/output_step unchanged'
           test "$manifest_closed_loop" = 'operator-supplied profile only; no hidden control constants'
+          test "$manifest_workflow" = 'Preview routes explicit workflow inputs to accepted application runners; no duplicate search or Monte Carlo'
       - name: Upload Engineering Preview 0.1.5
         uses: actions/upload-artifact@v4
         with:
