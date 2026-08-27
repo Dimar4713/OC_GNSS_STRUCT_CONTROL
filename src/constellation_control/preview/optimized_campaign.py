@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -28,7 +30,7 @@ from constellation_control.control.optimized_policy import evaluate_optimized_co
 from constellation_control.control.policies import CorrectionDecision, CorrectionPolicy, CorrectionPolicyState
 from constellation_control.control.policy_execution import append_authorized_resource_record, authorize_policy_correction
 from constellation_control.control.transition import AuthoritativeTransitionSnapshot, CorrectionResourceRecord
-from constellation_control.domain.models import Maneuver, PropagationRequest, PropagationResult
+from constellation_control.domain.models import ConstraintConfig, Maneuver, PropagationRequest, PropagationResult
 from constellation_control.domain.protocols import Propagator
 from constellation_control.optimization.operational_policy_search import OperationalPolicyParameters
 from constellation_control.optimization.optimal_operations_orchestration import AuthoritativeOperationalOutcomeEvidence
@@ -82,18 +84,15 @@ def _full_horizon_request(
 def run_optimized_closed_loop_campaign(
     propagator: Propagator,
     initial_request: PropagationRequest,
+    constraints: ConstraintConfig,
     profile: PreviewOptimalOperationsStudyProfile,
     parameters: OperationalPolicyParameters,
     *,
     candidate_id: str,
     initial_policy_state: CorrectionPolicyState | None = None,
 ) -> ClosedLoopCampaignResult:
-    """Run repeated optimized trigger/coast/correction cycles through accepted P2 numerical authority."""
+    """Run optimized trigger/coast/correction cycles through accepted P2 numerical authority."""
 
-    scenario = load_scenario(Path(profile.scenario_name)) if Path(profile.scenario_name).exists() else None
-    constraints = None if scenario is None else scenario.constraints
-    if constraints is None:
-        raise ValueError("optimized campaign requires ScenarioConfig constraints resolved by caller path")
     authority_grid = _validate_authority_grid(
         np.asarray(profile.authority_times_s, dtype=float),
         np.asarray(profile.maneuver_windows, dtype=bool),
@@ -125,9 +124,7 @@ def run_optimized_closed_loop_campaign(
         constraints.phase_corridor_rad,
         policy_state,
     )
-    pending_decision: CorrectionDecision | None = (
-        optimized.decision if optimized.decision.correction_requested else None
-    )
+    pending_decision: CorrectionDecision | None = optimized.decision if optimized.decision.correction_requested else None
     if pending_decision is not None:
         events.append(
             _event_record(
@@ -143,7 +140,6 @@ def run_optimized_closed_loop_campaign(
         if elapsed >= campaign_horizon - 1.0e-9:
             reason = "campaign-horizon-reached"
             break
-
         if pending_decision is not None:
             if len(ledger) >= profile.max_corrections:
                 reason = "max-corrections-reached"
@@ -207,7 +203,7 @@ def run_optimized_closed_loop_campaign(
             )
         coast_result = propagator.propagate(current_request)
         coast_calls += 1
-        scan, optimized = _scan_optimized_trigger(
+        scan, _ = _scan_optimized_trigger(
             coast_result,
             candidate_id=candidate_id,
             parameters=parameters,
@@ -228,7 +224,6 @@ def run_optimized_closed_loop_campaign(
                 else "no-next-optimized-trigger-in-coast-horizon"
             )
             break
-
         event = scan.event
         elapsed += event.time_s
         events.append(
@@ -274,7 +269,7 @@ def run_authoritative_optimized_outcome(
     candidate_id: str,
     propagator: Propagator | None = None,
 ) -> PreviewOptimizedCampaignEvidence:
-    """Run one selected optimized candidate and normalize only numerical evidence into the accepted outcome contract."""
+    """Normalize only real numerical optimized-campaign evidence into the accepted outcome contract."""
 
     preflight = preflight_optimal_operations_study(scenario_path, profile)
     scenario = load_scenario(scenario_path)
@@ -283,13 +278,11 @@ def run_authoritative_optimized_outcome(
         assert scenario.orekit_sidecar_url is not None
         resolved = OrekitSidecarPropagator(scenario.orekit_sidecar_url)
     initial = _initial_request(scenario_path).model_copy(update={"seed": profile.seed})
-
-    # Resolve constraints from the exact selected path; do not rely on CWD/profile name.
-    campaign_profile = profile.model_copy(update={"scenario_name": str(scenario_path)})
     campaign = run_optimized_closed_loop_campaign(
         resolved,
         initial,
-        campaign_profile,
+        scenario.constraints,
+        profile,
         parameters,
         candidate_id=candidate_id,
     )
@@ -326,20 +319,21 @@ def run_authoritative_optimized_outcome(
     hard_constraints = tuple(
         _hard_constraint(definition, campaign, margins) for definition in profile.hard_constraints
     )
-    outcome_payload = {
-        "candidate_id": candidate_id,
-        "parameters": parameters.model_dump(mode="json"),
-        "campaign": campaign.model_dump(mode="json"),
-        "metrics": metrics.model_dump(mode="json"),
-        "margins": margins.model_dump(mode="json"),
-        "replay_backend": replay.backend,
-        "replay_force_model_fingerprint": replay.force_model_fingerprint,
-    }
-    import hashlib
-    import json
-
     evidence_id = hashlib.sha256(
-        json.dumps(outcome_payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        json.dumps(
+            {
+                "candidate_id": candidate_id,
+                "parameters": parameters.model_dump(mode="json"),
+                "campaign": campaign.model_dump(mode="json"),
+                "metrics": metrics.model_dump(mode="json"),
+                "margins": margins.model_dump(mode="json"),
+                "replay_backend": replay.backend,
+                "replay_force_model_fingerprint": replay.force_model_fingerprint,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
     ).hexdigest()
     outcome = AuthoritativeOperationalOutcomeEvidence(
         campaign_termination_reason=campaign.termination_reason,
