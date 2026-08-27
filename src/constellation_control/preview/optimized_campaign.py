@@ -42,7 +42,10 @@ from constellation_control.preview.optimal_operations_execution import (
     _objective_value,
     _validate_replay_authority,
 )
-from constellation_control.preview.optimal_operations_profile import PreviewOptimalOperationsStudyProfile, preflight_optimal_operations_study
+from constellation_control.preview.optimal_operations_profile import (
+    PreviewOptimalOperationsStudyProfile,
+    preflight_optimal_operations_study,
+)
 
 
 class PreviewOptimizedCampaignEvidence(BaseModel):
@@ -218,12 +221,10 @@ def run_optimized_closed_loop_campaign(
             coast_elapsed = float(coast_result.times_s[-1])
             current_request = _request_from_result_sample(current_request, coast_result, -1)
             elapsed += coast_elapsed
-            reason = (
-                "campaign-horizon-reached"
-                if elapsed >= campaign_horizon - 1.0e-9
-                else "no-next-optimized-trigger-in-coast-horizon"
-            )
-            break
+            if elapsed >= campaign_horizon - 1.0e-9:
+                reason = "campaign-horizon-reached"
+                break
+            continue
         event = scan.event
         elapsed += event.time_s
         events.append(
@@ -277,7 +278,7 @@ def run_authoritative_optimized_outcome(
     if resolved is None:
         assert scenario.orekit_sidecar_url is not None
         resolved = OrekitSidecarPropagator(scenario.orekit_sidecar_url)
-    initial = _initial_request(scenario_path).model_copy(update={"seed": profile.seed})
+    initial = _initial_request(scenario_path, profile.seed)
     campaign = run_optimized_closed_loop_campaign(
         resolved,
         initial,
@@ -323,7 +324,10 @@ def run_authoritative_optimized_outcome(
         json.dumps(
             {
                 "candidate_id": candidate_id,
-                "parameters": parameters.model_dump(mode="json"),
+                "parameters": {
+                    "trigger_fraction": parameters.trigger_fraction,
+                    "target_fraction": parameters.target_fraction,
+                },
                 "campaign": campaign.model_dump(mode="json"),
                 "metrics": metrics.model_dump(mode="json"),
                 "margins": margins.model_dump(mode="json"),
