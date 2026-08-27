@@ -356,6 +356,25 @@ def _candidate_id(parameters: OperationalPolicyParameters) -> str:
     return f"dsst-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 
 
+def _physical_satellite_identity(satellite: SatelliteSpec) -> dict[str, object]:
+    orbit = satellite.mean_orbit
+    return {
+        "satellite_id": satellite.satellite_id,
+        "plane_id": satellite.plane_id,
+        "role": satellite.role,
+        "reference_id": satellite.reference_id,
+        "mean_orbit": {
+            "a_m": orbit.a_m,
+            "ex": orbit.ex,
+            "ey": orbit.ey,
+            "ix": orbit.ix,
+            "iy": orbit.iy,
+            "lambda_rad": orbit.lambda_rad,
+        },
+        "spacecraft": satellite.spacecraft.model_dump(mode="json"),
+    }
+
+
 def _validate_screening_compatibility(
     screening: ScenarioConfig,
     validation: ScenarioConfig,
@@ -374,10 +393,10 @@ def _validate_screening_compatibility(
     for label, actual, expected in checks:
         if actual != expected:
             raise ValueError(f"screening/validation {label} mismatch")
-    screening_satellites = tuple(item.model_dump(mode="json") for item in screening.constellation.satellites)
-    validation_satellites = tuple(item.model_dump(mode="json") for item in validation.constellation.satellites)
+    screening_satellites = tuple(_physical_satellite_identity(item) for item in screening.constellation.satellites)
+    validation_satellites = tuple(_physical_satellite_identity(item) for item in validation.constellation.satellites)
     if screening_satellites != validation_satellites:
-        raise ValueError("screening/validation initial constellation identity mismatch")
+        raise ValueError("screening/validation initial physical constellation identity mismatch")
     if profile.controlled_deputy_id not in {sat.satellite_id for sat in screening.constellation.satellites}:
         raise ValueError("screening scenario does not contain controlled deputy")
 
