@@ -8,6 +8,7 @@ from constellation_control.domain.models import ForceMode, PropagationRequest
 from constellation_control.domain.protocols import Propagator
 from constellation_control.optimization.hybrid import (
     AuthoritativeStateAnchor,
+    EventValidationEvidence,
     StateAnchorKind,
     ValidationOutcomeKind,
 )
@@ -116,10 +117,7 @@ def validate_initial_optimized_trigger_replay(
     )
     bracket = screening.bracket
     if scan.event is None or optimized is None:
-        evidence = __import__(
-            "constellation_control.optimization.hybrid",
-            fromlist=["EventValidationEvidence"],
-        ).EventValidationEvidence(
+        evidence = EventValidationEvidence(
             strategy_id=bracket.strategy_id,
             event_id=bracket.event_id,
             outcome=ValidationOutcomeKind.EVENT_ABSENT,
@@ -139,10 +137,7 @@ def validate_initial_optimized_trigger_replay(
     authoritative_time = event.time_s
     timing_error = authoritative_time - bracket.predicted_time_s
     outcome = ValidationOutcomeKind.CONFIRMED if abs(timing_error) <= 1.0e-9 else ValidationOutcomeKind.SHIFTED
-    evidence = __import__(
-        "constellation_control.optimization.hybrid",
-        fromlist=["EventValidationEvidence"],
-    ).EventValidationEvidence(
+    evidence = EventValidationEvidence(
         strategy_id=bracket.strategy_id,
         event_id=bracket.event_id,
         outcome=outcome,
