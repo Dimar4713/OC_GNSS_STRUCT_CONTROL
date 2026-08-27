@@ -6,9 +6,10 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from constellation_control.optimization.operational_robustness import (
+    CommonSampleSetIdentity,
+    RealizationStatus,
     StrategyRealizationOutcome,
     StrategyRobustnessEvidence,
-    RealizationStatus,
     common_sample_set_from_generated,
 )
 from constellation_control.uncertainty.campaign import (
@@ -62,11 +63,8 @@ def _execute_strategy(
     strategy_id: str,
     executor: StrategySampleExecutor,
     samples: tuple[dict[str, object], ...],
-    common_samples: object,
+    common_samples: CommonSampleSetIdentity,
 ) -> StrategyRobustnessEvidence:
-    # common_samples is intentionally passed as a runtime object here so this helper
-    # cannot create or mutate sampling identity; StrategyRobustnessEvidence performs
-    # the exact type/alignment validation at construction time.
     outcomes: list[StrategyRealizationOutcome] = []
     for index, sample in enumerate(samples):
         sample_hash = sample.get("sample_sha256")
@@ -111,7 +109,7 @@ def _execute_strategy(
         )
     return StrategyRobustnessEvidence(
         strategy_id=strategy_id,
-        common_samples=common_samples,  # type: ignore[arg-type]
+        common_samples=common_samples,
         outcomes=tuple(outcomes),
     )
 
