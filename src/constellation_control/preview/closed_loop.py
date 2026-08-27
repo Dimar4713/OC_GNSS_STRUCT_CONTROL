@@ -13,7 +13,7 @@ from constellation_control.application.run import load_scenario
 from constellation_control.control.campaign import ClosedLoopCampaignResult, run_closed_loop_campaign
 from constellation_control.control.execution import MPCExecutionPolicy
 from constellation_control.control.policies import CorrectionPolicy
-from constellation_control.domain.models import ForceMode, PropagationRequest
+from constellation_control.domain.models import ForceMode, PropagationRequest, ScenarioConfig
 from constellation_control.domain.protocols import Propagator
 from constellation_control.reporting.closed_loop_artifacts import write_closed_loop_artifacts
 
@@ -80,7 +80,7 @@ class PreviewClosedLoopRunResult(BaseModel):
     campaign: ClosedLoopCampaignResult
 
 
-def _request_from_scenario(scenario_path: Path) -> tuple[PropagationRequest, object]:
+def _request_from_scenario(scenario_path: Path) -> tuple[PropagationRequest, ScenarioConfig]:
     scenario = load_scenario(scenario_path)
     request = PropagationRequest(
         scenario_id=scenario.scenario_id,
@@ -107,8 +107,7 @@ def run_preview_closed_loop(
 ) -> PreviewClosedLoopRunResult:
     """Run accepted P2 campaign/artifact code from one explicit Preview control profile."""
 
-    initial_request, scenario_obj = _request_from_scenario(scenario_path)
-    scenario = scenario_obj  # preserve type inference without reloading the YAML
+    initial_request, scenario = _request_from_scenario(scenario_path)
 
     if profile.policy != CorrectionPolicy.NO_CONTROL:
         if scenario.force_model.mode != ForceMode.VALIDATION:
