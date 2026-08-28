@@ -80,7 +80,7 @@ def preview(
     try:
         import uvicorn
 
-        from constellation_control.preview.release_app import create_preview_app
+        from constellation_control.preview.consolidated_release_app import create_preview_app
     except ImportError as exc:
         raise typer.BadParameter("Preview dependencies are missing; install with .[preview]") from exc
 

@@ -1,65 +1,85 @@
-# Engineering Preview 0.2.0 — инженерное тестирование / Engineering evaluation
+# Engineering Preview 0.2.2 — инженерное тестирование / Engineering evaluation
 
 ## Русский
 
-Engineering Preview 0.2.0 добавляет рабочее место **Optimal Operations** поверх уже принятой расчётной цепочки. Оно не заменяет и не переписывает физику P2/P3.
+Engineering Preview 0.2.2 — первая консолидированная сборка после аудита веток и возврата всей принятой линии P0–P3 в canonical `main`.
 
-### Перед запуском
+### Главное изменение 0.2.2
+В операторскую оболочку добавлен **полный ScenarioConfig YAML editor**. Теперь инженер может менять не только propagation horizon, но и `output_step_s`, force model, integrator, constraints, Monte Carlo, параметры орбитальной группировки/КА, navigation sites и maneuvers.
 
-1. На целевом ПК должен быть локально установлен **Python 3.12**. Не переносите `.venv-preview` с другого компьютера: launcher создаёт окружение заново на каждой машине.
-2. Запускайте `start-preview.bat` или `preview/start-preview-bootstrap.ps1` из распакованного пакета.
-3. Встроенные Java 17/Orekit 13.1.7 и зафиксированный Orekit data package используются для DESIGN/VALIDATION расчётов.
+Изменённый YAML:
+1. проходит полную `ScenarioConfig` validation;
+2. получает новый normalized view и force-model fingerprint;
+3. сохраняется только под новым именем;
+4. сразу становится доступен для запуска.
 
-### Optimal Operations 0.2
+Существующие/эталонные YAML не перезаписываются.
 
-Рабочий поток двухэтапный:
+### Состав консолидированной версии
+- P0 engineering geometry and mean-element semantics;
+- P1 relative operations, long horizons and reporting;
+- P2 closed-loop numerical maneuver authority, repeated campaign, resources/lifetime, checkpoint/resume/safe-stop;
+- Design workflow;
+- Robustness workflow;
+- P3 Optimal Operations: DSST screening, hybrid numerical authority, optimized long-horizon campaign, paired robustness, credible Pareto and explicit recommendation policy;
+- clean-Windows Orekit-data revision bootstrap fix from the 0.2.1 stabilization line.
 
-1. **Foundation + screening**: явно выбрать DSST DESIGN ScenarioConfig и numerical VALIDATION ScenarioConfig, затем вставить полный `PreviewOptimalOperationsStudyProfile` JSON. Preview не подставляет control/search/robustness числа.
-2. После получения screening candidates явно выбрать candidate.
-3. **Authority + robustness + decision**: выбрать robustness campaign config, явно задать hybrid validation output step, screening bracket padding и полный `PreviewOperationalDecisionPolicy` JSON.
-4. Рекомендация показывается только из persisted decision evidence. UI не рассчитывает Pareto, риск, расход топлива или lifetime самостоятельно.
+### Authority
+- Orekit DSST DESIGN = screening/design evidence only.
+- Orekit numerical VALIDATION = operational computation authority.
+- Screening candidate не может стать credible только действием UI.
+- High-fidelity контуры fail-closed.
+- Hard constraints не компенсируются soft-objective weights.
 
-### Семантика доверия
+### Идентификация пакета
+Ожидаемые признаки:
+- UI/health: `0.2.2`;
+- ZIP/artifact: `engineering-preview-python-0.2.2-win10`;
+- manifest: `Engineering Preview Python 0.2.2`;
+- exact source SHA указан в `preview-manifest.json`;
+- bundled Orekit: 13.1.7 с pinned data revision/SHA.
 
-- Orekit DSST DESIGN — **screening only**.
-- Orekit numerical VALIDATION — **authority**.
-- Screening candidate не становится operationally credible от выбора в UI.
-- Hard constraints нельзя компенсировать весами soft objectives.
-- `Δu = M + ω` — прямая средняя фазовая координата оператора и не равна D'Amico `delta_lambda`.
-- Недоступные robustness/lifetime значения не трактуются как ноль.
+Для инженерного отзыва используйте `preview/EXPERT_FEEDBACK.md` и указывайте source SHA, сценарий, run/study id, изменённые входы и observed/expected behavior.
 
-### Что фиксировать в отзыве
-
-Используйте `preview/EXPERT_FEEDBACK.md`. Для каждого замечания укажите build/source SHA из `preview-manifest.json`, ScenarioConfig, study profile, decision policy, run artifact names и observed/expected behavior.
+---
 
 ## English
 
-Engineering Preview 0.2.0 adds the **Optimal Operations** workspace on top of the accepted P2/P3 computational chain. It does not replace or reimplement propagation/control physics.
+Engineering Preview 0.2.2 is the first consolidated build after the branch audit restored the complete accepted P0–P3 line to canonical `main`.
 
-### Before launch
+### Main 0.2.2 change
+The operator shell now includes a **complete ScenarioConfig YAML editor**. Engineers can modify not only propagation horizon but also `output_step_s`, force model, integrator, constraints, Monte Carlo, constellation/spacecraft parameters, navigation sites and maneuvers.
 
-1. The target PC must have **Python 3.12** installed locally. Never copy `.venv-preview` from another PC; the launcher creates a fresh environment on each target machine.
-2. Launch `start-preview.bat` or `preview/start-preview-bootstrap.ps1` from the extracted package.
-3. Bundled Java 17/Orekit 13.1.7 and pinned Orekit data are used for DESIGN/VALIDATION calculations.
+Edited YAML:
+1. passes full `ScenarioConfig` validation;
+2. exposes the normalized model and resulting force-model fingerprint;
+3. is saved only under a new file name;
+4. becomes immediately selectable for execution.
 
-### Optimal Operations 0.2
+Existing/canonical YAML files are never overwritten.
 
-The operator workflow has two explicit stages:
+### Consolidated functionality
+- P0 engineering geometry and mean-element semantics;
+- P1 relative operations, long horizons and reporting;
+- P2 closed-loop numerical maneuver authority, repeated campaigns, resource/lifetime evidence, checkpoint/resume/safe-stop;
+- Design workflow;
+- Robustness workflow;
+- P3 Optimal Operations with DSST screening, hybrid numerical authority, optimized long-horizon campaign, paired robustness, credible Pareto and explicit recommendation policy;
+- clean-Windows Orekit-data revision bootstrap fix from the 0.2.1 stabilization line.
 
-1. **Foundation + screening**: explicitly select the DSST DESIGN and numerical VALIDATION ScenarioConfig files, then paste the complete `PreviewOptimalOperationsStudyProfile` JSON. Preview injects no control/search/robustness numerical defaults.
-2. Explicitly select one persisted screening candidate.
-3. **Authority + robustness + decision**: select the robustness campaign config and explicitly supply hybrid validation output step, screening bracket padding, and the complete `PreviewOperationalDecisionPolicy` JSON.
-4. Recommendation is displayed only from persisted decision evidence. The UI never recomputes Pareto, risk, fuel or lifetime.
-
-### Trust semantics
-
-- Orekit DSST DESIGN is **screening only**.
-- Orekit numerical VALIDATION is **authority**.
-- Selecting a screening candidate in the UI does not make it operationally credible.
+### Authority
+- Orekit DSST DESIGN is screening/design evidence only.
+- Orekit numerical VALIDATION is operational computation authority.
+- UI actions cannot promote a screening candidate to credibility.
+- High-fidelity contours remain fail-closed.
 - Hard constraints cannot be weighted away by soft objectives.
-- `Δu = M + ω` is the direct operator mean-phase coordinate and is distinct from D'Amico `delta_lambda`.
-- Unavailable robustness/lifetime values are never treated as zero.
 
-### Feedback evidence
+### Package identity
+Expected identity:
+- UI/health: `0.2.2`;
+- ZIP/artifact: `engineering-preview-python-0.2.2-win10`;
+- manifest: `Engineering Preview Python 0.2.2`;
+- exact source SHA in `preview-manifest.json`;
+- bundled Orekit 13.1.7 with pinned data revision/SHA.
 
-Use `preview/EXPERT_FEEDBACK.md`. Include the build/source SHA from `preview-manifest.json`, ScenarioConfig, study profile, decision policy, relevant artifact names, and observed versus expected behavior.
+Use `preview/EXPERT_FEEDBACK.md` for engineering feedback and include source SHA, scenario, run/study id, modified inputs, and observed versus expected behavior.
