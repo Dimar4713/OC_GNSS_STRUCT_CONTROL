@@ -1,14 +1,17 @@
-# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.2.2
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.2.3
 # Руководство пользователя / User Guide
 
 ## Русский
 
 ### 1. Запуск
-1. Распакуйте `engineering-preview-python-0.2.2-win10.zip` в локальный каталог Windows 10/11.
+1. Распакуйте `engineering-preview-python-0.2.3-win10.zip` в локальный каталог Windows 10/11.
 2. Убедитесь, что установлен Python 3.12. Не переносите `.venv-preview` между компьютерами.
 3. Запустите `start-preview.bat`.
-4. Bootstrap создаст локальное окружение и запустит bundled Java/Orekit 13.1.7.
-5. Проверьте `/health`: должно быть `preview = 0.2.2`.
+4. Bootstrap создаст локальное окружение. Реальный launcher независимо повторно экспортирует pinned `OREKIT_DATA_REVISION`, проверит physical SHA и запустит Java/Orekit 13.1.7.
+5. Если на `127.0.0.1:8081` остался старый распознанный `orekit-service.jar`, Preview завершит только этот stale Java-sidecar и выполнит чистый старт. Посторонний процесс на 8081 автоматически не завершается.
+6. Проверьте `/health`: должно быть `preview = 0.2.3`.
+
+Если Orekit authority не проходит проверку, launcher выводит прямо в консоль фактически полученные Orekit version/revision/SHA и хвост stderr.
 
 ### 2. Authority
 Перед расчётом смотрите SCREENING / DESIGN / VALIDATION banner.
@@ -20,7 +23,7 @@
 ### 3. Открытие и редактирование ScenarioConfig
 После выбора сценария Preview показывает инженерные параметры, исходный YAML и normalized ScenarioConfig.
 
-В 0.2.2 добавлен рабочий блок **Редактор сценария / Scenario editor**.
+В 0.2.x доступен рабочий блок **Редактор сценария / Scenario editor**.
 
 Порядок работы:
 1. Откройте исходный сценарий.
@@ -88,8 +91,9 @@ DSST candidate остаётся screening-only до numerical authority. Final r
 ### 10. Результаты и идентификация
 - обычные Preview результаты: `preview/results/`;
 - exact build identity: `preview-manifest.json`;
-- release должен быть `Engineering Preview Python 0.2.2`;
-- source commit, Orekit revision/SHA и editor invariant должны быть заполнены;
+- release должен быть `Engineering Preview Python 0.2.3`;
+- Python package version должен быть `0.2.3`;
+- source commit, Orekit revision/SHA, editor invariant и clean-Windows-sidecar invariant должны быть заполнены;
 - checksum ZIP поставляется рядом с архивом.
 
 При отзыве инженера фиксируйте source SHA, имя ScenarioConfig, run/study id и соответствующие artifacts.
@@ -99,11 +103,14 @@ DSST candidate остаётся screening-only до numerical authority. Final r
 ## English
 
 ### 1. Launch
-1. Extract `engineering-preview-python-0.2.2-win10.zip` locally on Windows 10/11.
+1. Extract `engineering-preview-python-0.2.3-win10.zip` locally on Windows 10/11.
 2. Ensure Python 3.12 is installed. Never copy `.venv-preview` between PCs.
 3. Run `start-preview.bat`.
-4. Bootstrap creates the local environment and starts bundled Java/Orekit 13.1.7.
-5. `/health` must report `preview = 0.2.2`.
+4. Bootstrap creates the local environment. The real launcher independently reasserts pinned `OREKIT_DATA_REVISION`, verifies the physical SHA and starts Java/Orekit 13.1.7.
+5. If a recognized stale `orekit-service.jar` still owns `127.0.0.1:8081`, Preview stops only that stale Java sidecar before a clean launch. An unrelated process on 8081 is never terminated automatically.
+6. `/health` must report `preview = 0.2.3`.
+
+If Orekit authority verification fails, the launcher prints the actual Orekit version/revision/SHA plus the stderr tail directly in the console.
 
 ### 2. Authority
 - SCREENING — analytical/synthetic contour; not operational authority.
@@ -112,7 +119,7 @@ DSST candidate остаётся screening-only до numerical authority. Final r
 - DESIGN/VALIDATION are fail-closed; no silent Screening fallback.
 
 ### 3. Open and edit ScenarioConfig
-Preview 0.2.2 includes a real **Scenario editor** for the complete YAML model.
+Preview 0.2.x includes a real **Scenario editor** for the complete YAML model.
 
 1. Open a source scenario.
 2. Edit any required `ScenarioConfig` fields, including epoch, duration/output step, force model, integrator, constraints, Monte Carlo, constellation/spacecraft, maneuvers and navigation sites.
@@ -153,4 +160,4 @@ Stage 2: robustness config + explicit hybrid validation step + explicit bracket 
 DSST evidence stays screening-only until numerical authority. Final recommendation comes only from persisted credible evidence after paired robustness, credible Pareto and decision checks.
 
 ### 10. Results and build identity
-Use `preview-manifest.json` as the package source of truth. It must identify Engineering Preview Python 0.2.2, the exact source commit, Orekit data identity and Scenario editor invariant. The package checksum is shipped alongside the ZIP.
+Use `preview-manifest.json` as the package source of truth. It must identify Engineering Preview Python 0.2.3, Python package 0.2.3, the exact source commit, Orekit data identity, Scenario editor invariant and clean-Windows-sidecar invariant. The package checksum is shipped alongside the ZIP.
