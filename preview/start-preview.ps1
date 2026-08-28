@@ -38,16 +38,24 @@ function Read-AuthorityFile([string]$RelativePath, [int]$ExpectedLength) {
 }
 
 function Get-DirectJson([string]$Uri, [int]$TimeoutMs = 1000) {
-  $Handler = New-Object System.Net.Http.HttpClientHandler
-  $Handler.UseProxy = $false
-  $Client = New-Object System.Net.Http.HttpClient($Handler)
+  # Use the .NET Framework WebRequest API available in stock Windows PowerShell 5.1.
+  # System.Net.Http types are not guaranteed to be preloaded on a clean machine.
+  $Request = [System.Net.HttpWebRequest][System.Net.WebRequest]::Create($Uri)
+  $Request.Method = "GET"
+  $Request.Proxy = $null
+  $Request.Timeout = $TimeoutMs
+  $Request.ReadWriteTimeout = $TimeoutMs
+  $Request.KeepAlive = $false
+  $Response = $null
+  $Reader = $null
   try {
-    $Client.Timeout = [TimeSpan]::FromMilliseconds($TimeoutMs)
-    $Text = $Client.GetStringAsync($Uri).GetAwaiter().GetResult()
+    $Response = [System.Net.HttpWebResponse]$Request.GetResponse()
+    $Reader = New-Object System.IO.StreamReader($Response.GetResponseStream())
+    $Text = $Reader.ReadToEnd()
     return ($Text | ConvertFrom-Json)
   } finally {
-    $Client.Dispose()
-    $Handler.Dispose()
+    if ($Reader) { $Reader.Dispose() }
+    if ($Response) { $Response.Dispose() }
   }
 }
 
