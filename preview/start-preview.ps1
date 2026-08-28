@@ -51,7 +51,64 @@ function Get-DirectJson([string]$Uri, [int]$TimeoutMs = 1000) {
   }
 }
 
-Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.1.1"
+function Get-LoopbackListenerOwner([int]$LocalPort) {
+  try {
+    $Connection = Get-NetTCPConnection -State Listen -LocalPort $LocalPort -ErrorAction Stop |
+      Where-Object { $_.LocalAddress -in @("127.0.0.1", "0.0.0.0", "::1", "::") } |
+      Select-Object -First 1
+    if ($Connection) {
+      return [int]$Connection.OwningProcess
+    }
+  } catch { }
+  return $null
+}
+
+function Clear-StaleOrekitListener([int]$LocalPort) {
+  $OwnerPid = Get-LoopbackListenerOwner $LocalPort
+  if ($null -eq $OwnerPid) {
+    return
+  }
+
+  $ProcessInfo = $null
+  try {
+    $ProcessInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $OwnerPid" -ErrorAction Stop
+  } catch { }
+
+  $ProcessName = if ($ProcessInfo) { [string]$ProcessInfo.Name } else { "unknown" }
+  $CommandLine = if ($ProcessInfo) { [string]$ProcessInfo.CommandLine } else { "" }
+  $LooksLikeOrekit = (
+    $ProcessInfo -and
+    $ProcessName -match '^java(w)?\.exe$' -and
+    $CommandLine -match 'orekit-service(?:-0\.1\.0-SNAPSHOT)?\.jar'
+  )
+
+  if (-not $LooksLikeOrekit) {
+    Fail (
+      "Порт 127.0.0.1:$LocalPort уже занят процессом $ProcessName (PID $OwnerPid). " +
+      "Preview не будет завершать посторонний процесс."
+    ) (
+      "Port 127.0.0.1:$LocalPort is already occupied by $ProcessName (PID $OwnerPid). " +
+      "Preview will not terminate an unrelated process."
+    )
+  }
+
+  Write-Host "Найден оставшийся Orekit sidecar PID $OwnerPid; завершаем перед чистым запуском. / Stale Orekit sidecar PID $OwnerPid found; stopping it before a clean launch." -ForegroundColor Yellow
+  try {
+    Stop-Process -Id $OwnerPid -Force -ErrorAction Stop
+  } catch {
+    Fail "Не удалось завершить оставшийся Orekit sidecar PID $OwnerPid" "Failed to stop stale Orekit sidecar PID $OwnerPid"
+  }
+
+  for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
+    Start-Sleep -Milliseconds 250
+    if ($null -eq (Get-LoopbackListenerOwner $LocalPort)) {
+      return
+    }
+  }
+  Fail "Порт 127.0.0.1:$LocalPort не освободился после остановки старого sidecar" "Port 127.0.0.1:$LocalPort did not become free after stopping the stale sidecar"
+}
+
+Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.2.3"
 Write-Host "Корень / Root: $Root"
 
 $PythonArgs = @()
@@ -80,8 +137,13 @@ Write-Host "Установка/обновление зависимостей Pre
 
 $PinnedRevision = Read-AuthorityFile "sidecar\orekit-service\orekit-data-revision.txt" 40
 $PinnedPhysicalSha = Read-AuthorityFile "sidecar\orekit-service\orekit-data-sha256.txt" 64
+# Defense in depth: the real launcher itself exports the reviewed revision.
+# This keeps direct start-preview.ps1 execution and future bootstrap changes from
+# reintroducing the clean-PC `unversioned` regression fixed in Preview 0.2.1.
+$env:OREKIT_DATA_REVISION = $PinnedRevision
 Write-Host "Проверенная ревизия Orekit data / Reviewed revision: $PinnedRevision"
 Write-Host "Проверенный physical SHA-256 / Reviewed SHA:   $PinnedPhysicalSha"
+Write-Host "Runtime authority export / Экспорт authority: OREKIT_DATA_REVISION=$($env:OREKIT_DATA_REVISION)"
 
 $RuntimeRoot = Join-Path $Root "preview\runtime"
 $BundledJar = Join-Path $RuntimeRoot "orekit-service.jar"
@@ -121,6 +183,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
       Fail "High-fidelity runtime требует Java 17+; обнаружено: $JavaVersionText" "High-fidelity runtime requires Java 17+; detected: $JavaVersionText"
     }
 
+    Clear-StaleOrekitListener 8081
     Write-Host "Запуск проверенного Orekit sidecar на 127.0.0.1:8081... / Starting verified Orekit sidecar..."
     $env:OREKIT_DATA_PATH = $OrekitData
     $env:OREKIT_PORT = "8081"
@@ -128,12 +191,17 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
     $SidecarStdout = Join-Path $RuntimeRoot "orekit-sidecar.out.log"
     $SidecarStderr = Join-Path $RuntimeRoot "orekit-sidecar.err.log"
     $Sidecar = Start-Process -FilePath "java" -ArgumentList @("-jar", $OrekitJar) -RedirectStandardOutput $SidecarStdout -RedirectStandardError $SidecarStderr -PassThru
-    for ($Attempt = 0; $Attempt -lt 30; $Attempt++) {
+    $LastHealth = $null
+    $LastHealthError = $null
+    for ($Attempt = 0; $Attempt -lt 60; $Attempt++) {
       try {
         $Health = Get-DirectJson "http://127.0.0.1:8081/healthz" 1000
+        $LastHealth = $Health
+        $LastHealthError = $null
         if (
           $Health.status -eq "ok" -and
           $Health.backend -eq "orekit" -and
+          $Health.orekit_version -eq "13.1.7" -and
           $Health.orekit_data_revision -eq $PinnedRevision -and
           $Health.orekit_data_sha256 -eq $PinnedPhysicalSha
         ) {
@@ -141,13 +209,30 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
           Write-Host "Orekit authority ГОТОВО / READY: version $($Health.orekit_version), data $($Health.orekit_data_revision)"
           break
         }
-      } catch { }
+      } catch {
+        $LastHealthError = $_.Exception.Message
+      }
       if ($Sidecar.HasExited) { break }
       Start-Sleep -Milliseconds 500
     }
     if (-not $SidecarStarted) {
       if (-not $Sidecar.HasExited) { Stop-Process -Id $Sidecar.Id -Force }
-      Fail "Orekit sidecar не прошёл проверку revision/SHA. См. $SidecarStdout и $SidecarStderr" "Orekit sidecar failed reviewed revision/SHA health verification. See $SidecarStdout and $SidecarStderr"
+      $HealthIdentity = if ($LastHealth) {
+        "status=$($LastHealth.status), backend=$($LastHealth.backend), orekit=$($LastHealth.orekit_version), revision=$($LastHealth.orekit_data_revision), sha=$($LastHealth.orekit_data_sha256)"
+      } elseif ($LastHealthError) {
+        "health unavailable: $LastHealthError"
+      } else {
+        "health unavailable"
+      }
+      $StderrTail = ""
+      if (Test-Path -LiteralPath $SidecarStderr -PathType Leaf) {
+        $StderrTail = ((Get-Content -LiteralPath $SidecarStderr -Tail 8 -ErrorAction SilentlyContinue) -join " | ").Trim()
+      }
+      Fail (
+        "Orekit sidecar не прошёл проверку revision/SHA. Получено: $HealthIdentity. stderr: $StderrTail. См. $SidecarStdout и $SidecarStderr"
+      ) (
+        "Orekit sidecar failed reviewed revision/SHA health verification. Actual: $HealthIdentity. stderr: $StderrTail. See $SidecarStdout and $SidecarStderr"
+      )
     }
   } else {
     Write-Host "Java недоступна: Screening работает; Design/Validation будут НЕ ГОТОВО. / Java unavailable: Screening works; Design/Validation remain NOT READY." -ForegroundColor Yellow
