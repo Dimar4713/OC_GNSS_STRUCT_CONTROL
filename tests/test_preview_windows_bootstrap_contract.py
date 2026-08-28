@@ -31,3 +31,14 @@ def test_real_windows_launcher_reasserts_authority_and_clears_only_stale_orekit(
     assert "$Health.orekit_data_sha256 -eq $PinnedPhysicalSha" in text
     assert "$Attempt -lt 60" in text
     assert "stderr: $StderrTail" in text
+
+
+def test_loopback_health_probe_is_stock_windows_powershell_51_compatible() -> None:
+    text = Path("preview/start-preview.ps1").read_text(encoding="utf-8")
+
+    assert "[System.Net.HttpWebRequest][System.Net.WebRequest]::Create($Uri)" in text
+    assert "$Request.Proxy = $null" in text
+    assert "$Request.Timeout = $TimeoutMs" in text
+    assert "$Request.ReadWriteTimeout = $TimeoutMs" in text
+    assert "System.Net.Http.HttpClientHandler" not in text
+    assert "System.Net.Http.HttpClient" not in text
