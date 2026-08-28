@@ -1,9 +1,9 @@
-# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.2.2
+# OC GNSS STRUCT CONTROL — Engineering Preview Python 0.2.3
 
 ## Русский
 
 ### Назначение
-Engineering Preview 0.2.2 — консолидированная инженерная Windows-версия после восстановления canonical `main`. Она включает весь принятый функционал P0–P3, Design, Robustness и Optimal Operations, а также безопасное редактирование полного `ScenarioConfig`.
+Engineering Preview 0.2.3 — консолидированная инженерная Windows-версия после восстановления canonical `main`, дополнительно стабилизированная по реальному clean-Windows запуску Orekit sidecar. Она включает весь принятый функционал P0–P3, Design, Robustness и Optimal Operations, а также безопасное редактирование полного `ScenarioConfig`.
 
 ### Что входит
 - инженерное представление ОГ: `T`, средняя `a`, `i`, `Ω`, `u_mean`, Geometry Preflight;
@@ -34,21 +34,26 @@ Engineering Preview 0.2.2 — консолидированная инженер�
 `u_mean = λ - Ω = M + ω` — средняя фазовая координата, не оскулирующий аргумент широты. `Δu` не тождественна D'Amico `delta_lambda`. `Δs ≈ a_ref·Δu` — вдольорбитальная инженерная оценка, не Cartesian distance.
 
 ### Быстрый запуск Windows 10/11
-1. Распакуйте `engineering-preview-python-0.2.2-win10.zip` в локальный каталог.
+1. Распакуйте `engineering-preview-python-0.2.3-win10.zip` в локальный каталог.
 2. На ПК должен быть доступен Python 3.12. Готовую `.venv-preview` между компьютерами не переносить.
 3. Запустите `start-preview.bat`.
-4. Bootstrap создаст локальную `.venv-preview`, поднимет bundled Java/Orekit sidecar и проверит pinned Orekit-data revision/SHA.
-5. Откройте локальный Preview URL, показанный launcher.
-6. Проверьте `/health`: версия должна быть `0.2.2`.
-7. Для DESIGN/VALIDATION убедитесь, что authority показывает Orekit 13.1.7 и состояние ГОТОВО.
+4. Bootstrap создаст локальную `.venv-preview`; реальный launcher повторно экспортирует pinned `OREKIT_DATA_REVISION`, проверит physical SHA и поднимет Orekit 13.1.7.
+5. Если на `127.0.0.1:8081` остался старый распознанный `orekit-service.jar`, launcher безопасно завершит только этот stale Java-sidecar и выполнит чистый старт. Посторонний процесс на 8081 автоматически не завершается.
+6. Откройте локальный Preview URL, показанный launcher.
+7. Проверьте `/health`: версия должна быть `0.2.3`.
+8. Для DESIGN/VALIDATION убедитесь, что authority показывает Orekit 13.1.7 и состояние ГОТОВО.
+
+При ошибке authority launcher теперь выводит фактически полученные Orekit version/revision/SHA и хвост stderr непосредственно в консоль.
 
 ### Идентификация сборки
-Источник истины — `preview-manifest.json` в корне распакованного пакета. Для 0.2.2 в нём должны совпадать:
-- release: `Engineering Preview Python 0.2.2`;
+Источник истины — `preview-manifest.json` в корне распакованного пакета. Для 0.2.3 в нём должны совпадать:
+- release: `Engineering Preview Python 0.2.3`;
 - exact source commit;
+- Python package version `0.2.3`;
 - Orekit version/data revision/data SHA;
 - Scenario editor invariant;
-- имя ZIP/artifact `engineering-preview-python-0.2.2-win10`.
+- clean-Windows sidecar invariant;
+- имя ZIP/artifact `engineering-preview-python-0.2.3-win10`.
 
 Результаты Preview сохраняются в `preview/results/`.
 
@@ -57,7 +62,7 @@ Engineering Preview 0.2.2 — консолидированная инженер�
 ## English
 
 ### Purpose
-Engineering Preview 0.2.2 is the consolidated Windows engineering build after restoring canonical `main`. It contains the accepted P0–P3, Design, Robustness and Optimal Operations functionality plus safe full-`ScenarioConfig` editing.
+Engineering Preview 0.2.3 is the consolidated Windows engineering build after restoring canonical `main`, additionally stabilized for the real clean-Windows Orekit-sidecar startup path. It contains the accepted P0–P3, Design, Robustness and Optimal Operations functionality plus safe full-`ScenarioConfig` editing.
 
 ### Included functionality
 - constellation engineering view: `T`, mean `a`, `i`, `Ω`, `u_mean`, Geometry Preflight;
@@ -85,15 +90,18 @@ Engineering Preview 0.2.2 is the consolidated Windows engineering build after re
 `u_mean = λ - Ω = M + ω` is a mean phase coordinate, not osculating argument of latitude. `Δu` remains distinct from D'Amico `delta_lambda`. `Δs ≈ a_ref·Δu` is a mean along-track engineering proxy, not Cartesian distance.
 
 ### Windows 10/11 quick start
-1. Extract `engineering-preview-python-0.2.2-win10.zip` locally.
+1. Extract `engineering-preview-python-0.2.3-win10.zip` locally.
 2. Python 3.12 must be available on the target PC. Never copy `.venv-preview` between PCs.
 3. Run `start-preview.bat`.
-4. Bootstrap creates a local environment, starts bundled Java/Orekit and verifies pinned Orekit-data revision/SHA.
-5. Open the local Preview URL printed by the launcher.
-6. `/health` must report `0.2.2`.
-7. DESIGN/VALIDATION should report Orekit 13.1.7 and READY authority.
+4. Bootstrap creates the local environment; the real launcher independently reasserts pinned `OREKIT_DATA_REVISION`, verifies physical SHA and starts Orekit 13.1.7.
+5. A recognized stale `orekit-service.jar` listener on `127.0.0.1:8081` is stopped before a clean launch. An unrelated process on 8081 is never terminated automatically.
+6. Open the local Preview URL printed by the launcher.
+7. `/health` must report `0.2.3`.
+8. DESIGN/VALIDATION should report Orekit 13.1.7 and READY authority.
+
+On authority failure, the launcher now prints the actual Orekit version/revision/SHA plus the stderr tail directly in the console.
 
 ### Build identity
-`preview-manifest.json` is the package source of truth. For 0.2.2 it binds release name, exact source commit, Orekit version/data identity, scenario-editor invariant and the `engineering-preview-python-0.2.2-win10` artifact name.
+`preview-manifest.json` is the package source of truth. For 0.2.3 it binds release name, exact source commit, Python package version, Orekit version/data identity, scenario-editor invariant, clean-Windows-sidecar invariant and the `engineering-preview-python-0.2.3-win10` artifact name.
 
 Preview evidence is stored under `preview/results/`.

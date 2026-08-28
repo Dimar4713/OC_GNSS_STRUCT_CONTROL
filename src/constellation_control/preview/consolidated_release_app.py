@@ -13,7 +13,7 @@ from constellation_control.preview.release_app import (
     render_preview_page_for_test as render_release_page,
 )
 
-PREVIEW_VERSION = "0.2.2"
+PREVIEW_VERSION = "0.2.3"
 
 
 class PreviewScenarioDraftRequest(BaseModel):
