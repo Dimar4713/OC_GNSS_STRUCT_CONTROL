@@ -36,14 +36,13 @@ def test_scenario_editor_validates_and_saves_only_new_yaml(tmp_path: Path) -> No
     original = opened.json()["yaml_text"]
     assert original == text
 
-    edited = original.replace("duration_s: 7200", "duration_s: 8100", 1)
-    if edited == original:
-        edited = original.replace("duration_s: 3600", "duration_s: 4500", 1)
+    edited = original.replace("duration_s: 21600.0", "duration_s: 22500.0", 1)
     assert edited != original
 
     validated = client.post("/api/scenario-drafts/validate", json={"yaml_text": edited})
     assert validated.status_code == 200
     assert validated.json()["valid"] is True
+    assert validated.json()["duration_s"] == 22500.0
 
     saved = client.post(
         "/api/scenario-drafts/save",
@@ -51,6 +50,7 @@ def test_scenario_editor_validates_and_saves_only_new_yaml(tmp_path: Path) -> No
     )
     assert saved.status_code == 200
     assert saved.json()["scenario_name"] == "operator-edited.yaml"
+    assert saved.json()["duration_s"] == 22500.0
     assert (scenario_root / "operator-edited.yaml").read_text(encoding="utf-8") == edited.rstrip("\n") + "\n"
     assert (scenario_root / source.name).read_text(encoding="utf-8") == original
 
