@@ -7,11 +7,11 @@ $env:OC_GNSS_PREVIEW_ROOT = (Resolve-Path (Join-Path $PreviewDir "..")).Path
 # a developer/CI machine having OREKIT_DATA_REVISION pre-populated.
 $RevisionAuthorityPath = Join-Path $env:OC_GNSS_PREVIEW_ROOT "sidecar\orekit-service\orekit-data-revision.txt"
 if (-not (Test-Path -LiteralPath $RevisionAuthorityPath -PathType Leaf)) {
-  throw "Missing bundled Orekit revision authority / Отсутствует файл ревизии Orekit: $RevisionAuthorityPath"
+  throw "Missing bundled Orekit revision authority: $RevisionAuthorityPath"
 }
 $BundledRevision = (Get-Content -LiteralPath $RevisionAuthorityPath -Raw).Trim()
 if ($BundledRevision -notmatch '^[0-9a-f]{40}$') {
-  throw "Invalid bundled Orekit revision authority / Некорректная ревизия Orekit: $BundledRevision"
+  throw "Invalid bundled Orekit revision authority: $BundledRevision"
 }
 $env:OREKIT_DATA_REVISION = $BundledRevision
 
