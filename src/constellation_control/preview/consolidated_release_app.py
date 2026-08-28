@@ -13,7 +13,7 @@ from constellation_control.preview.release_app import (
     render_preview_page_for_test as render_release_page,
 )
 
-PREVIEW_VERSION = "0.2.2"
+PREVIEW_VERSION = "0.2.3"
 
 
 class PreviewScenarioDraftRequest(BaseModel):
@@ -78,106 +78,126 @@ _EDITOR_CARD = r"""
   <p class="hint">Редактируется полный ScenarioConfig YAML: эпоха, горизонт и шаг, модель сил, интегратор, ограничения, Monte Carlo, орбитальная группировка, параметры КА и манёвры. Перед сохранением выполняется полная валидация. Существующие YAML не перезаписываются. / Edit the complete ScenarioConfig YAML: epoch, horizon and output step, force model, integrator, constraints, Monte Carlo, constellation, spacecraft and maneuvers. Full validation is required before saving. Existing YAML files are never overwritten.</p>
   <textarea id="scenarioEditor" rows="32" style="width:100%;box-sizing:border-box;font-family:Consolas,monospace"></textarea>
   <button onclick="validateScenarioDraft()">Проверить YAML / Validate YAML</button>
-  <label for="scenarioSaveAs"><b>Сохранить как новый сценарий / Save as new scenario</b></label>
-  <input id="scenarioSaveAs" type="text" placeholder="my-scenario-edited.yaml">
-  <button onclick="saveScenarioDraft()">Сохранить и открыть / Save and open</button>
-  <div id="scenarioEditorStatus" class="status">Откройте сценарий для редактирования / Open a scenario to edit.</div>
-  <pre id="scenarioEditorNormalized" style="display:none"></pre>
+  <input id="scenarioSaveName" value="operator-edited.yaml" style="min-width:260px" aria-label="New scenario file name" />
+  <button onclick="saveScenarioDraft()">Сохранить как новый / Save as new</button>
+  <pre id="scenarioEditorStatus">Выберите сценарий — полный YAML будет загружен сюда. / Select a scenario to load its complete YAML here.</pre>
 </div>
 """
 
 _EDITOR_SCRIPT = r"""
-const originalLoadScenarioForEditor=loadScenario;
-function scenarioEditorMessage(text,kind=''){const e=document.getElementById('scenarioEditorStatus');e.textContent=text;e.className='status '+kind;}
-function syncScenarioEditor(){
-  if(!current)return;
-  const editor=document.getElementById('scenarioEditor');
-  editor.value=current.yaml_text||'';
-  const saveAs=document.getElementById('scenarioSaveAs');
-  const source=current.scenario_name||scenario.value||'scenario.yaml';
-  const lower=source.toLowerCase();
-  const ext=lower.endsWith('.yaml')?'.yaml':lower.endsWith('.yml')?'.yml':'.yaml';
-  const stem=source.slice(0,source.length-ext.length);
-  saveAs.value=stem+'-edited'+ext;
-  scenarioEditorMessage('YAML загружен. Измените параметры и выполните проверку / YAML loaded. Edit parameters and validate.');
+<script>
+const scenarioEditorState = { loadedName: null };
+
+async function loadScenarioIntoEditor(name) {
+  if (!name) return;
+  const response = await fetch('/api/scenarios/' + encodeURIComponent(name));
+  const data = await response.json();
+  if (!response.ok) {
+    document.getElementById('scenarioEditorStatus').textContent = JSON.stringify(data, null, 2);
+    return;
+  }
+  document.getElementById('scenarioEditor').value = data.yaml_text;
+  scenarioEditorState.loadedName = name;
+  document.getElementById('scenarioEditorStatus').textContent = 'Загружен / Loaded: ' + name;
 }
-loadScenario=async function(){await originalLoadScenarioForEditor();syncScenarioEditor();};
-async function validateScenarioDraft(){
-  const yamlText=document.getElementById('scenarioEditor').value;
-  scenarioEditorMessage('Проверка… / Validating…');
-  const r=await fetch('/api/scenario-drafts/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({yaml_text:yamlText})});
-  const d=await r.json();
-  if(!r.ok){scenarioEditorMessage(d.detail||'Validation failed','danger');return false;}
-  document.getElementById('scenarioEditorNormalized').textContent=JSON.stringify(d.normalized,null,2);
-  scenarioEditorMessage('VALID: '+d.scenario_id+'; mode='+d.force_mode+'; fingerprint='+d.force_model_fingerprint,'ok');
-  return true;
+
+async function validateScenarioDraft() {
+  const yamlText = document.getElementById('scenarioEditor').value;
+  const response = await fetch('/api/scenario-drafts/validate', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({yaml_text: yamlText})
+  });
+  const data = await response.json();
+  document.getElementById('scenarioEditorStatus').textContent = JSON.stringify(data, null, 2);
 }
-async function saveScenarioDraft(){
-  const yamlText=document.getElementById('scenarioEditor').value;
-  const name=document.getElementById('scenarioSaveAs').value.trim();
-  if(!name){scenarioEditorMessage('Укажите новое имя YAML / Supply a new YAML file name','danger');return;}
-  scenarioEditorMessage('Проверка и сохранение… / Validating and saving…');
-  const r=await fetch('/api/scenario-drafts/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_name:name,yaml_text:yamlText})});
-  const d=await r.json();
-  if(!r.ok){scenarioEditorMessage(d.detail||'Save failed','danger');return;}
-  const c=await fetch('/api/scenarios');catalog=await c.json();
-  scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));
-  scenario.value=d.scenario_name;
-  await loadScenario();
-  scenarioEditorMessage('Сохранено и открыто: '+d.scenario_name+' / Saved and opened: '+d.scenario_name,'ok');
+
+async function saveScenarioDraft() {
+  const yamlText = document.getElementById('scenarioEditor').value;
+  const scenarioName = document.getElementById('scenarioSaveName').value;
+  const response = await fetch('/api/scenario-drafts/save', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({yaml_text: yamlText, scenario_name: scenarioName})
+  });
+  const data = await response.json();
+  document.getElementById('scenarioEditorStatus').textContent = JSON.stringify(data, null, 2);
+  if (response.ok) window.location.reload();
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  const select = document.getElementById('scenarioSelect');
+  if (!select) return;
+  select.addEventListener('change', () => loadScenarioIntoEditor(select.value));
+  if (select.value) loadScenarioIntoEditor(select.value);
+});
+</script>
 """
 
 
+def _inject_editor(page: str) -> str:
+    if "scenarioEditorCard" in page:
+        return page
+    insertion = _EDITOR_CARD + _EDITOR_SCRIPT
+    if "</body>" in page:
+        return page.replace("</body>", insertion + "</body>")
+    return page + insertion
+
+
 def render_preview_page_for_test() -> str:
-    page = render_release_page().replace("Engineering Preview 0.2.0", f"Engineering Preview {PREVIEW_VERSION}")
-    page = page.replace("</section></main>", f"{_EDITOR_CARD}</section></main>", 1)
-    page = page.replace(
-        "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{_EDITOR_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
-        1,
-    )
-    return page
+    return _inject_editor(render_release_page()).replace("Engineering Preview 0.2", f"Engineering Preview {PREVIEW_VERSION}")
 
 
-def _remove_route(app: FastAPI, path: str) -> None:
-    app.router.routes[:] = [route for route in app.router.routes if getattr(route, "path", None) != path]
+def create_preview_app(scenario_root: Path, output_root: Path) -> FastAPI:
+    scenario_root = Path(scenario_root)
+    output_root = Path(output_root)
+    base = create_release_preview_app(scenario_root, output_root)
+    base.title = f"OC GNSS STRUCT CONTROL Engineering Preview {PREVIEW_VERSION}"
+    base.version = PREVIEW_VERSION
 
+    # Replace the root HTML handler while preserving the complete accepted 0.2
+    # application/API surface assembled by release_app.
+    for route in list(base.router.routes):
+        if getattr(route, "path", None) == "/" and "GET" in getattr(route, "methods", set()):
+            base.router.routes.remove(route)
 
-def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Path = Path("runs")) -> FastAPI:
-    app = create_release_preview_app(scenario_root, output_root)
-    app.version = PREVIEW_VERSION
-    _remove_route(app, "/")
-    _remove_route(app, "/health")
+    @base.get("/", response_class=HTMLResponse)
+    def index() -> str:
+        return render_preview_page_for_test()
 
-    @app.get("/", response_class=HTMLResponse)
-    def index() -> HTMLResponse:
-        return HTMLResponse(render_preview_page_for_test())
+    @base.get("/api/scenarios/{scenario_name}")
+    def scenario_source(scenario_name: str) -> dict[str, object]:
+        if Path(scenario_name).name != scenario_name:
+            raise HTTPException(status_code=422, detail="invalid scenario name")
+        path = scenario_root / scenario_name
+        if path.suffix.lower() not in {".yaml", ".yml"} or not path.is_file():
+            raise HTTPException(status_code=404, detail="scenario not found")
+        return {"name": scenario_name, "yaml_text": path.read_text(encoding="utf-8")}
 
-    @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok", "preview": PREVIEW_VERSION}
-
-    @app.post("/api/scenario-drafts/validate")
+    @base.post("/api/scenario-drafts/validate")
     def validate_scenario_draft(request: PreviewScenarioDraftRequest) -> dict[str, object]:
         try:
             return _draft_payload(_validated_scenario_from_yaml(request.yaml_text))
-        except (ValueError, TypeError) as exc:
+        except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @app.post("/api/scenario-drafts/save")
+    @base.post("/api/scenario-drafts/save")
     def save_scenario_draft(request: PreviewScenarioSaveRequest) -> dict[str, object]:
         try:
             scenario = _validated_scenario_from_yaml(request.yaml_text)
             path = _safe_new_scenario_path(scenario_root, request.scenario_name)
-            text = request.yaml_text if request.yaml_text.endswith("\n") else request.yaml_text + "\n"
-            path.write_text(text, encoding="utf-8")
-        except (ValueError, TypeError, OSError) as exc:
+            path.write_text(request.yaml_text.rstrip() + "\n", encoding="utf-8", newline="\n")
+            return {
+                **_draft_payload(scenario),
+                "saved": True,
+                "name": path.name,
+                "message": "Сохранено как новый сценарий / Saved as a new scenario",
+            }
+        except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @base.get("/health")
+    def health_023() -> dict[str, object]:
         return {
-            "saved": True,
-            "scenario_name": path.name,
-            **_draft_payload(scenario),
+            "status": "ok",
+            "preview_version": PREVIEW_VERSION,
+            "scenario_editor": "full-yaml-validate-save-as-new",
         }
 
-    return app
+    return base
