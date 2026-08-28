@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 # Compatibility workflow retained so any existing required check names keep
-# resolving. It intentionally does NOT publish a legacy 0.1.5 artifact.
+# resolving. It intentionally does NOT publish an obsolete Preview artifact.
 # The only canonical Windows release artifact is built by preview-0.2-package.yml.
 
 jobs:
@@ -43,8 +43,8 @@ jobs:
           set -euo pipefail
           grep -F 'BUNDLE_NAME: engineering-preview-python-0.2.3-win10' .github/workflows/preview-0.2-package.yml
           grep -F 'name: engineering-preview-python-0.2.3-win10' .github/workflows/preview-0.2-package.yml
-          if grep -Fq 'engineering-preview-python-0.1.5-win10' .github/workflows/preview-package.yml; then
-            echo 'legacy 0.1.5 artifact publication must remain retired' >&2
+          if grep -Eq 'BUNDLE_NAME: engineering-preview-python-0\.1\.[0-9]+-win10|name: engineering-preview-python-0\.1\.[0-9]+-win10|Upload Engineering Preview 0\.1\.' .github/workflows/preview-package.yml; then
+            echo 'obsolete 0.1.x artifact publication must remain retired' >&2
             exit 1
           fi
           echo 'Legacy check name retained; canonical artifact publication delegated to preview-0.2-package.yml.'
