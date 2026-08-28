@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  windows-preview-020-smoke:
+  windows-preview-022-smoke:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install Preview 0.2 test environment
+      - name: Install Preview 0.2.2 test environment
         shell: pwsh
         run: |
           python -m pip install -U pip
@@ -29,15 +29,15 @@ jobs:
           $text = [System.IO.File]::ReadAllText((Resolve-Path preview\start-preview.ps1), [System.Text.Encoding]::UTF8)
           [void][scriptblock]::Create($text)
           Write-Host 'PowerShell 5.1 UTF-8 bootstrap parse: OK'
-      - name: Run Preview 0.2 HTTP and legacy regression smoke
+      - name: Run Preview 0.2.2 HTTP and legacy regression smoke
         shell: pwsh
-        run: pytest -q tests/test_preview_release_http.py tests/test_preview.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
+        run: pytest -q tests/test_preview_consolidated_release.py tests/test_preview_release_http.py tests/test_preview.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
 
-  build-preview-020-bundle:
+  build-preview-022-bundle:
     runs-on: ubuntu-latest
     env:
       OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
-      BUNDLE_NAME: engineering-preview-python-0.2.0-win10
+      BUNDLE_NAME: engineering-preview-python-0.2.2-win10
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
           test "$actual_sha" = "$OREKIT_DATA_SHA256"
       - name: Build authoritative Orekit sidecar
         run: mvn -B -f sidecar/orekit-service/pom.xml test package
-      - name: Stage Windows Engineering Preview 0.2.0
+      - name: Stage Windows Engineering Preview 0.2.2
         shell: bash
         run: |
           set -euo pipefail
@@ -124,7 +124,7 @@ jobs:
               files.append({'path': rel, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'size': path.stat().st_size})
           manifest = {
               'product': 'OC GNSS STRUCT CONTROL',
-              'release': 'Engineering Preview Python 0.2.0',
+              'release': 'Engineering Preview Python 0.2.2',
               'target': 'Windows 10/11 engineering evaluation',
               'commit': os.environ['PREVIEW_SOURCE_SHA'],
               'python': '3.12',
@@ -133,6 +133,14 @@ jobs:
               'orekit_data_revision': os.environ['OREKIT_DATA_REVISION'],
               'orekit_data_sha256': os.environ['OREKIT_DATA_SHA256'],
               'language': ['ru', 'en'],
+              'operator_surface': [
+                  'full_ScenarioConfig_YAML_editor_with_validation_and_save_as_new',
+                  'relative_operations',
+                  'closed_loop_control',
+                  'design_workflow',
+                  'robustness_workflow',
+                  'optimal_operations',
+              ],
               'optimal_operations_chain': [
                   'explicit_study_profile',
                   'authoritative_p2_baselines',
@@ -144,7 +152,8 @@ jobs:
                   'explicit_decision_policy_recommendation',
               ],
               'authority_invariant': 'screening never authority; operational credibility requires Orekit numerical validation',
-              'defaults_invariant': 'no hidden control/search/robustness/decision numerical defaults in the 0.2 operator surface',
+              'scenario_editor_invariant': 'validate full ScenarioConfig and save only as a new YAML; existing scenarios are never overwritten',
+              'defaults_invariant': 'no hidden control/search/robustness/decision numerical defaults in the operator surface',
               'venv_invariant': 'never copy .venv-preview between PCs; bootstrap creates it on the target PC from local Python 3.12',
               'files': files,
           }
@@ -152,7 +161,7 @@ jobs:
           PY
           (cd "$RUNNER_TEMP" && zip -q -r "$GITHUB_WORKSPACE/$BUNDLE_NAME.zip" "$BUNDLE_NAME")
           sha256sum "$BUNDLE_NAME.zip" | tee "$BUNDLE_NAME.zip.sha256"
-      - name: Verify Preview 0.2 bundle
+      - name: Verify Preview 0.2.2 bundle
         shell: bash
         run: |
           set -euo pipefail
@@ -160,20 +169,24 @@ jobs:
           test -s "$BUNDLE_NAME.zip.sha256"
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/ENGINEERING_PREVIEW_0.2_RU_EN.md'
-          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep 'PREVIEW_VERSION = "0.2.0"'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/consolidated_release_app.py" | grep 'PREVIEW_VERSION = "0.2.2"'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/consolidated_release_app.py" | grep 'scenarioEditor'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/cli/main.py" | grep 'consolidated_release_app'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep 'Optimal Operations Workspace 0.2'
           manifest_sha="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
           manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
           manifest_authority="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["authority_invariant"])')"
+          manifest_editor="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["scenario_editor_invariant"])')"
           test "$manifest_sha" = "$PREVIEW_SOURCE_SHA"
-          test "$manifest_release" = 'Engineering Preview Python 0.2.0'
+          test "$manifest_release" = 'Engineering Preview Python 0.2.2'
           test "$manifest_authority" = 'screening never authority; operational credibility requires Orekit numerical validation'
-      - name: Upload Engineering Preview 0.2.0
+          test "$manifest_editor" = 'validate full ScenarioConfig and save only as a new YAML; existing scenarios are never overwritten'
+      - name: Upload Engineering Preview 0.2.2
         uses: actions/upload-artifact@v4
         with:
-          name: engineering-preview-python-0.2.0-win10
+          name: engineering-preview-python-0.2.2-win10
           retention-days: 14
           if-no-files-found: error
           path: |
-            engineering-preview-python-0.2.0-win10.zip
-            engineering-preview-python-0.2.0-win10.zip.sha256
+            engineering-preview-python-0.2.2-win10.zip
+            engineering-preview-python-0.2.2-win10.zip.sha256
