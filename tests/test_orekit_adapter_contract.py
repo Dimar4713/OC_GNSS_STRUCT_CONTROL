@@ -117,12 +117,15 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
     request = _request()
     captured: dict[str, Any] = {}
 
-    def fake_urlopen(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
         captured["timeout"] = timeout
         captured["body"] = json.loads(http_request.data.decode())
         return _FakeResponse(_result_payload(request))
 
-    monkeypatch.setattr("constellation_control.adapters.orekit.adapter.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "constellation_control.adapters.orekit.adapter.open_orekit_url",
+        fake_open_orekit_url,
+    )
     result = OrekitSidecarPropagator("http://orekit.invalid", timeout_s=12.0).propagate(request)
 
     assert captured["timeout"] == 12.0
@@ -135,11 +138,14 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
 def test_adapter_rejects_result_without_orekit_data_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
     request = _request()
 
-    def fake_urlopen(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
         del http_request, timeout
         return _FakeResponse(_result_payload(request, include_data_hash=False))
 
-    monkeypatch.setattr("constellation_control.adapters.orekit.adapter.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "constellation_control.adapters.orekit.adapter.open_orekit_url",
+        fake_open_orekit_url,
+    )
     with pytest.raises(RuntimeError, match="orekit-data fingerprint"):
         OrekitSidecarPropagator("http://orekit.invalid").propagate(request)
 
@@ -148,7 +154,7 @@ def test_adapter_exposes_sidecar_http_error_body(monkeypatch: pytest.MonkeyPatch
     request = _request()
     response = io.BytesIO(b'{"error":"invalid_propagation_request","detail":"gravity mismatch"}')
 
-    def fake_urlopen(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
         del http_request, timeout
         raise HTTPError(
             "http://orekit.invalid/v1/propagate",
@@ -158,6 +164,9 @@ def test_adapter_exposes_sidecar_http_error_body(monkeypatch: pytest.MonkeyPatch
             fp=response,
         )
 
-    monkeypatch.setattr("constellation_control.adapters.orekit.adapter.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "constellation_control.adapters.orekit.adapter.open_orekit_url",
+        fake_open_orekit_url,
+    )
     with pytest.raises(RuntimeError, match=r"HTTP 422.*gravity mismatch"):
         OrekitSidecarPropagator("http://orekit.invalid").propagate(request)

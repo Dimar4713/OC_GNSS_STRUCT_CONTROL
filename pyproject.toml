@@ -26,8 +26,12 @@ dependencies = [
 
 [project.optional-dependencies]
 api = ["fastapi>=0.115", "uvicorn>=0.30"]
+preview = ["fastapi>=0.115", "uvicorn>=0.30"]
 orekit = ["orekit-jpype==13.1.5.0"]
 dev = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "httpx>=0.28",
   "pytest>=8.3",
   "hypothesis>=6.112",
   "ruff>=0.6",

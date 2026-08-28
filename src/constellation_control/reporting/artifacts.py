@@ -4,12 +4,32 @@ import html
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, cast
 
-import matplotlib.pyplot as plt
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd
 import plotly.express as px
 
 from constellation_control.domain.models import ExperimentRunManifest
+
+
+def _maneuver_event_times(resources: pd.DataFrame | None) -> tuple[float, ...]:
+    if resources is None or resources.empty:
+        return ()
+    required = {"satellite_id", "time_s", "cumulative_delta_v_m_s"}
+    if not required.issubset(resources.columns):
+        return ()
+    events: set[float] = set()
+    for _, frame in resources.groupby("satellite_id", sort=True):
+        ordered = frame.sort_values("time_s")
+        delta = ordered["cumulative_delta_v_m_s"].astype(float).diff().fillna(0.0)
+        for value in ordered.loc[delta > 0.0, "time_s"]:
+            events.add(float(value))
+    return tuple(sorted(events))
 
 
 def _save_line(
@@ -20,6 +40,7 @@ def _save_line(
     path: Path,
     *,
     group: str | None = None,
+    event_times_s: tuple[float, ...] = (),
 ) -> None:
     present = [column for column in ys if column in frame]
     if not present or x not in frame or frame.empty:
@@ -32,6 +53,8 @@ def _save_line(
     else:
         for column in present:
             axis.plot(frame[x], frame[column], label=column)
+    for index, event_time in enumerate(event_times_s):
+        axis.axvline(event_time, linestyle="--", alpha=0.5, label="maneuver" if index == 0 else None)
     axis.set_title(title)
     axis.set_xlabel(x)
     axis.legend()
@@ -98,84 +121,31 @@ def generate_engineering_plots(
     navigation_geometry: pd.DataFrame | None = None,
     resources: pd.DataFrame | None = None,
 ) -> None:
-    _save_line(
-        timeseries,
-        "time_s",
-        ["delta_lambda_rad", "trend_rad", "harmonic_rad"],
-        "Relative phase",
-        output_dir / "01_delta_lambda.png",
-        group="pair_id",
-    )
-    _save_line(
-        timeseries,
-        "time_s",
-        ["delta_a_mean_m"],
-        "Mean semi-major-axis difference",
-        output_dir / "02_delta_a_mean.png",
-        group="pair_id",
-    )
-    _save_line(
-        timeseries,
-        "time_s",
-        ["delta_ex", "delta_ey"],
-        "Relative eccentricity vector",
-        output_dir / "03_eccentricity_vector.png",
-        group="pair_id",
-    )
-    _save_line(
-        timeseries,
-        "time_s",
-        ["delta_ix", "delta_iy"],
-        "Relative inclination vector",
-        output_dir / "04_inclination_vector.png",
-        group="pair_id",
-    )
-    _save_line(
-        timeseries,
-        "time_s",
-        ["pair_distance_m"],
-        "Pair distance history",
-        output_dir / "05_minimum_distance.png",
-        group="pair_id",
-    )
-    _save_line(
-        timeseries,
-        "time_s",
-        ["delta_raan_rad"],
-        "Relative RAAN",
-        output_dir / "06_delta_raan.png",
-        group="pair_id",
-    )
+    events = _maneuver_event_times(resources)
+    _save_line(timeseries, "time_s", ["delta_lambda_rad", "trend_rad", "harmonic_rad"], "D'Amico relative longitude coordinate", output_dir / "01_delta_lambda.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["delta_a_mean_m"], "Mean semi-major-axis difference", output_dir / "02_delta_a_mean.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["delta_ex", "delta_ey"], "Relative eccentricity vector", output_dir / "03_eccentricity_vector.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["delta_ix", "delta_iy"], "Relative inclination vector", output_dir / "04_inclination_vector.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["pair_distance_m"], "Pair distance history", output_dir / "05_minimum_distance.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["delta_raan_rad"], "Relative RAAN", output_dir / "06_delta_raan.png", group="pair_id", event_times_s=events)
     if ground_track is not None:
         _save_ground_track(ground_track, output_dir / "07_ground_track.png")
     if navigation_geometry is not None:
         _save_navigation_geometry(navigation_geometry, output_dir / "08_navigation_pdop.png")
     if resources is not None:
-        _save_line(
-            resources,
-            "time_s",
-            ["cumulative_delta_v_m_s"],
-            "Maneuver cumulative delta-V",
-            output_dir / "09_maneuver_delta_v.png",
-            group="satellite_id",
-        )
-        _save_line(
-            resources,
-            "time_s",
-            ["residual_propellant_kg", "required_reserve_kg"],
-            "Propellant and reserve",
-            output_dir / "10_propellant_reserve.png",
-            group="satellite_id",
-        )
+        _save_line(resources, "time_s", ["cumulative_delta_v_m_s"], "Maneuver cumulative delta-V", output_dir / "09_maneuver_delta_v.png", group="satellite_id")
+        _save_line(resources, "time_s", ["residual_propellant_kg", "required_reserve_kg"], "Propellant and reserve", output_dir / "10_propellant_reserve.png", group="satellite_id")
+    _save_line(timeseries, "time_s", ["delta_u_mean_deg", "phase_corridor_upper_deg", "phase_corridor_lower_deg"], "Operator mean phase difference Delta u and configured corridor", output_dir / "11_delta_u_mean.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["along_track_mean_arc_proxy_m"], "Mean along-track arc proxy a_ref * Delta u", output_dir / "12_along_track_mean_arc_proxy.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["secular_delta_u_rate_deg_day"], "Secular relative mean-phase rate", output_dir / "13_delta_u_rate.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["secular_along_track_proxy_rate_m_s"], "Secular along-track proxy relative velocity", output_dir / "14_along_track_proxy_rate.png", group="pair_id", event_times_s=events)
+    _save_line(timeseries, "time_s", ["delta_u_harmonic_deg"], "Fitted periodic component of operator Delta u", output_dir / "15_delta_u_periodic.png", group="pair_id", event_times_s=events)
     if {"time_s", "delta_lambda_rad", "pair_id"}.issubset(timeseries.columns):
-        figure = px.line(
-            timeseries,
-            x="time_s",
-            y="delta_lambda_rad",
-            color="pair_id",
-            title="Interactive relative phase",
-        )
+        figure = px.line(timeseries, x="time_s", y="delta_lambda_rad", color="pair_id", title="Interactive D'Amico relative longitude coordinate")
         figure.write_html(output_dir / "interactive_delta_lambda.html", include_plotlyjs="cdn")
+    if {"time_s", "delta_u_mean_deg", "pair_id"}.issubset(timeseries.columns):
+        figure = px.line(timeseries, x="time_s", y="delta_u_mean_deg", color="pair_id", title="Interactive operator mean phase difference Delta u")
+        figure.write_html(output_dir / "interactive_delta_u_mean.html", include_plotlyjs="cdn")
 
 
 def _write_optional_table(output_dir: Path, name: str, frame: pd.DataFrame | None) -> None:
@@ -184,6 +154,88 @@ def _write_optional_table(output_dir: Path, name: str, frame: pd.DataFrame | Non
     frame.to_csv(output_dir / f"{name}.csv", index=False)
     frame.to_parquet(output_dir / f"{name}.parquet", index=False)
     frame.to_json(output_dir / f"{name}.json", orient="records", indent=2)
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _list_of_mappings(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [cast(dict[str, Any], item) for item in value if isinstance(item, dict)]
+
+
+def _engineering_report(manifest: ExperimentRunManifest, summary: Mapping[str, object]) -> str:
+    lines = [
+        f"# Constellation Control run {manifest.run_id}",
+        "",
+        f"- Scenario: `{manifest.scenario_id}`",
+        f"- Backend: `{manifest.backend}` `{manifest.backend_version}`",
+        f"- Force mode: `{manifest.force_model_mode}`",
+        f"- Force-model fingerprint: `{manifest.force_model_fingerprint}`",
+        f"- Config hash: `{manifest.config_hash}`",
+        f"- Epoch: `{manifest.epoch.isoformat()}`",
+        f"- Random seed: `{manifest.random_seed}`",
+        "",
+        "## Operational relative diagnostics",
+        "",
+        "These metrics are the primary operator-facing control diagnostics. Delta u is mean phase M+omega; the along-track quantity is a mean arc proxy, not Cartesian separation.",
+        "",
+    ]
+    relatives = _list_of_mappings(summary.get("relative_operations"))
+    if not relatives:
+        lines.append("No additional/reference pair is configured.")
+    for item in relatives:
+        corridor = _mapping(item.get("phase_corridor"))
+        periodic = _mapping(item.get("periodic_delta_u"))
+        lines.extend(
+            [
+                f"### {item.get('pair_id', 'pair')}",
+                "",
+                f"- Final Delta u: `{item.get('final_delta_u_deg')} deg`",
+                f"- Secular Delta u rate: `{item.get('secular_delta_u_rate_deg_day')} deg/day` (`{item.get('secular_delta_u_rate_deg_julian_year')} deg/Julian-year`)",
+                f"- Final mean along-track arc proxy: `{item.get('final_along_track_proxy_m')} m`",
+                f"- Secular along-track proxy relative velocity: `{item.get('secular_along_track_proxy_rate_m_s')} m/s`",
+                f"- Configured corridor half-width: `{corridor.get('half_width_deg')} deg`",
+                f"- Inside corridor: `{corridor.get('inside_corridor')}`",
+                f"- Predicted boundary: `{corridor.get('predicted_boundary_deg')} deg`",
+                f"- Time to boundary: `{corridor.get('time_to_boundary_days')} days`",
+                "",
+                "#### Fitted Delta u periodic components",
+                "",
+                "Amplitude means center-to-peak. Peak-to-peak is exactly 2 x amplitude. Each row has its own fitted period; the RSS value below has no single physical period.",
+                "",
+                "| Basis | Period, days | Amplitude, deg | Peak-to-peak, deg |",
+                "| --- | ---: | ---: | ---: |",
+            ]
+        )
+        for component in _list_of_mappings(periodic.get("components")):
+            lines.append(
+                f"| {component.get('basis')} | {component.get('period_days')} | {component.get('amplitude_deg')} | {component.get('peak_to_peak_deg')} |"
+            )
+        lines.extend(
+            [
+                "",
+                f"- RSS of component amplitudes: `{periodic.get('rss_component_amplitude_deg')} deg` — multi-frequency aggregate, no single period.",
+                "",
+            ]
+        )
+
+    lines.extend(["## Resource / maneuver diagnostics", "", "See `09_maneuver_delta_v.png`, `10_propellant_reserve.png` and `resources.*`. Maneuver epochs are also marked on relative-state plots when present.", "", "## Secondary diagnostics", "", "Pair distance, navigation DOP and ground-track closure are retained as secondary evidence; they are not the primary phase-control coordinates.", ""])
+    for metric in _list_of_mappings(summary.get("metrics")):
+        lines.extend(
+            [
+                f"### {metric.get('pair_id', 'pair')}",
+                f"- Minimum Cartesian pair distance: `{metric.get('minimum_pair_distance_m')} m`",
+                f"- Time of closest approach: `{metric.get('time_of_closest_approach_s')} s`",
+                f"- Ground-track closure diagnostic: `{metric.get('ground_track_closure_error_m')} m`",
+                f"- Representative PDOP: `{metric.get('pdop')}`",
+                "",
+            ]
+        )
+    lines.extend(["## Full machine-readable summary", "", "```json", json.dumps(summary, indent=2, sort_keys=True), "```", ""])
+    return "\n".join(lines)
 
 
 def write_run_artifacts(
@@ -204,32 +256,9 @@ def write_run_artifacts(
     _write_optional_table(output_dir, "ground_track", ground_track)
     _write_optional_table(output_dir, "navigation_geometry", navigation_geometry)
     _write_optional_table(output_dir, "resources", resources)
-    generate_engineering_plots(
-        timeseries,
-        output_dir,
-        ground_track=ground_track,
-        navigation_geometry=navigation_geometry,
-        resources=resources,
-    )
+    generate_engineering_plots(timeseries, output_dir, ground_track=ground_track, navigation_geometry=navigation_geometry, resources=resources)
 
-    md = [
-        f"# Constellation Control run {manifest.run_id}",
-        "",
-        f"- Scenario: `{manifest.scenario_id}`",
-        f"- Backend: `{manifest.backend}` `{manifest.backend_version}`",
-        f"- Force mode: `{manifest.force_model_mode}`",
-        f"- Force-model fingerprint: `{manifest.force_model_fingerprint}`",
-        f"- Config hash: `{manifest.config_hash}`",
-        f"- Epoch: `{manifest.epoch.isoformat()}`",
-        f"- Random seed: `{manifest.random_seed}`",
-        "",
-        "## Summary",
-        "",
-        "```json",
-        json.dumps(summary, indent=2, sort_keys=True),
-        "```",
-    ]
-    markdown = "\n".join(md) + "\n"
+    markdown = _engineering_report(manifest, summary)
     (output_dir / "report.md").write_text(markdown, encoding="utf-8")
     (output_dir / "report.html").write_text(
         f"<html><body><pre>{html.escape(markdown)}</pre></body></html>",

@@ -1,81 +1,158 @@
-# constellation-control
+# OC GNSS STRUCT CONTROL / constellation-control
 
-Production-oriented research platform for reproducible analysis, modelling and optimal control of stable orbital constellations.
+## Русский
 
-> **Critical invariant:** an instantaneous osculating semi-major axis is never used as a secular-drift criterion. Drift comparison and design optimisation operate only on mean elements whose definition is bound to the same force-model configuration used by propagation.
+Платформа для воспроизводимого анализа, моделирования, проектирования и управления устойчивыми орбитальными группировками.
 
-## Project tree
+> **Критический инвариант:** мгновенная оскулирующая большая полуось никогда не используется как критерий векового ухода. Дрейф и оптимизация выполняются только в согласованных средних элементах.
+
+### Режимы точности
+
+- **screening** — быстрая аналитическая оценка.
+- **design** — Orekit DSST high-fidelity.
+- **validation** — Orekit numerical propagation.
+
+Design/Validation работают fail-closed: без проверенного Orekit runtime нет скрытого перехода на Screening.
+
+### Engineering Preview Windows 10
+
+Текущая экспертная сборка: **Engineering Preview Python 0.1.1**.
+
+Запуск:
 
 ```text
-src/constellation_control/
-  domain/                 # schemas and ports; no Orekit dependency
-  application/            # scenario orchestration and run identity
-  dynamics/               # screening mechanics and common orbital math
-  mean_elements/          # ROE and mean-element transformations
-  analysis/               # drift regression and fuel accounting
-  optimization/           # LHS, SciPy local optimisation, NSGA-II
-  control/                # deadband and impulsive MPC
-  uncertainty/            # deterministic Monte Carlo
-  reporting/              # JSON/CSV/Parquet/Markdown/HTML + plots
-  adapters/synthetic/     # deterministic unit/screening backend
-  adapters/orekit/        # authoritative Orekit boundary
-  api/                    # optional FastAPI layer
-  cli/                    # Typer CLI
-scenarios/
-tests/
-docs/
-  adr/
+start-preview.bat
 ```
 
-## Accuracy modes
+UI:
 
-- **screening** — two-body + first-order J2 secular rates. Fast candidate search only.
-- **design** — authoritative Orekit DSST service. Zonal/tesseral gravity, Sun/Moon, SRP and consistent mean↔osculating mapping.
-- **validation** — authoritative Orekit numerical propagation. Full configured gravity, third bodies, SRP/eclipses and manoeuvres.
-
-The current MVP implements the complete screening path and the production boundary to an Orekit sidecar. `design` and `validation` deliberately fail closed when the Orekit service is absent; there is no silent fallback to screening.
-
-## Quickstart
-
-Python 3.12+:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate              # Windows: .venv\Scripts\activate
-python -m pip install -U pip
-pip install -e '.[dev]'
-pytest -q
-constellation-control run scenarios/mvp_45deg.yaml --output runs
+```text
+http://127.0.0.1:8765
 ```
 
-The example is a **synthetic demonstration scenario**, not a declaration of operational GNSS constellation parameters. All orbital, spacecraft, force-model and constraint values enter through YAML.
+Интерфейс: **Русский / English**.
 
-Optional API:
+### Java Runtime для Design/Validation
 
-```bash
-pip install -e '.[api]'
-uvicorn constellation_control.api.app:app --reload
+Для SCREENING установка Java не требуется.
+
+Для DESIGN, VALIDATION, MPC, Robustness и Top-K validation требуется Java Runtime 17+.
+
+Orekit уже входит в состав Preview. Устанавливать Orekit отдельно не нужно.
+
+#### Установка без прав администратора Windows
+
+Рекомендуется portable ZIP-версия OpenJDK 17 LTS.
+
+1. Скачать OpenJDK 17 x64 ZIP.
+2. Распаковать, например:
+
+```text
+OC_GNSS_STRUCT_CONTROL/
+ └─ runtime/
+    └─ java17/
+       └─ bin/
+          └─ java.exe
 ```
 
-Optional JPype runtime for direct Orekit experiments:
+3. Проверить:
 
-```bash
-pip install -e '.[orekit]'
+```powershell
+runtime\java17\bin\java.exe -version
 ```
 
-The repository currently pins `orekit-jpype==13.1.5.0`. The Java Orekit project has released 13.1.6, so a 13.1.6 migration is accepted only after wrapper/sidecar compatibility is verified and the force-model/runtime fingerprint changes accordingly.
+Ожидается:
 
-## Reproducibility contract
+```text
+openjdk version "17.x.x"
+```
 
-Every run records `scenario_id`, deterministic `run_id`, normalized config hash, code version, backend identity/version, force-model fingerprint, epoch, algorithm versions and random seed. Core results are written to JSON + CSV + Parquet; reports are emitted as Markdown + HTML.
+Не требуется:
 
-## Engineering status
+- права администратора;
+- установка в Program Files;
+- изменение системного PATH;
+- изменение реестра Windows.
 
-- Mission umbrella: #1
-- Architecture/reproducibility: #2
-- Screening/drift physics: #3
-- Optimisation/control: #4
-- Monte Carlo/reporting: #5
-- Orekit DSST + numerical validation: #6
+### Документация
 
-See `docs/roadmap.md` and `docs/validation.md` for acceptance gates and known gaps.
+Вся пользовательская и проектная документация ведётся на русском и английском языках.
+
+---
+
+## English
+
+Production-oriented platform for reproducible analysis, modelling, design and control of stable orbital constellations.
+
+> **Critical invariant:** instantaneous osculating semi-major axis is never used as a secular drift criterion. Drift and optimisation operate only on consistent mean elements.
+
+### Accuracy modes
+
+- **screening** — fast analytical assessment.
+- **design** — Orekit DSST high-fidelity.
+- **validation** — Orekit numerical propagation.
+
+Design/Validation fail closed when reviewed Orekit runtime is unavailable.
+
+### Engineering Preview Windows 10
+
+Current expert build: **Engineering Preview Python 0.1.1**.
+
+Start:
+
+```text
+start-preview.bat
+```
+
+UI:
+
+```text
+http://127.0.0.1:8765
+```
+
+Interface language: **Русский / English**.
+
+### Java Runtime for Design/Validation
+
+Java is not required for SCREENING mode.
+
+Java Runtime 17+ is required for DESIGN, VALIDATION, MPC, Robustness and Top-K validation.
+
+Orekit is already included in Preview. Separate Orekit installation is not required.
+
+#### Installation without Windows administrator rights
+
+Use a portable ZIP distribution of OpenJDK 17 LTS.
+
+1. Download OpenJDK 17 x64 ZIP.
+2. Extract, for example:
+
+```text
+OC_GNSS_STRUCT_CONTROL/
+ └─ runtime/
+    └─ java17/
+       └─ bin/
+          └─ java.exe
+```
+
+3. Verify:
+
+```powershell
+runtime\java17\bin\java.exe -version
+```
+
+Expected:
+
+```text
+openjdk version "17.x.x"
+```
+
+No administrator rights are required:
+
+- no Program Files installation;
+- no system PATH modification;
+- no registry changes.
+
+### Documentation policy
+
+All user-facing and project documentation is maintained in Russian and English.

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
+from constellation_control.adapters.orekit.http import open_orekit_url
 from constellation_control.domain.models import PropagationRequest, PropagationResult
 
 
@@ -16,7 +17,7 @@ class OrekitSidecarPropagator:
     application code.
     """
 
-    def __init__(self, base_url: str, timeout_s: float = 300.0) -> None:
+    def __init__(self, base_url: str, timeout_s: float = 1800.0) -> None:
         self._url = base_url.rstrip("/") + "/v1/propagate"
         self._timeout_s = timeout_s
 
@@ -26,13 +27,18 @@ class OrekitSidecarPropagator:
         body = json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
         http_request = Request(self._url, data=body, headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urlopen(http_request, timeout=self._timeout_s) as response:  # noqa: S310
+            with open_orekit_url(http_request, self._timeout_s) as response:
                 payload = response.read().decode()
         except HTTPError as error:
             detail = error.read().decode(errors="replace")
             raise RuntimeError(f"Orekit sidecar HTTP {error.code}: {detail}") from error
         except URLError as error:
             raise RuntimeError(f"Orekit sidecar connection failed: {error.reason}") from error
+        except TimeoutError as error:
+            raise RuntimeError(
+                f"Orekit sidecar propagation exceeded {self._timeout_s:.0f} s; "
+                "the calculation may be too large for the synchronous Preview transport"
+            ) from error
 
         result = PropagationResult.model_validate(json.loads(payload))
         if not result.backend.lower().startswith("orekit"):

@@ -4,6 +4,9 @@ epoch: '2026-01-01T00:00:00Z'
 frame: EME2000
 time_scale: UTC
 duration_s: 300.0
+# This smoke validates one local finite-difference interval. The provider requires
+# its requested times to equal the authoritative propagation grid exactly, so
+# output_step_s intentionally equals duration_s -> [0, 300] seconds.
 output_step_s: 300.0
 orekit_sidecar_url: http://127.0.0.1:8081
 force_model:

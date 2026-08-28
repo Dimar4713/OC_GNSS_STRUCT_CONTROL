@@ -125,6 +125,23 @@ final class PropagationEngineIntegrationTest {
                         + baselineA + " maneuvered=" + maneuveredA);
     }
 
+    @Test
+    void positiveTangentialImpulseChangesDsstDesignTrajectory() {
+        PropagationResult baseline = engine.propagate(request("design", false, false, false));
+        Maneuver maneuver = new Maneuver("SYNTH-1", 0.0, List.of(0.0, 0.1, 0.0));
+        PropagationResult maneuvered = engine.propagate(
+                request("design", false, false, false, List.of(maneuver)));
+
+        assertEquals("orekit-dsst-design", baseline.backend());
+        assertEquals("orekit-dsst-design", maneuvered.backend());
+        double baselineA = baseline.meanOrbits().get("SYNTH-1").get(2).aM();
+        double maneuveredA = maneuvered.meanOrbits().get("SYNTH-1").get(2).aM();
+        assertTrue(
+                maneuveredA > baselineA + 100.0,
+                () -> "DSST screening impulse must change physical mean trajectory: baseline="
+                        + baselineA + " maneuvered=" + maneuveredA);
+    }
+
     private static PropagationRequest request(String mode, boolean moon, boolean sun, boolean srp) {
         return request(mode, moon, sun, srp, List.of(), 0, false);
     }
