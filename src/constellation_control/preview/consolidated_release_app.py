@@ -55,7 +55,7 @@ from constellation_control.preview.workbook_upload import (
     install_workbook_preview_route,
 )
 
-PREVIEW_VERSION = "0.2.3"
+PREVIEW_VERSION = "0.2.4"
 
 
 class PreviewScenarioDraftRequest(BaseModel):
