@@ -38,7 +38,9 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next slice is operator-side TLE authority wiring and immutable derived-scenario creation with provenance checks.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #143 | CI pending | Consolidated operator TLE authority flow and immutable derived-scenario creation. Raw TLE is promoted only after verified Orekit SGP4/TEME→DSST authority, parent YAML is never overwritten, NORAD source SHA/record/authority are persisted in lineage, and epoch mismatch fails closed. OMM remains blocked. |
 
 ## Current authority boundaries
 
@@ -46,10 +48,11 @@ No active merged-target PR at this checkpoint. Next slice is operator-side TLE a
 2. High-fidelity osculating-to-mean conversion is Orekit/DSST-only and fails closed if authority/fingerprints mismatch.
 3. Perturbations act on the canonical mean-element representation and never silently reinterpret osculating inputs.
 4. NORAD TLE elements may reach canonical MeanOrbit only through the explicit chain `TLE -> Orekit SGP4/SDP4 TEME -> osculating PV -> selected inertial frame -> Orekit DSST mean`; raw TLE values are never relabelled as canonical elements.
-5. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
-6. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
-7. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
-8. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+5. PR #143 additionally requires the selected TLE epoch to match the parent scenario epoch before replacing a satellite state; mixed-epoch constellation scenarios are rejected.
+6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
+7. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
+8. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+9. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
 
 ## Current main evidence checkpoint
 
@@ -59,13 +62,13 @@ No active merged-target PR at this checkpoint. Next slice is operator-side TLE a
   - `preview-package-compat` run `33398296258`;
   - `preview-0.2-package` run `33398296228`.
 - PR #142 merge commit: `b06835223d6843945c907750ca82229e6bcfe382`.
-- Prior PR #141 merge commit: `a6b85db161084495699f9a5dd3b853e561d014bb`.
+- PR #143 evidence is pending on its exact head.
 
 ## Next incomplete work
 
-Priority order after PR #142 acceptance:
+Priority order after PR #143 acceptance:
 
-1. Wire reviewed TLE intake to immutable derived-scenario creation only after exact authority response and provenance checks; keep OMM blocked until reviewed conversion exists.
+1. Extend Orekit TLE authority to propagate from TLE epoch to an explicit target scenario epoch, removing the current exact-epoch usability restriction without mixing state epochs.
 2. Add GNSS almanac-family adapters (YUMA/SEM and GLONASS almanac first) with format-specific authority semantics.
 3. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
 4. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
