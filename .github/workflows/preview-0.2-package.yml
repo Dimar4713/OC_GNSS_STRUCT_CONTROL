@@ -81,6 +81,19 @@ jobs:
           mkdir -p "$root/preview/runtime/orekit-data" "$root/sidecar/orekit-service" "$root/scripts" "$root/preview/results"
           cp start-preview.bat pyproject.toml README.md "$root/"
           cp -a src scenarios "$root/"
+          ROOT="$root" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['ROOT'])
+          release_app = root / 'src/constellation_control/preview/release_app.py'
+          text = release_app.read_text(encoding='utf-8')
+          old = 'from constellation_control.preview.app import _safe_result_file'
+          new = 'from constellation_control.preview.result_paths import safe_result_file as _safe_result_file'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one legacy result-path import in release_app.py')
+          release_app.write_text(text.replace(old, new), encoding='utf-8')
+          PY
           rm -f "$root/src/constellation_control/preview/app.py"
           cp preview/start-preview-bootstrap.ps1 preview/start-preview.ps1 preview/requirements-preview.lock preview/README.md preview/USER_GUIDE_RU_EN.md preview/EXPERT_FEEDBACK.md preview/ENGINEERING_PREVIEW_0.2_RU_EN.md "$root/preview/"
           cp scripts/fingerprint_orekit_data.py "$root/scripts/"
@@ -113,7 +126,7 @@ jobs:
               ],
               'authority_invariant': 'screening never authority; operational credibility requires Orekit numerical validation',
               'scenario_editor_invariant': 'validate full ScenarioConfig and save only as a new YAML; existing scenarios are never overwritten',
-              'launcher_invariant': 'CLI preview imports consolidated_release_app; legacy preview/app.py is excluded from the distributable bundle',
+              'launcher_invariant': 'CLI preview imports consolidated_release_app; packaged release_app uses result_paths and legacy preview/app.py is excluded',
               'venv_invariant': 'never copy .venv-preview between PCs; bootstrap creates it on the target PC from local Python 3.12',
               'files': files,
           }
@@ -130,13 +143,18 @@ jobs:
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/consolidated_release_app.py" | grep 'PREVIEW_VERSION = "0.2.4"'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/cli/main.py" | grep 'consolidated_release_app'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep 'preview.result_paths import safe_result_file as _safe_result_file'
+          if unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep -q 'preview.app import'; then
+            echo 'packaged release_app.py still depends on legacy preview.app' >&2
+            exit 1
+          fi
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/start-preview.ps1" | grep 'Engineering Preview Python 0.2.4'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/pyproject.toml" | grep 'version = "0.2.4"'
           if unzip -l "$BUNDLE_NAME.zip" | grep -q "$BUNDLE_NAME/src/constellation_control/preview/app.py"; then
             echo 'legacy preview/app.py must not ship' >&2
             exit 1
           fi
-          for module in walker_input osculating_input norad_input gnss_almanac_input glonass_almanac_input perturbation_ui workbook_upload spacecraft_catalog_ui resource_state_ui run_promotion_ui; do
+          for module in result_paths walker_input osculating_input norad_input gnss_almanac_input glonass_almanac_input perturbation_ui workbook_upload spacecraft_catalog_ui resource_state_ui run_promotion_ui; do
             unzip -l "$BUNDLE_NAME.zip" | grep "src/constellation_control/preview/${module}.py"
           done
           manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
@@ -189,6 +207,8 @@ jobs:
           Expand-Archive -LiteralPath $bundle -DestinationPath $extract
           $root = Join-Path $extract 'engineering-preview-python-0.2.4-win10'
           if (Test-Path (Join-Path $root 'src\constellation_control\preview\app.py')) { throw 'legacy preview/app.py shipped unexpectedly' }
+          $releaseApp = Get-Content -LiteralPath (Join-Path $root 'src\constellation_control\preview\release_app.py') -Raw
+          if ($releaseApp -match 'preview\.app import') { throw 'packaged release_app still imports legacy preview.app' }
           $pinned = (Get-Content -LiteralPath (Join-Path $root 'sidecar\orekit-service\orekit-data-revision.txt') -Raw).Trim()
           $pinnedSha = (Get-Content -LiteralPath (Join-Path $root 'sidecar\orekit-service\orekit-data-sha256.txt') -Raw).Trim()
           $env:OREKIT_DATA_PATH = Join-Path $root 'preview\runtime\orekit-data'
