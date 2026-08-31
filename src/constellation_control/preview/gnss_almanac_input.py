@@ -53,9 +53,8 @@ def _authority(root: Path, request: GpsAlmanacAuthorityRequest):
     preview = preview_gnss_almanac(request.filename, request.content_text, request.source_format)
     record = _gps_record(preview, request.prn)
     source, satellite = _source(root, request)
-    source_format = request.source_format.value
     result = OrekitGpsAlmanacMeanConversionClient(source.orekit_sidecar_url).convert(
-        source_format=source_format,
+        source_format=request.source_format.value,
         source_name=preview.source_filename,
         source_text=request.content_text,
         prn=request.prn,
@@ -181,6 +180,8 @@ GNSS_ALMANAC_CARD = r"""
 GNSS_ALMANAC_SCRIPT = r"""
 let gnssAlmanacLast=null;
 function syncGnssAlmanacSatellites(){if(!current)return;const sats=((current.normalized||current).constellation||{}).satellites||[];gnssAlmanacSat.replaceChildren(...sats.map(s=>{const o=document.createElement('option');o.value=s.satellite_id;o.textContent=s.satellite_id;return o;}));}
+const gnssAlmanacPriorLoadScenario=loadScenario;
+loadScenario=async function(){await gnssAlmanacPriorLoadScenario();syncGnssAlmanacSatellites();};
 async function previewGnssAlmanac(){
  const file=gnssAlmanacFile.files&&gnssAlmanacFile.files[0];
  if(!file){gnssAlmanacStatus.textContent='Выберите файл альманаха';gnssAlmanacStatus.className='status danger';return;}
