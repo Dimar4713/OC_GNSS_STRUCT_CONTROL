@@ -28,12 +28,14 @@ final class TleMeanConversionEngineIntegrationTest {
     }
 
     @Test
-    void convertsTleThroughSgp4TemeAndDsstMeanAuthority() {
-        MeanConversionResult result = engine.convert(request(LINE1, LINE2));
+    void convertsTleThroughSgp4TemeToExplicitTargetEpochAndDsstMeanAuthority() {
+        MeanConversionResult result = engine.convert(request(LINE1, LINE2, "2024-01-02T00:00:00Z"));
 
         assertEquals("NORAD-TLE-SGP4", result.backendMetadata().get("source_authority"));
         assertEquals("TEME", result.backendMetadata().get("sgp4_frame"));
         assertEquals("25544", result.backendMetadata().get("norad_satellite_number"));
+        assertEquals("UTC", result.backendMetadata().get("sgp4_target_time_scale"));
+        assertTrue(result.backendMetadata().get("sgp4_target_epoch").startsWith("2024-01-02T00:00:00"));
         assertEquals("tle-sgp4-mean-via-osculating-pv", result.backendMetadata().get("input_representation"));
         assertEquals("orekit-dsst-13.1.7-from-osculating", result.meanOrbit().definition().theory());
         assertEquals("tle-authority-test-fingerprint", result.meanOrbit().definition().forceModelFingerprint());
@@ -45,11 +47,19 @@ final class TleMeanConversionEngineIntegrationTest {
     void rejectsMalformedTleBeforePropagation() {
         IllegalArgumentException error = assertThrows(
                 IllegalArgumentException.class,
-                () -> engine.convert(request(LINE1.substring(0, 68) + "9", LINE2)));
+                () -> engine.convert(request(LINE1.substring(0, 68) + "9", LINE2, "2024-01-02T00:00:00Z")));
         assertTrue(error.getMessage().contains("format"));
     }
 
-    private static TleToMeanRequest request(String line1, String line2) {
+    @Test
+    void requiresExplicitTargetEpoch() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> engine.convert(request(LINE1, LINE2, "")));
+        assertTrue(error.getMessage().contains("target_epoch"));
+    }
+
+    private static TleToMeanRequest request(String line1, String line2, String targetEpoch) {
         SpacecraftModel spacecraft = new SpacecraftModel(500.0, 50.0, 220.0, 8.0, 1.3);
         ForceModel forceModel = new ForceModel(
                 "design",
@@ -70,6 +80,8 @@ final class TleMeanConversionEngineIntegrationTest {
                 line1,
                 line2,
                 "EME2000",
+                targetEpoch,
+                "UTC",
                 spacecraft,
                 forceModel,
                 "tle-authority-test-fingerprint");
