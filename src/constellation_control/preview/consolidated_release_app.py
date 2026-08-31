@@ -38,6 +38,11 @@ from constellation_control.preview.run_promotion_ui import (
     RUN_PROMOTION_SCRIPT,
     install_run_promotion_routes,
 )
+from constellation_control.preview.spacecraft_catalog_ui import (
+    SPACECRAFT_CATALOG_CARD,
+    SPACECRAFT_CATALOG_SCRIPT,
+    install_spacecraft_catalog_routes,
+)
 from constellation_control.preview.walker_input import WALKER_CARD, WALKER_SCRIPT, install_walker_routes
 from constellation_control.preview.workbook_upload import (
     WORKBOOK_CARD,
@@ -168,12 +173,12 @@ def render_preview_page_for_test() -> str:
     page = render_release_page().replace("Engineering Preview 0.2.0", f"Engineering Preview {PREVIEW_VERSION}")
     page = page.replace(
         "</section></main>",
-        f"{RUN_PROMOTION_CARD}{RESOURCE_STATE_CARD}{PERTURBATION_CARD}{GNSS_ALMANAC_CARD}{NORAD_CARD}{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
+        f"{RUN_PROMOTION_CARD}{RESOURCE_STATE_CARD}{SPACECRAFT_CATALOG_CARD}{PERTURBATION_CARD}{GNSS_ALMANAC_CARD}{NORAD_CARD}{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
         1,
     )
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\n{NORAD_SCRIPT}\n{GNSS_ALMANAC_SCRIPT}\n{PERTURBATION_SCRIPT}\n{RESOURCE_STATE_SCRIPT}\n{RUN_PROMOTION_SCRIPT}\nconst promotionBootstrap=bootstrap;bootstrap=async function(){{await promotionBootstrap();await refreshPromotableRuns();}};bootstrap().catch(e=>setStatus(String(e),'danger'));",
+        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\n{NORAD_SCRIPT}\n{GNSS_ALMANAC_SCRIPT}\n{PERTURBATION_SCRIPT}\n{RESOURCE_STATE_SCRIPT}\n{SPACECRAFT_CATALOG_SCRIPT}\n{RUN_PROMOTION_SCRIPT}\nconst promotionBootstrap=bootstrap;bootstrap=async function(){{await promotionBootstrap();await refreshPromotableRuns();}};bootstrap().catch(e=>setStatus(String(e),'danger'));",
         1,
     )
     return page
@@ -226,5 +231,6 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
     install_gnss_almanac_routes(app)
     install_perturbation_routes(app, scenario_root)
     install_resource_state_routes(app, scenario_root, output_root)
+    install_spacecraft_catalog_routes(app, scenario_root)
     install_run_promotion_routes(app, scenario_root, output_root)
     return app
