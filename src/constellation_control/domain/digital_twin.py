@@ -127,6 +127,7 @@ class ScenarioLineage(BaseModel):
         "walker_generation",
         "manual_edit",
         "osculating_import",
+        "propagated_state",
     ]
     random_seed: int | None = None
 
