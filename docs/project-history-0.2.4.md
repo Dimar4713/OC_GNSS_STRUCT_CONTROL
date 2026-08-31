@@ -46,7 +46,9 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next slice is structural lineage hash validation review against existing scenarios and fixtures before any schema tightening.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #151 | CI pending | Backward-compatible structural lineage integrity: any lineage carrying a real 64-hex SHA-256 `parent_config_hash` is automatically serialized as `integrity_version: 1`; explicit v1 with a malformed parent hash fails closed. Historical lineage with legacy non-structural hash tokens remains readable with no integrity version. Source SHA-256 validation reuses the same structural check. |
 
 ## Current authority boundaries
 
@@ -61,10 +63,11 @@ No active merged-target PR at this checkpoint. Next slice is structural lineage 
 9. GLONASS must not reuse GPS GNSS semantics. A GLONASS record may reach canonical MeanOrbit only through explicit authority-ready almanac semantics -> Orekit `GLONASSAlmanac` -> Orekit `GLONASSAnalyticalPropagator` at the explicit target epoch -> osculating PV in the selected inertial frame -> Orekit DSST mean. The legacy `draconian_period_s` preview field is not silently reinterpreted as Orekit/ICD `deltaT`.
 10. Legacy GLONASS labelled-text records that omit calendar date, `deltaT`, `deltaTDot` or time-correction fields remain preview-only and fail closed for authority conversion.
 11. GLONASS derived scenarios may be created only after #149 authority attestation; lineage must preserve `glonass_authority_v1`, source filename/SHA-256, slot and source authority, and no existing scenario YAML may be overwritten.
-12. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
-13. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
-14. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
-15. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+12. Lineage integrity v1 is a structural claim only: it proves the parent hash has SHA-256 shape, not that the referenced parent file is presently available or that its content has been recomputed. Historical unversioned lineage remains readable for backward compatibility.
+13. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
+14. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
+15. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+16. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
 
 ## Current main evidence checkpoint
 
@@ -78,7 +81,7 @@ No active merged-target PR at this checkpoint. Next slice is structural lineage 
 
 ## Next incomplete work
 
-1. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+1. Complete exact-head acceptance of #151 lineage structural-integrity contract and verify the full fixture suite remains backward compatible.
 2. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
