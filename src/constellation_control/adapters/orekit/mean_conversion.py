@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from math import pi
 from typing import Literal
 from urllib.error import HTTPError, URLError
@@ -219,4 +219,87 @@ class OrekitGpsAlmanacMeanConversionClient:
             raise RuntimeError("GPS almanac conversion omitted the reviewed authority chain")
         if not metadata.get("almanac_epoch") or not metadata.get("gnss_target_epoch"):
             raise RuntimeError("GPS almanac conversion omitted epoch attestation")
+        return result
+
+
+class OrekitGlonassAlmanacMeanConversionClient:
+    """Convert an authority-ready GLONASS almanac record through Orekit analytical propagation and DSST."""
+
+    def __init__(self, base_url: str, timeout_s: float = 60.0) -> None:
+        self._url = base_url.rstrip("/") + "/v1/orbits/glonass-almanac-to-mean"
+        self._timeout_s = timeout_s
+
+    def convert(
+        self,
+        *,
+        source_name: str,
+        slot: int,
+        frequency_channel: int,
+        health: int,
+        reference_date: date,
+        reference_time_s: float,
+        lambda_rad: float,
+        delta_i_rad: float,
+        argument_of_perigee_rad: float,
+        eccentricity: float,
+        delta_t_s: float,
+        delta_t_dot: float,
+        glo_to_utc_s: float,
+        gps_to_glo_s: float,
+        glo_time_offset_s: float,
+        frame: FrameName,
+        target_epoch: datetime,
+        target_time_scale: TimeScaleName,
+        spacecraft: SpacecraftModel,
+        force_model: ForceModelConfig,
+    ) -> MeanConversionResult:
+        requested_gravity = force_model.gravity_model
+        if requested_gravity is None:
+            raise RuntimeError("GLONASS almanac-to-mean conversion requires explicit gravity authority")
+        if not 1 <= slot <= 63:
+            raise ValueError("GLONASS slot must be in 1..63")
+        if not -7 <= frequency_channel <= 6:
+            raise ValueError("GLONASS frequency channel must be in -7..6")
+        fingerprint = force_model.fingerprint()
+        payload: dict[str, object] = {
+            "source_name": source_name,
+            "slot": slot,
+            "frequency_channel": frequency_channel,
+            "health": health,
+            "reference_date": reference_date.isoformat(),
+            "reference_time_s": reference_time_s,
+            "lambda_rad": lambda_rad,
+            "delta_i_rad": delta_i_rad,
+            "argument_of_perigee_rad": argument_of_perigee_rad,
+            "eccentricity": eccentricity,
+            "delta_t_s": delta_t_s,
+            "delta_t_dot": delta_t_dot,
+            "glo_to_utc_s": glo_to_utc_s,
+            "gps_to_glo_s": gps_to_glo_s,
+            "glo_time_offset_s": glo_time_offset_s,
+            "frame": frame.value,
+            "target_epoch": target_epoch.isoformat().replace("+00:00", "Z"),
+            "target_time_scale": target_time_scale.value,
+            "spacecraft": spacecraft.model_dump(mode="json"),
+            "force_model": force_model.model_dump(mode="json"),
+            "force_model_fingerprint": fingerprint,
+        }
+        result = _post_conversion(self._url, payload, self._timeout_s, "GLONASS almanac conversion")
+        _verify_common_result(result, requested_gravity=requested_gravity.value, fingerprint=fingerprint)
+        metadata = result.backend_metadata
+        if metadata.get("source_authority") != "GLONASS-ALMANAC-OREKIT-ANALYTICAL":
+            raise RuntimeError("GLONASS almanac conversion returned unexpected source authority")
+        if metadata.get("almanac_source_format") != "glonass-labelled-authority-v1":
+            raise RuntimeError("GLONASS almanac conversion returned unexpected source format")
+        if metadata.get("glonass_slot") != str(slot):
+            raise RuntimeError("GLONASS almanac conversion slot does not match request")
+        if metadata.get("frequency_channel") != str(frequency_channel):
+            raise RuntimeError("GLONASS almanac conversion frequency channel does not match request")
+        if metadata.get("glonass_target_time_scale") != target_time_scale.value:
+            raise RuntimeError("GLONASS almanac conversion target time scale does not match request")
+        chain = metadata.get("conversion_chain", "")
+        if "Orekit-GLONASSAnalyticalPropagator" not in chain or "Orekit-DSST-mean" not in chain:
+            raise RuntimeError("GLONASS almanac conversion omitted the reviewed authority chain")
+        if not metadata.get("almanac_epoch") or not metadata.get("glonass_target_epoch"):
+            raise RuntimeError("GLONASS almanac conversion omitted epoch attestation")
         return result

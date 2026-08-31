@@ -130,6 +130,29 @@ final class ApiModels {
             ForceModel forceModel,
             String forceModelFingerprint) {}
 
+    record GlonassAlmanacToMeanRequest(
+            String sourceName,
+            int slot,
+            int frequencyChannel,
+            int health,
+            String referenceDate,
+            double referenceTimeS,
+            double lambdaRad,
+            double deltaIRad,
+            double argumentOfPerigeeRad,
+            double eccentricity,
+            double deltaTS,
+            double deltaTDot,
+            double gloToUtcS,
+            double gpsToGloS,
+            double gloTimeOffsetS,
+            String frame,
+            String targetEpoch,
+            String targetTimeScale,
+            SpacecraftModel spacecraft,
+            ForceModel forceModel,
+            String forceModelFingerprint) {}
+
     record MeanConversionResult(
             MeanOrbit meanOrbit,
             Map<String, String> backendMetadata) {}

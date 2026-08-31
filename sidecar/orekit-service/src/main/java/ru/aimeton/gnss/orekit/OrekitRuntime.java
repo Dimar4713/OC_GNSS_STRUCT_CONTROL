@@ -39,15 +39,12 @@ final class OrekitRuntime {
         this.context.getDataProvidersManager().clearProviders();
         this.context.getDataProvidersManager().addProvider(new DirectoryCrawler(dataPath.toFile()));
 
-        // Production gravity authority is explicit. Do not allow Orekit's default
-        // reader ordering to select another coefficient family from the same data tree.
         var gravityFields = this.context.getGravityFields();
         gravityFields.clearPotentialCoefficientsReaders();
         gravityFields.addPotentialCoefficientsReader(
                 new ICGEMFormatReader(GRAVITY_MODEL_FILE_PATTERN, false, this.context.getTimeScales().getTT()));
 
         DataContext.setDefault(this.context);
-        // Fail at startup if critical time/EOP data cannot be resolved.
         this.context.getTimeScales().getUTC();
         this.context.getFrames().getITRF(IERSConventions.IERS_2010, false);
     }
@@ -74,6 +71,7 @@ final class OrekitRuntime {
             case "TAI" -> context.getTimeScales().getTAI();
             case "TT" -> context.getTimeScales().getTT();
             case "GPS" -> context.getTimeScales().getGPS();
+            case "GLONASS" -> context.getTimeScales().getGLONASS();
             default -> throw new IllegalArgumentException("Unsupported time scale: " + name);
         };
     }
