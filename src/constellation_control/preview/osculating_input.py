@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -25,7 +26,7 @@ class OsculatingInputRequest(BaseModel):
     pa_deg: float
     raan_deg: float
     anomaly_deg: float
-    anomaly_type: str = "true"
+    anomaly_type: Literal["mean", "eccentric", "true"] = "true"
 
 
 class OsculatingCreateRequest(OsculatingInputRequest):
