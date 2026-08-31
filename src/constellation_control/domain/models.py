@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from constellation_control.domain.digital_twin import DigitalTwinConfig, PerturbationScope
 from constellation_control.domain.navigation import NavigationSiteConfig
 
 
@@ -275,10 +276,12 @@ class ScenarioConfig(BaseModel):
     constellation: ConstellationSpec
     maneuvers: tuple[Maneuver, ...] = ()
     navigation_sites: tuple[NavigationSiteConfig, ...] = ()
+    digital_twin: DigitalTwinConfig | None = None
 
     @model_validator(mode="after")
     def validate_targets_and_sites(self) -> ScenarioConfig:
         known = {sat.satellite_id for sat in self.constellation.satellites}
+        known_planes = {sat.plane_id for sat in self.constellation.satellites}
         for maneuver in self.maneuvers:
             if maneuver.satellite_id not in known:
                 raise ValueError(f"unknown maneuver satellite_id: {maneuver.satellite_id}")
@@ -287,6 +290,29 @@ class ScenarioConfig(BaseModel):
         site_ids = [site.site_id for site in self.navigation_sites]
         if len(site_ids) != len(set(site_ids)):
             raise ValueError("navigation site_id values must be unique")
+        if self.digital_twin is not None:
+            state_ids = {state.satellite_id for state in self.digital_twin.spacecraft_states}
+            unknown_states = state_ids - known
+            if unknown_states:
+                raise ValueError(f"unknown digital-twin spacecraft state satellite_id: {sorted(unknown_states)}")
+            groups = {group.group_id: set(group.satellite_ids) for group in self.digital_twin.groups}
+            for group_id, members in groups.items():
+                unknown_members = members - known
+                if unknown_members:
+                    raise ValueError(f"group {group_id} contains unknown satellite_id values: {sorted(unknown_members)}")
+            for rule in self.digital_twin.perturbations:
+                if rule.scope == PerturbationScope.SATELLITE:
+                    unknown_targets = set(rule.target_ids) - known
+                elif rule.scope == PerturbationScope.PLANE:
+                    unknown_targets = set(rule.target_ids) - known_planes
+                elif rule.scope == PerturbationScope.GROUP:
+                    unknown_targets = set(rule.target_ids) - set(groups)
+                else:
+                    unknown_targets = set()
+                if unknown_targets:
+                    raise ValueError(
+                        f"perturbation rule {rule.rule_id} contains unknown targets: {sorted(unknown_targets)}"
+                    )
         return self
 
     def config_hash(self) -> str:
@@ -294,5 +320,8 @@ class ScenarioConfig(BaseModel):
         # Preserve historical hashes for scenarios that do not request geometry.
         if not self.navigation_sites:
             payload.pop("navigation_sites", None)
+        # Preserve Preview 0.2 hashes when the optional digital-twin layer is absent.
+        if self.digital_twin is None:
+            payload.pop("digital_twin", None)
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(raw.encode()).hexdigest()
