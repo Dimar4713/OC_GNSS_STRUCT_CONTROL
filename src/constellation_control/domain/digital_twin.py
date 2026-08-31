@@ -160,9 +160,30 @@ class ScenarioLineage(BaseModel):
         "walker_generation",
         "manual_edit",
         "osculating_import",
+        "norad_tle_import",
         "propagated_state",
     ]
     random_seed: int | None = None
+    source_type: Literal["norad_tle"] | None = None
+    source_name: str | None = None
+    source_sha256: str | None = None
+    source_record_id: str | None = None
+    authority: str | None = None
+
+    @model_validator(mode="after")
+    def validate_source_provenance(self) -> ScenarioLineage:
+        fields = (self.source_type, self.source_name, self.source_sha256, self.source_record_id, self.authority)
+        if not any(value is not None for value in fields):
+            return self
+        if any(value is None or not str(value).strip() for value in fields):
+            raise ValueError("source provenance fields must be supplied together")
+        if self.source_sha256 is None or len(self.source_sha256) != 64:
+            raise ValueError("source_sha256 must be a 64-character SHA-256 hex digest")
+        try:
+            int(self.source_sha256, 16)
+        except ValueError as exc:
+            raise ValueError("source_sha256 must be hexadecimal") from exc
+        return self
 
 
 class DigitalTwinConfig(BaseModel):
