@@ -39,10 +39,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #144 | merged | TLE authority extended to an explicit target epoch/time scale. Orekit SGP4/SDP4 propagates in TEME from the TLE source epoch to the parent scenario epoch, transforms the target-epoch osculating PV to the selected inertial frame, then delegates to the existing force-model-consistent DSST mean authority. The exact-epoch usability restriction is removed without mixing constellation epochs. OMM remains blocked. |
 | #145 | merged | Strict preview-only GNSS almanac intake for GPS YUMA, GPS SEM and labelled GLONASS interchange text. YUMA radian semantics and SEM semicircle/inclination-offset semantics are preserved explicitly; source SHA-256/provenance is retained; duplicate/malformed records fail closed; no almanac record is silently promoted into canonical MeanOrbit or runnable scenario. |
 | #146 | merged | Explicit propulsion/correction catalog contracts and packaged validation UI. Catalog entries verify declared model/type/thrust/Isp/propellant/mode against each spacecraft operational state, but never auto-fill or overwrite mass, fuel, thrust or Isp. Numerical resource authority remains the scenario operational state and spacecraft parameters. |
+| #147 | merged | Reviewed GPS almanac authority: raw YUMA/SEM is reparsed by Orekit 13.1.7, selected by PRN, propagated with Orekit's GPS GNSS analytical propagator to the explicit target epoch, transformed to the selected inertial frame, and delegated to the existing force-model-consistent DSST mean authority. GLONASS remains preview-only and cannot reuse this path. |
 
 ## Active change
 
-GPS almanac authority slice in progress: YUMA/SEM raw source is reparsed by Orekit 13.1.7, propagated by Orekit's GPS GNSS analytical propagator to the explicit target scenario epoch, converted to osculating PV in the selected inertial frame, then delegated to the existing force-model-consistent DSST mean conversion. GLONASS remains blocked on this slice and must not reuse GPS authority.
+No active merged-target PR at this checkpoint. Next slice is operator-side immutable derived-scenario creation for GPS YUMA/SEM after verified #147 sidecar attestation.
 
 ## Current authority boundaries
 
@@ -61,17 +62,17 @@ GPS almanac authority slice in progress: YUMA/SEM raw source is reparsed by Orek
 
 ## Current main evidence checkpoint
 
-- PR #146 exact head: `b80009651e5429767a1e925ad0afe590a0fd5295`.
+- PR #147 exact head: `39f4bf85a26021e158eab3ac8c7d05012c38a671`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33410272803`;
-  - `preview-package-compat` run `33410273032`;
-  - `preview-0.2-package` run `33410272792`.
-- PR #146 merge commit: `1ee86f0a09961bbb10e78d8c9bdcbf29dea14a3f`.
-- GPS almanac authority exact-head evidence is pending.
+  - `ci` run `33411683927`;
+  - `preview-package-compat` run `33411683797`;
+  - `preview-0.2-package` run `33411683756`.
+- PR #147 merge commit: `85e8f46798c9f55a4c11b5f6b60d259b13a001e7`.
+- Prior PR #146 merge commit: `1ee86f0a09961bbb10e78d8c9bdcbf29dea14a3f`.
 
 ## Next incomplete work
 
-1. Complete exact-head acceptance of the GPS YUMA/SEM authority and then wire operator-side immutable derived-scenario creation only after verified sidecar attestation.
+1. Wire operator-side immutable derived-scenario creation for GPS YUMA/SEM only after verified sidecar attestation, preserving source SHA/format/PRN/authority in lineage.
 2. Add a dedicated reviewed GLONASS almanac propagation/conversion authority; do not route GLONASS through GPS GNSS semantics.
 3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
 4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
