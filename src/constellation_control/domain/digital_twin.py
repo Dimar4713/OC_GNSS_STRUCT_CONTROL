@@ -112,7 +112,13 @@ class ScenarioLineage(BaseModel):
     model_config = ConfigDict(frozen=True)
     parent_scenario_id: str
     parent_config_hash: str
-    transformation: Literal["perturbation", "import", "walker_generation", "manual_edit"]
+    transformation: Literal[
+        "perturbation",
+        "import",
+        "walker_generation",
+        "manual_edit",
+        "osculating_import",
+    ]
     random_seed: int | None = None
 
 
