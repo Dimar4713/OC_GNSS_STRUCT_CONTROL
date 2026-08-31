@@ -37,6 +37,16 @@ _PERTURBATION_UNITS: dict[PerturbationParameter, str] = {
 }
 
 
+def _is_sha256_hex(value: str) -> bool:
+    if len(value) != 64:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return True
+
+
 class PropulsionSystem(BaseModel):
     model_config = ConfigDict(frozen=True)
     system_type: str
@@ -154,6 +164,7 @@ class ScenarioLineage(BaseModel):
     model_config = ConfigDict(frozen=True)
     parent_scenario_id: str
     parent_config_hash: str
+    integrity_version: Literal[1] | None = None
     transformation: Literal[
         "perturbation",
         "import",
@@ -172,19 +183,28 @@ class ScenarioLineage(BaseModel):
     source_record_id: str | None = None
     authority: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def infer_integrity_version(cls, data: object) -> object:
+        if not isinstance(data, dict) or "integrity_version" in data:
+            return data
+        parent_hash = data.get("parent_config_hash")
+        if isinstance(parent_hash, str) and _is_sha256_hex(parent_hash):
+            return {**data, "integrity_version": 1}
+        return data
+
     @model_validator(mode="after")
-    def validate_source_provenance(self) -> ScenarioLineage:
+    def validate_integrity_and_source_provenance(self) -> ScenarioLineage:
+        if self.integrity_version == 1 and not _is_sha256_hex(self.parent_config_hash):
+            raise ValueError("integrity_version=1 requires parent_config_hash to be a 64-character SHA-256 hex digest")
+
         fields = (self.source_type, self.source_name, self.source_sha256, self.source_record_id, self.authority)
         if not any(value is not None for value in fields):
             return self
         if any(value is None or not str(value).strip() for value in fields):
             raise ValueError("source provenance fields must be supplied together")
-        if self.source_sha256 is None or len(self.source_sha256) != 64:
+        if self.source_sha256 is None or not _is_sha256_hex(self.source_sha256):
             raise ValueError("source_sha256 must be a 64-character SHA-256 hex digest")
-        try:
-            int(self.source_sha256, 16)
-        except ValueError as exc:
-            raise ValueError("source_sha256 must be hexadecimal") from exc
         return self
 
 
