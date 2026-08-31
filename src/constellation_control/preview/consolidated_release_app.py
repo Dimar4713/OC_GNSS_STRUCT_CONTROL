@@ -139,6 +139,7 @@ function syncScenarioEditor(){
   scenarioEditorMessage('YAML загружен. Измените параметры и выполните проверку / YAML loaded. Edit parameters and validate.');
   if(typeof syncOsculatingSatellites==='function')syncOsculatingSatellites();
   if(typeof syncNoradSatellites==='function')syncNoradSatellites();
+  if(typeof syncGnssAlmanacSatellites==='function')syncGnssAlmanacSatellites();
   if(typeof previewResourceState==='function')previewResourceState();
 }
 loadScenario=async function(){await originalLoadScenarioForEditor();syncScenarioEditor();};
@@ -228,7 +229,7 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
     install_walker_routes(app, scenario_root)
     install_osculating_routes(app, scenario_root)
     install_norad_routes(app, scenario_root)
-    install_gnss_almanac_routes(app)
+    install_gnss_almanac_routes(app, scenario_root)
     install_perturbation_routes(app, scenario_root)
     install_resource_state_routes(app, scenario_root, output_root)
     install_spacecraft_catalog_routes(app, scenario_root)
