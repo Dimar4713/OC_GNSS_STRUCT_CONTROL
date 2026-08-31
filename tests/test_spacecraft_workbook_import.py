@@ -91,6 +91,23 @@ def test_rejects_missing_required_state_column(tmp_path: Path) -> None:
         load_spacecraft_workbook(path)
 
 
+def test_rejects_non_numeric_required_mass(tmp_path: Path) -> None:
+    path = tmp_path / "non-numeric.xlsx"
+    _write_workbook(
+        path,
+        states=[
+            {
+                "satellite_id": "G01",
+                "dry_mass_kg": "unknown",
+                "current_propellant_mass_kg": 80.0,
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="must be numeric: dry_mass_kg"):
+        load_spacecraft_workbook(path)
+
+
 def test_rejects_propulsion_details_without_type(tmp_path: Path) -> None:
     path = tmp_path / "bad-propulsion.xlsx"
     _write_workbook(
