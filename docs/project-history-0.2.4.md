@@ -43,12 +43,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #148 | merged | Operator-side GPS YUMA/SEM authority preview and immutable derived-scenario creation. The selected parent satellite is replaced only by the verified #147 Orekit GNSS→DSST mean result; source filename/SHA-256/format/PRN/authority are persisted in typed lineage; source and existing target YAML are never overwritten. GLONASS remains fail-closed. |
 | #149 | merged | Dedicated GLONASS almanac authority using explicit authority-ready labelled semantics, Orekit `GLONASSAlmanac` and `GLONASSAnalyticalPropagator`, followed by the existing DSST osculating-to-mean authority. Legacy `draconian_period_s` is never reinterpreted as `deltaT`; incomplete legacy records remain preview-only. |
 | #150 | merged | Operator-side strict GLONASS authority-source preview and immutable derived-scenario creation. Only authority-ready v1 input may call the accepted #149 Orekit path; the selected parent satellite alone receives the verified DSST mean result. Typed lineage records source SHA-256, slot and authority; parent and existing target YAML remain immutable. Legacy reduced-precision GLONASS preview remains non-promotable. |
+| #151 | merged | Backward-compatible structural lineage integrity contract. Real 64-hex SHA-256 `parent_config_hash` values are marked `integrity_version: 1`; explicit v1 with malformed hash fails closed, while historical non-structural lineage remains readable without an integrity version. Source SHA-256 validation uses the same structural predicate. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #151 | CI pending | Backward-compatible structural lineage integrity: any lineage carrying a real 64-hex SHA-256 `parent_config_hash` is automatically serialized as `integrity_version: 1`; explicit v1 with a malformed parent hash fails closed. Historical lineage with legacy non-structural hash tokens remains readable with no integrity version. Source SHA-256 validation reuses the same structural check. |
+No active merged-target PR at this checkpoint. Next slice is package-level Windows acceptance for the accumulated 0.2.4 line.
 
 ## Current authority boundaries
 
@@ -71,18 +70,18 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #150 exact head: `07f0eac98f4db129f516628f5f99d366ef2a50c8`.
+- PR #151 exact head: `1e20a6630c4f84d4a7a400afd526075a17515b20`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33419354025`;
-  - `preview-package-compat` run `33419354041`;
-  - `preview-0.2-package` run `33419353997`.
-- PR #150 merge commit: `4e2d43e73e5b70ef7a2a46d5b7a861432a17dcd3`.
-- The prior transient `verify_high_fidelity_run.py` teardown abort did not reproduce on the accepted exact head.
+  - `ci` run `33422433193`;
+  - `preview-package-compat` run `33422433155`;
+  - `preview-0.2-package` run `33422433191`.
+- PR #151 merge commit: `2572dacf71b0482f8a0198d74c5dd0cfbad2a102`.
+- Full exact-head CI accepted the backward-compatible fixture behavior together with package compatibility and package build gates.
 
 ## Next incomplete work
 
-1. Complete exact-head acceptance of #151 lineage structural-integrity contract and verify the full fixture suite remains backward compatible.
-2. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+2. Audit launcher/package staging so the stale legacy `preview/app.py` cannot accidentally be shipped or launched instead of the consolidated operator application.
 
 ## Maintenance rule
 
