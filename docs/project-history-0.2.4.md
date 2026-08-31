@@ -1,0 +1,61 @@
+# Engineering Preview 0.2.4 — project change history
+
+Status: active development line built on the stable Preview 0.2.3 packaging baseline.
+
+This document is the repository-side chronology for the 0.2.4 functional increment. It records merged engineering slices, their authority boundaries, and the next incomplete work. It is not a release claim: Windows package acceptance remains a separate evidence gate.
+
+## Baseline
+
+- Stable packaging baseline: Engineering Preview 0.2.3.
+- 0.2.4 objective: engineer-facing constellation digital-twin input, perturbation, operational-resource state, lineage, and physically consistent continuation without weakening Orekit/DSST authority.
+- Source scenarios remain immutable in all derived-scenario flows.
+
+## Merged change history
+
+| PR | Result | Engineering increment |
+|---|---|---|
+| #121 | merged | Backward-compatible digital-twin domain primitives: operational spacecraft state, groups, perturbation metadata and scenario lineage. |
+| #122 | merged | XLS/XLSX spacecraft-state import including legacy `.xls`, current mass/fuel and optional propulsion/correction metadata. |
+| #123 | merged | Packaged operator workbook validation/preview flow. |
+| #124 | merged | Workbook import promoted only into a new derived scenario with parent id/hash lineage and no-overwrite protection. |
+| #125 | merged | Walker Delta constellation generator core. |
+| #126 | merged | Walker generator wired into packaged operator UI with preview/create derived scenario flow. |
+| #127 | merged | Authoritative Orekit 13.1.7 DSST osculating-to-mean conversion endpoint and fail-closed Python client. |
+| #128 | merged | Per-satellite osculating Keplerian operator flow: authoritative preview then immutable derived scenario. |
+| #129 | merged | Deterministic perturbation designer core/UI: explicit M, Gaussian sigma or Uniform bounds, deterministic seed, actual sampled deltas and precedence satellite > group > plane > constellation. |
+| #130 | merged | Catalog-driven perturbation targets for spacecraft, planes and groups; stale/free-text target IDs removed. |
+| #131 | merged | Operational maneuver propellant preflight core with sequential mass/fuel accounting and per-spacecraft Isp authority. |
+| #132 | merged | Operational mass/fuel/Isp integrated into run_scenario before propagation; insufficient fuel fails closed before backend invocation. |
+| #133 | merged | Immutable operational resource snapshots and packaged current-mass/fuel history table. |
+| #134 | merged | Physically consistent propagated runnable child scenarios using the actual final PropagationResult plus final operational resource state. |
+| #135 | merged | Fail-closed completed-run promotion core requiring exact manifest, normalized scenario, propagation result and resource evidence. |
+| #136 | merged | Completed-run promotion wired into packaged operator UI; successful runs persist exact `propagation_result.json`. |
+| #137 | merged | Explicit Walker/osculating engineering inputs: removed hidden orbital defaults, explicit argument of perigee/anomaly type, singularity guards and blank-input protection. |
+
+## Current authority boundaries
+
+1. Screening is not design/validation authority.
+2. High-fidelity osculating-to-mean conversion is Orekit/DSST-only and fails closed if authority/fingerprints mismatch.
+3. Perturbations act on the canonical mean-element representation and never silently reinterpret osculating inputs.
+4. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
+5. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+6. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+
+## Current main evidence checkpoint
+
+- PR #137 exact head: `c245e89c6d9f15c2c5025c5f9f1d6149b8a95a57`.
+- Required workflows on that exact head: `ci`, `preview-package-compat`, `preview-0.2-package` — success.
+- PR #137 merge commit: `796c9fc820834347b782e71ad352ba86f36efd9b`.
+
+## Next incomplete work
+
+Priority order after the above checkpoint:
+
+1. Harden digital-twin contracts so perturbation parameters are a typed registry rather than arbitrary strings and lineage hashes are structurally validated.
+2. Extend engineer input adapters beyond XLS/manual Walker/manual osculating flow: GNSS almanac and NORAD-family inputs, with explicit authority boundary before canonical mean elements are accepted.
+3. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
+4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+
+## Maintenance rule
+
+Every subsequent engineering PR in the 0.2.4 line must update this file in the same PR with: PR number, functional delta, authority boundary where relevant, and exact evidence checkpoint after merge when known.
