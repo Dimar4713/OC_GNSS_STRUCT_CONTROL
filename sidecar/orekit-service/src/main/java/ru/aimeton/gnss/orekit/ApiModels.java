@@ -112,6 +112,8 @@ final class ApiModels {
             String line1,
             String line2,
             String frame,
+            String targetEpoch,
+            String targetTimeScale,
             SpacecraftModel spacecraft,
             ForceModel forceModel,
             String forceModelFingerprint) {}
