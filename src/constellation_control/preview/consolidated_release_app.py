@@ -12,6 +12,11 @@ from constellation_control.preview.release_app import (
     create_preview_app as create_release_preview_app,
     render_preview_page_for_test as render_release_page,
 )
+from constellation_control.preview.workbook_upload import (
+    WORKBOOK_CARD,
+    WORKBOOK_SCRIPT,
+    install_workbook_preview_route,
+)
 
 PREVIEW_VERSION = "0.2.3"
 
@@ -131,10 +136,10 @@ async function saveScenarioDraft(){
 
 def render_preview_page_for_test() -> str:
     page = render_release_page().replace("Engineering Preview 0.2.0", f"Engineering Preview {PREVIEW_VERSION}")
-    page = page.replace("</section></main>", f"{_EDITOR_CARD}</section></main>", 1)
+    page = page.replace("</section></main>", f"{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>", 1)
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{_EDITOR_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
+        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
         1,
     )
     return page
@@ -180,4 +185,5 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
             **_draft_payload(scenario),
         }
 
+    install_workbook_preview_route(app, scenario_root)
     return app
