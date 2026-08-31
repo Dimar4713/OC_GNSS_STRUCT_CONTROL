@@ -83,7 +83,7 @@ class PerturbationRule(BaseModel):
     distribution: PerturbationDistribution
     scope: PerturbationScope
     target_ids: tuple[str, ...] = ()
-    mean: float = 0.0
+    mean: float
     sigma: float | None = Field(default=None, ge=0.0)
     lower_bound: float | None = None
     upper_bound: float | None = None
@@ -108,6 +108,15 @@ class PerturbationRule(BaseModel):
         return self
 
 
+class AppliedPerturbation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    rule_id: str
+    satellite_id: str
+    parameter: str
+    sampled_delta: float
+    unit: str
+
+
 class ScenarioLineage(BaseModel):
     model_config = ConfigDict(frozen=True)
     parent_scenario_id: str
@@ -127,6 +136,7 @@ class DigitalTwinConfig(BaseModel):
     spacecraft_states: tuple[SpacecraftOperationalState, ...] = ()
     groups: tuple[SpacecraftGroup, ...] = ()
     perturbations: tuple[PerturbationRule, ...] = ()
+    applied_perturbations: tuple[AppliedPerturbation, ...] = ()
     lineage: ScenarioLineage | None = None
 
     @model_validator(mode="after")

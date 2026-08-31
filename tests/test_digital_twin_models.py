@@ -64,6 +64,7 @@ def test_gaussian_rule_requires_sigma() -> None:
             parameter="semi_major_axis",
             distribution=PerturbationDistribution.GAUSSIAN,
             scope=PerturbationScope.CONSTELLATION,
+            mean=0.0,
             unit="m",
         )
 
@@ -100,6 +101,7 @@ def test_group_and_individual_targets_validate_against_constellation() -> None:
                 distribution=PerturbationDistribution.UNIFORM,
                 scope=PerturbationScope.SATELLITE,
                 target_ids=(first,),
+                mean=0.0,
                 lower_bound=-1000.0,
                 upper_bound=1000.0,
                 unit="m",
@@ -122,6 +124,7 @@ def test_unknown_spacecraft_target_fails_closed() -> None:
                 distribution=PerturbationDistribution.GAUSSIAN,
                 scope=PerturbationScope.SATELLITE,
                 target_ids=("UNKNOWN-SAT",),
+                mean=0.0,
                 sigma=0.001,
                 unit="rad",
             ),

@@ -13,6 +13,11 @@ from constellation_control.preview.osculating_input import (
     OSCULATING_SCRIPT,
     install_osculating_routes,
 )
+from constellation_control.preview.perturbation_ui import (
+    PERTURBATION_CARD,
+    PERTURBATION_SCRIPT,
+    install_perturbation_routes,
+)
 from constellation_control.preview.release_app import (
     create_preview_app as create_release_preview_app,
     render_preview_page_for_test as render_release_page,
@@ -145,12 +150,12 @@ def render_preview_page_for_test() -> str:
     page = render_release_page().replace("Engineering Preview 0.2.0", f"Engineering Preview {PREVIEW_VERSION}")
     page = page.replace(
         "</section></main>",
-        f"{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
+        f"{PERTURBATION_CARD}{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
         1,
     )
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
+        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\n{PERTURBATION_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
         1,
     )
     return page
@@ -199,4 +204,5 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
     install_workbook_preview_route(app, scenario_root)
     install_walker_routes(app, scenario_root)
     install_osculating_routes(app, scenario_root)
+    install_perturbation_routes(app, scenario_root)
     return app
