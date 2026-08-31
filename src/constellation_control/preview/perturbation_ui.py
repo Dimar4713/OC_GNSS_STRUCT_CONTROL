@@ -112,6 +112,8 @@ function perturbationPayload(){
 async function previewPerturbations(){try{const p=perturbationPayload();pertStatus.textContent='Sampling…';const r=await fetch('/api/perturbations/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Preview failed');pertPreview.textContent=JSON.stringify(d,null,2);pertStatus.textContent='VALID: applied='+d.applied_count+'; seed='+d.seed;pertStatus.className='status ok';}catch(e){pertStatus.textContent=String(e.message||e);pertStatus.className='status danger';}}
 async function createPerturbations(){try{const p=perturbationPayload();p.new_scenario_id=pertScenarioId.value.trim();p.target_scenario_name=pertFile.value.trim();if(!p.new_scenario_id||!p.target_scenario_name)throw new Error('Укажите новый scenario_id и YAML');const r=await fetch('/api/perturbations/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Create failed');const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();pertPreview.textContent=JSON.stringify(d,null,2);pertStatus.textContent='Создан: '+d.scenario_name+'; applied='+d.applied_count;pertStatus.className='status ok';}catch(e){pertStatus.textContent=String(e.message||e);pertStatus.className='status danger';}}
 initPerturbationRows();
+const loadScenarioBeforePerturbationTargets=loadScenario;
+loadScenario=async function(){await loadScenarioBeforePerturbationTargets();syncPerturbationTargets();};
 """
 
 
