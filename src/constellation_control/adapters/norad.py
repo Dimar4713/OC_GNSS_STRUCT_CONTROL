@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
@@ -41,7 +41,7 @@ class NoradMeanElements(BaseModel):
     object_name: str | None = None
 
     @model_validator(mode="after")
-    def _epoch_timezone(self) -> "NoradMeanElements":
+    def _epoch_timezone(self) -> NoradMeanElements:
         if self.epoch_utc.tzinfo is None or self.epoch_utc.utcoffset() is None:
             raise ValueError("epoch_utc must be timezone-aware")
         return self
@@ -77,7 +77,7 @@ def _tle_epoch(year_2: int, day_of_year: float) -> datetime:
     year = 1900 + year_2 if year_2 >= 57 else 2000 + year_2
     if not (1.0 <= day_of_year < 367.0):
         raise ValueError("TLE epoch day-of-year is outside the supported range")
-    return datetime(year, 1, 1, tzinfo=timezone.utc) + timedelta(days=day_of_year - 1.0)
+    return datetime(year, 1, 1, tzinfo=UTC) + timedelta(days=day_of_year - 1.0)
 
 
 def _tle_exponential(field: str) -> float:
@@ -173,7 +173,7 @@ def _parse_omm_object(payload: dict[str, object]) -> NoradMeanElements:
     return NoradMeanElements(
         source_format=NoradFormat.OMM_JSON,
         satellite_number=sat_number,
-        epoch_utc=epoch.astimezone(timezone.utc),
+        epoch_utc=epoch.astimezone(UTC),
         inclination_deg=_required_omm_number(payload, "INCLINATION"),
         raan_deg=_required_omm_number(payload, "RA_OF_ASC_NODE"),
         eccentricity=_required_omm_number(payload, "ECCENTRICITY"),
