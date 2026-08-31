@@ -34,12 +34,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #138 | merged | Hardened digital-twin perturbation contracts: typed canonical parameter registry, domain-level unit checks and stricter target-scope invariants without changing numerical authority or sampling semantics. |
 | #140 | merged | Perturbation Designer now requires explicit scope selection for every enabled rule; no implicit whole-constellation scope remains and empty scope fails closed in the packaged operator UI. |
 | #141 | merged | First NORAD-family intake slice: strict TLE and OMM JSON validation/normalization with source SHA-256 provenance. TLE/OMM remain explicitly typed as SGP4/NORAD mean elements and runnable promotion remains blocked until authoritative Orekit TLE/SGP4 conversion exists. |
+| #142 | merged | Authoritative TLE conversion boundary: Orekit 13.1.7 validates raw TLE, selects SGP4/SDP4 in explicit TEME, evaluates osculating PV at the TLE epoch, transforms to selected Earth-centered inertial frame, and delegates to the existing force-model-consistent Orekit DSST osculating-to-mean authority. OMM remains fail-closed. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #142 | CI pending | Authoritative TLE conversion boundary: Orekit 13.1.7 validates the raw TLE, selects SGP4/SDP4 in explicit TEME, evaluates the osculating PV at the TLE epoch, transforms that state into the selected Earth-centered inertial frame, and then uses the existing force-model-consistent Orekit DSST osculating-to-mean authority. OMM remains fail-closed in this slice. |
+No active merged-target PR at this checkpoint. Next slice is operator-side TLE authority wiring and immutable derived-scenario creation with provenance checks.
 
 ## Current authority boundaries
 
@@ -54,13 +53,13 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #141 exact head: `d868f3b81ddd72d5fe0ebbacd4db00d4e1265046`.
+- PR #142 exact head: `f48ffc660a41a89f87f3d5451723a6f2cb1f58b7`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33396005051`;
-  - `preview-package-compat` run `33396005037`;
-  - `preview-0.2-package` run `33396005040`.
-- PR #141 merge commit: `a6b85db161084495699f9a5dd3b853e561d014bb`.
-- PR #141 history checkpoint on main: `46f9ce4f182c9174cbda62f3b3ad48e0da55f80c`.
+  - `ci` run `33398296239`;
+  - `preview-package-compat` run `33398296258`;
+  - `preview-0.2-package` run `33398296228`.
+- PR #142 merge commit: `b06835223d6843945c907750ca82229e6bcfe382`.
+- Prior PR #141 merge commit: `a6b85db161084495699f9a5dd3b853e561d014bb`.
 
 ## Next incomplete work
 
