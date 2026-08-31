@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -47,7 +48,7 @@ def test_walker_rejects_singular_180_degree_inclination() -> None:
 
 
 def test_walker_argument_of_perigee_enters_equinoctial_definition() -> None:
-    source = load_scenario(__import__("pathlib").Path("scenarios/mvp_45deg.yaml"))
+    source = load_scenario(Path("scenarios/mvp_45deg.yaml"))
     request = _walker_request(template_satellite_id=source.constellation.satellites[0].satellite_id)
     first = build_walker_constellation(source, request).satellites[0].mean_orbit
     longitude_of_perigee = math.radians(40.0)
