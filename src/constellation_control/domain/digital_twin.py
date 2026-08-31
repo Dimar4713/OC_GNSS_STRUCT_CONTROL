@@ -83,7 +83,7 @@ class PerturbationRule(BaseModel):
     distribution: PerturbationDistribution
     scope: PerturbationScope
     target_ids: tuple[str, ...] = ()
-    mean: float = 0.0
+    mean: float
     sigma: float | None = Field(default=None, ge=0.0)
     lower_bound: float | None = None
     upper_bound: float | None = None
