@@ -26,6 +26,7 @@ public final class OrekitServiceMain {
         MeanConversionEngine meanConversionEngine = new MeanConversionEngine(runtime);
         TleMeanConversionEngine tleMeanConversionEngine = new TleMeanConversionEngine(runtime);
         GpsAlmanacMeanConversionEngine gpsAlmanacMeanConversionEngine = new GpsAlmanacMeanConversionEngine(runtime);
+        GlonassAlmanacMeanConversionEngine glonassAlmanacMeanConversionEngine = new GlonassAlmanacMeanConversionEngine(runtime);
         ObjectMapper mapper = mapper();
 
         InetSocketAddress bindAddress = new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port);
@@ -41,6 +42,9 @@ public final class OrekitServiceMain {
         server.createContext(
                 "/v1/orbits/gps-almanac-to-mean",
                 exchange -> handleGpsAlmanacToMean(exchange, mapper, gpsAlmanacMeanConversionEngine));
+        server.createContext(
+                "/v1/orbits/glonass-almanac-to-mean",
+                exchange -> handleGlonassAlmanacToMean(exchange, mapper, glonassAlmanacMeanConversionEngine));
         server.setExecutor(Executors.newFixedThreadPool(
                 Math.max(2, Runtime.getRuntime().availableProcessors())));
         server.start();
@@ -153,6 +157,28 @@ public final class OrekitServiceMain {
         } catch (Exception exception) {
             exception.printStackTrace(System.err);
             writeJson(exchange, mapper, 500, Map.of("error", "orekit_gps_almanac_mean_conversion_failed", "detail", safeMessage(exception)));
+        }
+    }
+
+    private static void handleGlonassAlmanacToMean(
+            HttpExchange exchange,
+            ObjectMapper mapper,
+            GlonassAlmanacMeanConversionEngine engine) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
+            return;
+        }
+        try {
+            byte[] body = readBody(exchange);
+            ApiModels.GlonassAlmanacToMeanRequest request = mapper.readValue(body, ApiModels.GlonassAlmanacToMeanRequest.class);
+            writeJson(exchange, mapper, 200, engine.convert(request));
+        } catch (RequestTooLargeException exception) {
+            writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
+        } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+            writeJson(exchange, mapper, 422, Map.of("error", "invalid_glonass_almanac_mean_conversion_request", "detail", safeMessage(exception)));
+        } catch (Exception exception) {
+            exception.printStackTrace(System.err);
+            writeJson(exchange, mapper, 500, Map.of("error", "orekit_glonass_almanac_mean_conversion_failed", "detail", safeMessage(exception)));
         }
     }
 
