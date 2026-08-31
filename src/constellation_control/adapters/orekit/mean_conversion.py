@@ -102,7 +102,7 @@ class OrekitMeanConversionClient:
         if requested_gravity is None:
             raise RuntimeError("osculating-to-mean conversion requires explicit gravity authority")
         fingerprint = force_model.fingerprint()
-        payload = {
+        payload: dict[str, object] = {
             "epoch": epoch.isoformat().replace("+00:00", "Z"),
             "frame": frame.value,
             "time_scale": time_scale.value,
@@ -145,7 +145,7 @@ class OrekitTleMeanConversionClient:
         if requested_gravity is None:
             raise RuntimeError("TLE-to-mean conversion requires explicit gravity authority")
         fingerprint = force_model.fingerprint()
-        payload = {
+        payload: dict[str, object] = {
             "line1": line1,
             "line2": line2,
             "frame": frame.value,
