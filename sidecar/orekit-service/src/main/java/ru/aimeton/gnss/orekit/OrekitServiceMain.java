@@ -24,6 +24,7 @@ public final class OrekitServiceMain {
         OrekitRuntime runtime = new OrekitRuntime(Path.of(dataPath));
         PropagationEngine engine = new PropagationEngine(runtime);
         MeanConversionEngine meanConversionEngine = new MeanConversionEngine(runtime);
+        TleMeanConversionEngine tleMeanConversionEngine = new TleMeanConversionEngine(runtime);
         ObjectMapper mapper = mapper();
 
         InetSocketAddress bindAddress = new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port);
@@ -33,6 +34,9 @@ public final class OrekitServiceMain {
         server.createContext(
                 "/v1/orbits/osculating-to-mean",
                 exchange -> handleOsculatingToMean(exchange, mapper, meanConversionEngine));
+        server.createContext(
+                "/v1/orbits/tle-to-mean",
+                exchange -> handleTleToMean(exchange, mapper, tleMeanConversionEngine));
         server.setExecutor(Executors.newFixedThreadPool(
                 Math.max(2, Runtime.getRuntime().availableProcessors())));
         server.start();
@@ -114,6 +118,33 @@ public final class OrekitServiceMain {
             exception.printStackTrace(System.err);
             writeJson(exchange, mapper, 500, Map.of(
                     "error", "orekit_mean_conversion_failed",
+                    "detail", safeMessage(exception)));
+        }
+    }
+
+    private static void handleTleToMean(
+            HttpExchange exchange,
+            ObjectMapper mapper,
+            TleMeanConversionEngine engine) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
+            return;
+        }
+        try {
+            byte[] body = readBody(exchange);
+            ApiModels.TleToMeanRequest request = mapper.readValue(body, ApiModels.TleToMeanRequest.class);
+            ApiModels.MeanConversionResult result = engine.convert(request);
+            writeJson(exchange, mapper, 200, result);
+        } catch (RequestTooLargeException exception) {
+            writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
+        } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+            writeJson(exchange, mapper, 422, Map.of(
+                    "error", "invalid_tle_mean_conversion_request",
+                    "detail", safeMessage(exception)));
+        } catch (Exception exception) {
+            exception.printStackTrace(System.err);
+            writeJson(exchange, mapper, 500, Map.of(
+                    "error", "orekit_tle_mean_conversion_failed",
                     "detail", safeMessage(exception)));
         }
     }
