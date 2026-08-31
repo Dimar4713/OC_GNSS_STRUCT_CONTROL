@@ -36,12 +36,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #141 | merged | First NORAD-family intake slice: strict TLE and OMM JSON validation/normalization with source SHA-256 provenance. TLE/OMM remain explicitly typed as SGP4/NORAD mean elements and runnable promotion remains blocked until authoritative Orekit TLE/SGP4 conversion exists. |
 | #142 | merged | Authoritative TLE conversion boundary: Orekit 13.1.7 validates raw TLE, selects SGP4/SDP4 in explicit TEME, evaluates osculating PV at the TLE epoch, transforms to selected Earth-centered inertial frame, and delegates to the existing force-model-consistent Orekit DSST osculating-to-mean authority. OMM remains fail-closed. |
 | #143 | merged | Consolidated operator TLE authority flow and immutable derived-scenario creation. Raw TLE is promoted only after verified Orekit SGP4/TEME→DSST authority, parent YAML is never overwritten, NORAD source SHA/record/authority are persisted in lineage, and epoch mismatch fails closed. OMM remains blocked. |
+| #144 | merged | TLE authority extended to an explicit target epoch/time scale. Orekit SGP4/SDP4 propagates in TEME from the TLE source epoch to the parent scenario epoch, transforms the target-epoch osculating PV to the selected inertial frame, then delegates to the existing force-model-consistent DSST mean authority. The exact-epoch usability restriction is removed without mixing constellation epochs. OMM remains blocked. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #144 | CI pending | Extend the authoritative TLE boundary with explicit target epoch/time scale. Orekit SGP4/SDP4 propagates in TEME from the TLE epoch to the parent scenario epoch, transforms the resulting osculating PV to the selected inertial frame, then delegates to the existing DSST mean authority. The prior exact-epoch restriction is removed without mixing constellation epochs. OMM remains blocked. |
+No active merged-target PR at this checkpoint. Next slice is GNSS almanac-family intake (YUMA/SEM first, then GLONASS) with strict format-specific provenance and no silent promotion into canonical high-fidelity mean elements.
 
 ## Current authority boundaries
 
@@ -51,25 +50,26 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 4. NORAD TLE elements may reach canonical MeanOrbit only through `TLE -> Orekit SGP4/SDP4 TEME@explicit target epoch -> osculating PV -> selected inertial frame -> Orekit DSST mean`; raw TLE values are never relabelled as canonical elements.
 5. The TLE source epoch and target scenario epoch remain separately recorded. The resulting canonical state is defined only at the explicit target scenario epoch/time scale.
 6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
-7. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
-8. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
-9. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+7. GNSS almanac/broadcast inputs must remain format-specific source representations until a reviewed propagation/conversion authority is implemented; they are not canonical project mean elements by declaration.
+8. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
+9. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+10. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
 
 ## Current main evidence checkpoint
 
-- PR #143 exact head: `1fea94e1b906a79b666d5cc1c36dedc5c0b10ee0`.
+- PR #144 exact head: `c4ef684dd1bc028eb1865d32fb868b955682d9d1`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33400824359`;
-  - `preview-package-compat` run `33400824360`;
-  - `preview-0.2-package` run `33400824350`.
-- PR #143 merge commit: `41e1027adc3f2513beb345809bf633fe7790067d`.
-- PR #144 evidence is pending on its exact head.
+  - `ci` run `33403572343`;
+  - `preview-package-compat` run `33403572296`;
+  - `preview-0.2-package` run `33403572295`.
+- PR #144 merge commit: `efc89160c3f50f7247e31a7139913c24b4c2b6f1`.
+- Prior PR #143 merge commit: `41e1027adc3f2513beb345809bf633fe7790067d`.
 
 ## Next incomplete work
 
 Priority order after PR #144 acceptance:
 
-1. Add GNSS almanac-family adapters (YUMA/SEM and GLONASS almanac first) with format-specific authority semantics.
+1. Add GNSS almanac-family adapters (YUMA/SEM and GLONASS almanac first) with format-specific authority semantics and source provenance.
 2. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
 3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
 4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
