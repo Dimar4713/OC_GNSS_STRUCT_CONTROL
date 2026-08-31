@@ -82,7 +82,10 @@ def preview(
 
         from constellation_control.preview.consolidated_release_app import create_preview_app
     except ImportError as exc:
-        raise typer.BadParameter("Preview dependencies are missing; install with .[preview]") from exc
+        missing = getattr(exc, "name", None) or str(exc)
+        raise typer.BadParameter(
+            f"Preview dependency/import is missing: {missing}; install with .[preview]"
+        ) from exc
 
     application = create_preview_app(scenarios, output)
     typer.echo(f"Engineering Preview: http://{host}:{port}")

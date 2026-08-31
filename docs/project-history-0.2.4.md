@@ -47,7 +47,9 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next slice is package-level Windows acceptance for the accumulated 0.2.4 line.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #152 | CI pending | Package-level Windows acceptance for Engineering Preview 0.2.4. Synchronizes package/app/launcher versioning, stages `engineering-preview-python-0.2.4-win10`, explicitly excludes legacy `preview/app.py`, verifies CLI routing to `consolidated_release_app`, verifies the complete accepted operator module set, and runs the real packaged launcher on Windows 2022 with `/health=0.2.4` plus pinned Orekit 13.1.7 revision/SHA authority checks. |
 
 ## Current authority boundaries
 
@@ -67,6 +69,7 @@ No active merged-target PR at this checkpoint. Next slice is package-level Windo
 14. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
 15. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
 16. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+17. A distributable Preview 0.2.4 claim requires the package artifact itself to exclude legacy `preview/app.py`, route the CLI to `consolidated_release_app`, launch successfully on Windows, and attest the pinned Orekit revision/SHA at runtime.
 
 ## Current main evidence checkpoint
 
@@ -77,11 +80,12 @@ No active merged-target PR at this checkpoint. Next slice is package-level Windo
   - `preview-0.2-package` run `33422433191`.
 - PR #151 merge commit: `2572dacf71b0482f8a0198d74c5dd0cfbad2a102`.
 - Full exact-head CI accepted the backward-compatible fixture behavior together with package compatibility and package build gates.
+- PR #152 exact-head Windows package evidence is pending.
 
 ## Next incomplete work
 
-1. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
-2. Audit launcher/package staging so the stale legacy `preview/app.py` cannot accidentally be shipped or launched instead of the consolidated operator application.
+1. Complete exact-head acceptance of #152 and record the package artifact/run evidence.
+2. Only after #152 package acceptance is GREEN may the accumulated 0.2.4 line be called distributable for Windows engineering evaluation.
 
 ## Maintenance rule
 

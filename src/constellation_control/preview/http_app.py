@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
-from constellation_control.preview.app import (
+from constellation_control.preview.base_preview_shell import (
     _load_preview_scenario,
     _page as base_preview_page,
     _safe_result_file,
@@ -57,40 +57,12 @@ function renderClosedLoopContext(){
   if(!el)return;
   if(!current){el.textContent='Выберите сценарий / Select a scenario.';return;}
   const c=(current.normalized&&current.normalized.constraints)||{};
-  el.innerHTML='<b>Authority / Ограничения:</b><br>'+
-    'mode='+closedLoopEsc(current.force_mode)+'; frame='+closedLoopEsc(current.frame)+'; time='+closedLoopEsc(current.time_scale)+'<br>'+
-    'force fingerprint=<code>'+closedLoopEsc(current.force_model_fingerprint)+'</code><br>'+
-    'phase corridor='+closedLoopEsc(closedLoopFmt(c.phase_corridor_rad))+' rad; '+
-    'fleet min distance='+closedLoopEsc(closedLoopFmt(c.min_pair_distance_m))+' m; '+
-    'propellant reserve fraction='+closedLoopEsc(closedLoopFmt(c.propellant_reserve_fraction));
+  el.innerHTML='<b>Authority / Ограничения:</b><br>'+ 'mode='+closedLoopEsc(current.force_mode)+'; frame='+closedLoopEsc(current.frame)+'; time='+closedLoopEsc(current.time_scale)+'<br>'+ 'force fingerprint=<code>'+closedLoopEsc(current.force_model_fingerprint)+'</code><br>'+ 'phase corridor='+closedLoopEsc(closedLoopFmt(c.phase_corridor_rad))+' rad; '+ 'fleet min distance='+closedLoopEsc(closedLoopFmt(c.min_pair_distance_m))+' m; '+ 'propellant reserve fraction='+closedLoopEsc(closedLoopFmt(c.propellant_reserve_fraction));
 }
 function renderClosedLoopResult(d){
   const c=d.campaign,m=d.metrics,a=m.annualized||{};
-  let h='<h4>Результат / Result</h4><div class="table-wrap"><table>'+
-    '<tr><th>Показатель / Metric</th><th>Evidence value</th></tr>'+
-    '<tr><td>Policy / Политика</td><td>'+closedLoopEsc(c.policy)+'</td></tr>'+
-    '<tr><td>Termination / Завершение</td><td>'+closedLoopEsc(c.termination_reason)+'</td></tr>'+
-    '<tr><td>Corrections / Коррекции</td><td>'+closedLoopEsc(c.correction_count)+'</td></tr>'+
-    '<tr><td>Authority attempts / Попытки authority</td><td>'+closedLoopEsc(c.authority_attempt_count)+'</td></tr>'+
-    '<tr><td>Cumulative ΔV, m/s</td><td>'+closedLoopEsc(c.cumulative_delta_v_m_s)+'</td></tr>'+
-    '<tr><td>Propellant used, kg / Топливо израсходовано</td><td>'+closedLoopEsc(c.cumulative_propellant_used_kg)+'</td></tr>'+
-    '<tr><td>Propellant remaining, kg / Остаток</td><td>'+closedLoopEsc(c.propellant_remaining_kg)+'</td></tr>'+
-    '<tr><td>Required reserve, kg / Резерв</td><td>'+closedLoopEsc(c.required_reserve_kg)+'</td></tr>'+
-    '<tr><td>Annualization available / Годовая оценка</td><td>'+closedLoopEsc(a.available)+'</td></tr>'+
-    '<tr><td>ΔV per Julian year, m/s</td><td>'+closedLoopEsc(closedLoopFmt(a.delta_v_m_s_per_julian_year))+'</td></tr>'+
-    '<tr><td>Propellant per Julian year, kg</td><td>'+closedLoopEsc(closedLoopFmt(a.propellant_kg_per_julian_year))+'</td></tr>'+
-    '<tr><td>Lifetime projection available / Прогноз ресурса</td><td>'+closedLoopEsc(a.lifetime_projection_available)+'</td></tr>'+
-    '<tr><td>Projected years to reserve / Лет до резерва</td><td>'+closedLoopEsc(closedLoopFmt(a.projected_years_to_reserve))+'</td></tr>'+
-    '<tr><td>Rearm/settling available / Переармирование</td><td>'+closedLoopEsc(m.rearm_settling_available)+'; '+closedLoopEsc(closedLoopFmt(m.rearm_settling_reason))+'</td></tr>'+
-    '<tr><td>Authority backend(s)</td><td>'+closedLoopEsc((c.authority_backends||[]).join(', ')||'—')+'</td></tr>'+
-    '<tr><td>Force fingerprint</td><td><code>'+closedLoopEsc(c.force_model_fingerprint)+'</code></td></tr>'+
-    '<tr><td>Frame / time scale</td><td>'+closedLoopEsc(c.frame)+' / '+closedLoopEsc(c.time_scale)+'</td></tr>'+
-    '</table></div>';
-  if(Array.isArray(d.corrections)&&d.corrections.length){
-    h+='<h4>Коррекции / Corrections</h4><div class="table-wrap"><table><tr><th>#</th><th>t, s</th><th>Reason</th><th>ΔV, m/s</th><th>Fuel, kg</th><th>Remaining, kg</th></tr>';
-    for(const x of d.corrections){h+='<tr><td>'+closedLoopEsc(x.correction_index)+'</td><td>'+closedLoopEsc(x.event_time_s)+'</td><td>'+closedLoopEsc(x.policy_reason)+'</td><td>'+closedLoopEsc(x.delta_v_m_s)+'</td><td>'+closedLoopEsc(x.propellant_used_kg)+'</td><td>'+closedLoopEsc(x.propellant_remaining_kg)+'</td></tr>';}
-    h+='</table></div>';
-  }
+  let h='<h4>Результат / Result</h4><div class="table-wrap"><table>'+ '<tr><th>Показатель / Metric</th><th>Evidence value</th></tr>'+ '<tr><td>Policy / Политика</td><td>'+closedLoopEsc(c.policy)+'</td></tr>'+ '<tr><td>Termination / Завершение</td><td>'+closedLoopEsc(c.termination_reason)+'</td></tr>'+ '<tr><td>Corrections / Коррекции</td><td>'+closedLoopEsc(c.correction_count)+'</td></tr>'+ '<tr><td>Authority attempts / Попытки authority</td><td>'+closedLoopEsc(c.authority_attempt_count)+'</td></tr>'+ '<tr><td>Cumulative ΔV, m/s</td><td>'+closedLoopEsc(c.cumulative_delta_v_m_s)+'</td></tr>'+ '<tr><td>Propellant used, kg / Топливо израсходовано</td><td>'+closedLoopEsc(c.cumulative_propellant_used_kg)+'</td></tr>'+ '<tr><td>Propellant remaining, kg / Остаток</td><td>'+closedLoopEsc(c.propellant_remaining_kg)+'</td></tr>'+ '<tr><td>Required reserve, kg / Резерв</td><td>'+closedLoopEsc(c.required_reserve_kg)+'</td></tr>'+ '<tr><td>Annualization available / Годовая оценка</td><td>'+closedLoopEsc(a.available)+'</td></tr>'+ '<tr><td>ΔV per Julian year, m/s</td><td>'+closedLoopEsc(closedLoopFmt(a.delta_v_m_s_per_julian_year))+'</td></tr>'+ '<tr><td>Propellant per Julian year, kg</td><td>'+closedLoopEsc(closedLoopFmt(a.propellant_kg_per_julian_year))+'</td></tr>'+ '<tr><td>Lifetime projection available / Прогноз ресурса</td><td>'+closedLoopEsc(a.lifetime_projection_available)+'</td></tr>'+ '<tr><td>Projected years to reserve / Лет до резерва</td><td>'+closedLoopEsc(closedLoopFmt(a.projected_years_to_reserve))+'</td></tr>'+ '<tr><td>Rearm/settling available / Переармирование</td><td>'+closedLoopEsc(m.rearm_settling_available)+'; '+closedLoopEsc(closedLoopFmt(m.rearm_settling_reason))+'</td></tr>'+ '<tr><td>Authority backend(s)</td><td>'+closedLoopEsc((c.authority_backends||[]).join(', ')||'—')+'</td></tr>'+ '<tr><td>Force fingerprint</td><td><code>'+closedLoopEsc(c.force_model_fingerprint)+'</code></td></tr>'+ '<tr><td>Frame / time scale</td><td>'+closedLoopEsc(c.frame)+' / '+closedLoopEsc(c.time_scale)+'</td></tr>'+ '</table></div>';
+  if(Array.isArray(d.corrections)&&d.corrections.length){h+='<h4>Коррекции / Corrections</h4><div class="table-wrap"><table><tr><th>#</th><th>t, s</th><th>Reason</th><th>ΔV, m/s</th><th>Fuel, kg</th><th>Remaining, kg</th></tr>';for(const x of d.corrections){h+='<tr><td>'+closedLoopEsc(x.correction_index)+'</td><td>'+closedLoopEsc(x.event_time_s)+'</td><td>'+closedLoopEsc(x.policy_reason)+'</td><td>'+closedLoopEsc(x.delta_v_m_s)+'</td><td>'+closedLoopEsc(x.propellant_used_kg)+'</td><td>'+closedLoopEsc(x.propellant_remaining_kg)+'</td></tr>';}h+='</table></div>';}
   document.getElementById('closedLoopResults').innerHTML=h;
   const links=Object.entries(d.artifacts||{}).map(([name,url])=>'<a target="_blank" href="'+closedLoopEsc(url)+'">'+closedLoopEsc(name)+'</a>');
   document.getElementById('closedLoopArtifacts').innerHTML=links.join(' ');
@@ -101,15 +73,12 @@ async function runClosedLoop(){
   if(!n){status.textContent='Сценарий не выбран / Scenario is not selected.';status.className='status danger';return;}
   const raw=document.getElementById('closedLoopProfile').value.trim();
   if(!raw){status.textContent='Введите явный control profile JSON / Supply an explicit control profile JSON.';status.className='status danger';return;}
-  let profile;
-  try{profile=JSON.parse(raw);}catch(e){status.textContent='Некорректный JSON / Invalid JSON: '+String(e);status.className='status danger';return;}
+  let profile;try{profile=JSON.parse(raw);}catch(e){status.textContent='Некорректный JSON / Invalid JSON: '+String(e);status.className='status danger';return;}
   profile.policy=document.getElementById('closedLoopPolicy').value;
   status.textContent='Выполняется closed-loop расчёт / Running closed-loop campaign…';status.className='status';
   const r=await fetch('/api/closed-loop-runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_name:n,profile})});
-  const d=await r.json();
-  if(!r.ok){status.textContent=(d.detail||'Closed-loop run failed');status.className='status danger';return;}
-  status.textContent='Closed-loop завершён / Closed-loop completed: '+d.run_dir;status.className='status ok';
-  renderClosedLoopResult(d);
+  const d=await r.json();if(!r.ok){status.textContent=(d.detail||'Closed-loop run failed');status.className='status danger';return;}
+  status.textContent='Closed-loop завершён / Closed-loop completed: '+d.run_dir;status.className='status ok';renderClosedLoopResult(d);
 }
 """
 
@@ -125,21 +94,9 @@ def _load_exact_json(path: Path) -> object:
 
 def render_preview_page_for_test() -> str:
     page = base_preview_page().replace("Engineering Preview 0.1.4", f"Engineering Preview {PREVIEW_VERSION}")
-    page = page.replace(
-        "</section></main>",
-        f"{_CLOSED_LOOP_CARD}</section></main>",
-        1,
-    )
-    page = page.replace(
-        "renderPreflight();renderDuration()}}",
-        "renderPreflight();renderDuration();renderClosedLoopContext()}}",
-        1,
-    )
-    page = page.replace(
-        "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{_CLOSED_LOOP_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
-        1,
-    )
+    page = page.replace("</section></main>", f"{_CLOSED_LOOP_CARD}</section></main>", 1)
+    page = page.replace("renderPreflight();renderDuration()}}", "renderPreflight();renderDuration();renderClosedLoopContext()}}", 1)
+    page = page.replace("bootstrap().catch(e=>setStatus(String(e),'danger'));", f"{_CLOSED_LOOP_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));", 1)
     return page
 
 
@@ -147,12 +104,7 @@ def _remove_base_route(app: FastAPI, path: str) -> None:
     app.router.routes[:] = [route for route in app.router.routes if getattr(route, "path", None) != path]
 
 
-def create_preview_app(
-    scenario_root: Path = Path("scenarios"),
-    output_root: Path = Path("runs"),
-) -> FastAPI:
-    """Compose accepted Preview P0/P1 routes with explicit P2 closed-loop API/UI."""
-
+def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Path = Path("runs")) -> FastAPI:
     app = create_base_preview_app(scenario_root, output_root)
     app.version = PREVIEW_VERSION
     _remove_base_route(app, "/")
@@ -174,10 +126,7 @@ def create_preview_app(
             run_dir = Path(execution.run_dir)
             relative = run_dir.resolve().relative_to(output_root.resolve())
             if len(relative.parts) != 2:
-                raise RuntimeError(
-                    "Неожиданная структура каталога closed-loop запуска / "
-                    "unexpected closed-loop run directory layout"
-                )
+                raise RuntimeError("Неожиданная структура каталога closed-loop запуска / unexpected closed-loop run directory layout")
             metrics = _load_exact_json(Path(execution.metrics_path))
             corrections = _load_exact_json(Path(execution.corrections_json_path))
         except Exception as exc:
@@ -185,13 +134,7 @@ def create_preview_app(
 
         scenario_id, run_id = relative.parts
         prefix = f"/api/closed-loop-results/{scenario_id}/{run_id}"
-        authority_backends = sorted(
-            {
-                attempt.replay_backend
-                for attempt in execution.campaign.authority_attempts
-                if attempt.replay_backend is not None
-            }
-        )
+        authority_backends = sorted({attempt.replay_backend for attempt in execution.campaign.authority_attempts if attempt.replay_backend is not None})
         return {
             "run_dir": execution.run_dir,
             "campaign": {
@@ -210,22 +153,14 @@ def create_preview_app(
             },
             "metrics": metrics,
             "corrections": corrections,
-            "artifacts": {
-                name: f"{prefix}/{name}" for name in _CLOSED_LOOP_ARTIFACT_MEDIA_TYPES
-            },
+            "artifacts": {name: f"{prefix}/{name}" for name in _CLOSED_LOOP_ARTIFACT_MEDIA_TYPES},
         }
 
-    @app.get(
-        "/api/closed-loop-results/{scenario_id}/{run_id}/{name}",
-        response_class=FileResponse,
-    )
+    @app.get("/api/closed-loop-results/{scenario_id}/{run_id}/{name}", response_class=FileResponse)
     def closed_loop_artifact(scenario_id: str, run_id: str, name: str) -> FileResponse:
         media_type = _CLOSED_LOOP_ARTIFACT_MEDIA_TYPES.get(name)
         if media_type is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Closed-loop result artifact is not exposed by Preview",
-            )
+            raise HTTPException(status_code=404, detail="Closed-loop result artifact is not exposed by Preview")
         try:
             path = _safe_result_file(output_root, scenario_id, run_id, name)
         except ValueError as exc:

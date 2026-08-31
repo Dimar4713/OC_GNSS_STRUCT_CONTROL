@@ -14,8 +14,6 @@ if (-not [string]::IsNullOrWhiteSpace($env:OC_GNSS_PREVIEW_ROOT)) {
 }
 Set-Location $Root
 
-# Локальный authority-трафик не должен уходить через системный/корпоративный proxy.
-# Loopback authority traffic must never be sent through a corporate/system proxy.
 $LoopbackNoProxy = "127.0.0.1,localhost,::1"
 $env:NO_PROXY = $LoopbackNoProxy
 $env:no_proxy = $LoopbackNoProxy
@@ -38,8 +36,6 @@ function Read-AuthorityFile([string]$RelativePath, [int]$ExpectedLength) {
 }
 
 function Get-DirectJson([string]$Uri, [int]$TimeoutMs = 1000) {
-  # Use the .NET Framework WebRequest API available in stock Windows PowerShell 5.1.
-  # System.Net.Http types are not guaranteed to be preloaded on a clean machine.
   $Request = [System.Net.HttpWebRequest][System.Net.WebRequest]::Create($Uri)
   $Request.Method = "GET"
   $Request.Proxy = $null
@@ -64,24 +60,17 @@ function Get-LoopbackListenerOwner([int]$LocalPort) {
     $Connection = Get-NetTCPConnection -State Listen -LocalPort $LocalPort -ErrorAction Stop |
       Where-Object { $_.LocalAddress -in @("127.0.0.1", "0.0.0.0", "::1", "::") } |
       Select-Object -First 1
-    if ($Connection) {
-      return [int]$Connection.OwningProcess
-    }
+    if ($Connection) { return [int]$Connection.OwningProcess }
   } catch { }
   return $null
 }
 
 function Clear-StaleOrekitListener([int]$LocalPort) {
   $OwnerPid = Get-LoopbackListenerOwner $LocalPort
-  if ($null -eq $OwnerPid) {
-    return
-  }
+  if ($null -eq $OwnerPid) { return }
 
   $ProcessInfo = $null
-  try {
-    $ProcessInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $OwnerPid" -ErrorAction Stop
-  } catch { }
-
+  try { $ProcessInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $OwnerPid" -ErrorAction Stop } catch { }
   $ProcessName = if ($ProcessInfo) { [string]$ProcessInfo.Name } else { "unknown" }
   $CommandLine = if ($ProcessInfo) { [string]$ProcessInfo.CommandLine } else { "" }
   $LooksLikeOrekit = (
@@ -89,40 +78,29 @@ function Clear-StaleOrekitListener([int]$LocalPort) {
     $ProcessName -match '^java(w)?\.exe$' -and
     $CommandLine -match 'orekit-service(?:-0\.1\.0-SNAPSHOT)?\.jar'
   )
-
   if (-not $LooksLikeOrekit) {
     Fail (
-      "Порт 127.0.0.1:$LocalPort уже занят процессом $ProcessName (PID $OwnerPid). " +
-      "Preview не будет завершать посторонний процесс."
+      "Порт 127.0.0.1:$LocalPort уже занят процессом $ProcessName (PID $OwnerPid). Preview не будет завершать посторонний процесс."
     ) (
-      "Port 127.0.0.1:$LocalPort is already occupied by $ProcessName (PID $OwnerPid). " +
-      "Preview will not terminate an unrelated process."
+      "Port 127.0.0.1:$LocalPort is already occupied by $ProcessName (PID $OwnerPid). Preview will not terminate an unrelated process."
     )
   }
-
   Write-Host "Найден оставшийся Orekit sidecar PID $OwnerPid; завершаем перед чистым запуском. / Stale Orekit sidecar PID $OwnerPid found; stopping it before a clean launch." -ForegroundColor Yellow
-  try {
-    Stop-Process -Id $OwnerPid -Force -ErrorAction Stop
-  } catch {
+  try { Stop-Process -Id $OwnerPid -Force -ErrorAction Stop } catch {
     Fail "Не удалось завершить оставшийся Orekit sidecar PID $OwnerPid" "Failed to stop stale Orekit sidecar PID $OwnerPid"
   }
-
   for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
     Start-Sleep -Milliseconds 250
-    if ($null -eq (Get-LoopbackListenerOwner $LocalPort)) {
-      return
-    }
+    if ($null -eq (Get-LoopbackListenerOwner $LocalPort)) { return }
   }
   Fail "Порт 127.0.0.1:$LocalPort не освободился после остановки старого sidecar" "Port 127.0.0.1:$LocalPort did not become free after stopping the stale sidecar"
 }
 
-Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.2.3"
+Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.2.4"
 Write-Host "Корень / Root: $Root"
 
 $PythonArgs = @()
-if ($Python -eq "py") {
-  $PythonArgs = @("-3.12")
-}
+if ($Python -eq "py") { $PythonArgs = @("-3.12") }
 try {
   $Version = & $Python @PythonArgs -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 } catch {
@@ -145,9 +123,6 @@ Write-Host "Установка/обновление зависимостей Pre
 
 $PinnedRevision = Read-AuthorityFile "sidecar\orekit-service\orekit-data-revision.txt" 40
 $PinnedPhysicalSha = Read-AuthorityFile "sidecar\orekit-service\orekit-data-sha256.txt" 64
-# Defense in depth: the real launcher itself exports the reviewed revision.
-# This keeps direct start-preview.ps1 execution and future bootstrap changes from
-# reintroducing the clean-PC `unversioned` regression fixed in Preview 0.2.1.
 $env:OREKIT_DATA_REVISION = $PinnedRevision
 Write-Host "Проверенная ревизия Orekit data / Reviewed revision: $PinnedRevision"
 Write-Host "Проверенный physical SHA-256 / Reviewed SHA:   $PinnedPhysicalSha"
@@ -166,9 +141,7 @@ if (Test-Path -LiteralPath $BundledJar -PathType Leaf) {
 $OrekitData = $env:OREKIT_DATA_PATH
 if ([string]::IsNullOrWhiteSpace($OrekitData)) {
   $CandidateData = Join-Path $RuntimeRoot "orekit-data"
-  if (Test-Path -LiteralPath $CandidateData -PathType Container) {
-    $OrekitData = $CandidateData
-  }
+  if (Test-Path -LiteralPath $CandidateData -PathType Container) { $OrekitData = $CandidateData }
 }
 
 $SidecarStarted = $false
@@ -180,11 +153,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
     Fail "Fingerprint Orekit data не совпадает. Ожидался $PinnedPhysicalSha, получен $ActualSha" "Orekit data fingerprint mismatch. Expected $PinnedPhysicalSha, got $ActualSha"
   }
 
-  try {
-    $JavaVersionText = (& java -version 2>&1 | Select-Object -First 1)
-  } catch {
-    $JavaVersionText = $null
-  }
+  try { $JavaVersionText = (& java -version 2>&1 | Select-Object -First 1) } catch { $JavaVersionText = $null }
   if ($JavaVersionText) {
     $JavaMatch = [regex]::Match([string]$JavaVersionText, 'version "(?<major>[0-9]+)')
     if (-not $JavaMatch.Success -or [int]$JavaMatch.Groups['major'].Value -lt 17) {
@@ -217,9 +186,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
           Write-Host "Orekit authority ГОТОВО / READY: version $($Health.orekit_version), data $($Health.orekit_data_revision)"
           break
         }
-      } catch {
-        $LastHealthError = $_.Exception.Message
-      }
+      } catch { $LastHealthError = $_.Exception.Message }
       if ($Sidecar.HasExited) { break }
       Start-Sleep -Milliseconds 500
     }
@@ -227,11 +194,7 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
       if (-not $Sidecar.HasExited) { Stop-Process -Id $Sidecar.Id -Force }
       $HealthIdentity = if ($LastHealth) {
         "status=$($LastHealth.status), backend=$($LastHealth.backend), orekit=$($LastHealth.orekit_version), revision=$($LastHealth.orekit_data_revision), sha=$($LastHealth.orekit_data_sha256)"
-      } elseif ($LastHealthError) {
-        "health unavailable: $LastHealthError"
-      } else {
-        "health unavailable"
-      }
+      } elseif ($LastHealthError) { "health unavailable: $LastHealthError" } else { "health unavailable" }
       $StderrTail = ""
       if (Test-Path -LiteralPath $SidecarStderr -PathType Leaf) {
         $StderrTail = ((Get-Content -LiteralPath $SidecarStderr -Tail 8 -ErrorAction SilentlyContinue) -join " | ").Trim()
@@ -251,14 +214,10 @@ if ($OrekitJar -and $OrekitData -and (Test-Path -LiteralPath $OrekitData -PathTy
 }
 
 $Url = "http://127.0.0.1:$Port"
-if (-not $NoBrowser) {
-  Start-Process $Url
-}
+if (-not $NoBrowser) { Start-Process $Url }
 Write-Host "Запуск Engineering Preview / Starting Engineering Preview: $Url"
 try {
   & $VenvPython -m constellation_control.cli.main preview --host 127.0.0.1 --port $Port --scenarios (Join-Path $Root "scenarios") --output (Join-Path $Root "preview\results")
 } finally {
-  if ($SidecarStarted -and $Sidecar -and -not $Sidecar.HasExited) {
-    Stop-Process -Id $Sidecar.Id -Force
-  }
+  if ($SidecarStarted -and $Sidecar -and -not $Sidecar.HasExited) { Stop-Process -Id $Sidecar.Id -Force }
 }
