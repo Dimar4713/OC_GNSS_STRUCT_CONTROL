@@ -31,12 +31,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #135 | merged | Fail-closed completed-run promotion core requiring exact manifest, normalized scenario, propagation result and resource evidence. |
 | #136 | merged | Completed-run promotion wired into packaged operator UI; successful runs persist exact `propagation_result.json`. |
 | #137 | merged | Explicit Walker/osculating engineering inputs: removed hidden orbital defaults, explicit argument of perigee/anomaly type, singularity guards and blank-input protection. |
+| #138 | merged | Hardened digital-twin perturbation contracts: typed canonical parameter registry, domain-level unit checks and stricter target-scope invariants without changing numerical authority or sampling semantics. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #138 | CI pending | Harden digital-twin perturbation contracts: typed canonical parameter registry, domain-level unit checks and stricter target-scope invariants. Numerical authority and perturbation sampling semantics are unchanged. |
+No active merged-target PR at this checkpoint. Next hardening slice: require an explicit perturbation scope selection in the packaged operator UI instead of implicitly selecting whole-constellation scope.
 
 ## Current authority boundaries
 
@@ -49,19 +48,24 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #137 exact head: `c245e89c6d9f15c2c5025c5f9f1d6149b8a95a57`.
-- Required workflows on that exact head: `ci`, `preview-package-compat`, `preview-0.2-package` — success.
-- PR #137 merge commit: `796c9fc820834347b782e71ad352ba86f36efd9b`.
+- PR #138 exact head: `6b97b599f518aedc75884a6fbd0ae0e71662d522`.
+- Exact-head required workflows all terminal success:
+  - `ci` run `33387368299`;
+  - `preview-package-compat` run `33387368360`;
+  - `preview-0.2-package` run `33387368303`, including the real packaged clean-Windows launcher against a stale sidecar.
+- PR #138 merge commit: `ddedd1fba71631993096ebb76afaf6177d48e48b`.
+- Prior PR #137 merge commit: `796c9fc820834347b782e71ad352ba86f36efd9b`.
 - Project-history document introduced on main at `ae1573a7f8130a62fb3670061cb6119a14a8db02`; engineering hardening note checkpoint on main at `2a608c81c22bd78fdc30c7e17fc27034e3ef3674`.
 
 ## Next incomplete work
 
 Priority order after PR #138 acceptance:
 
-1. Extend engineer input adapters beyond XLS/manual Walker/manual osculating flow: GNSS almanac and NORAD-family inputs, with explicit authority boundary before canonical mean elements are accepted.
-2. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
-3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Remove the remaining implicit whole-constellation selection from the Perturbation Designer UI: scope must be an explicit operator choice; empty scope must fail closed before payload submission.
+2. Extend engineer input adapters beyond XLS/manual Walker/manual osculating flow: GNSS almanac and NORAD-family inputs, with explicit authority boundary before canonical mean elements are accepted.
+3. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
+4. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+5. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
