@@ -77,12 +77,7 @@ def _verify_common_result(
 
 
 class OrekitMeanConversionClient:
-    """Convert Keplerian osculating elements to canonical mean elements via Orekit DSST.
-
-    This is an authority boundary. There is deliberately no local mathematical
-    fallback: if the sidecar is unavailable or its identity/provenance cannot be
-    verified, conversion fails closed.
-    """
+    """Convert Keplerian osculating elements to canonical mean elements via Orekit DSST."""
 
     def __init__(self, base_url: str, timeout_s: float = 60.0) -> None:
         self._url = base_url.rstrip("/") + "/v1/orbits/osculating-to-mean"
@@ -112,21 +107,12 @@ class OrekitMeanConversionClient:
             "force_model_fingerprint": fingerprint,
         }
         result = _post_conversion(self._url, payload, self._timeout_s, "mean conversion")
-        _verify_common_result(
-            result,
-            requested_gravity=requested_gravity.value,
-            fingerprint=fingerprint,
-        )
+        _verify_common_result(result, requested_gravity=requested_gravity.value, fingerprint=fingerprint)
         return result
 
 
 class OrekitTleMeanConversionClient:
-    """Convert raw TLE through Orekit SGP4/TEME and DSST mean authority.
-
-    Raw NORAD mean elements are never reinterpreted locally. The sidecar must
-    explicitly attest the SGP4/TEME conversion chain and the returned canonical
-    mean definition must match the requested force-model fingerprint.
-    """
+    """Convert raw TLE through Orekit SGP4/TEME at an explicit target epoch, then DSST mean authority."""
 
     def __init__(self, base_url: str, timeout_s: float = 60.0) -> None:
         self._url = base_url.rstrip("/") + "/v1/orbits/tle-to-mean"
@@ -138,6 +124,8 @@ class OrekitTleMeanConversionClient:
         line1: str,
         line2: str,
         frame: FrameName,
+        target_epoch: datetime,
+        target_time_scale: TimeScaleName,
         spacecraft: SpacecraftModel,
         force_model: ForceModelConfig,
     ) -> MeanConversionResult:
@@ -145,20 +133,19 @@ class OrekitTleMeanConversionClient:
         if requested_gravity is None:
             raise RuntimeError("TLE-to-mean conversion requires explicit gravity authority")
         fingerprint = force_model.fingerprint()
+        target_epoch_text = target_epoch.isoformat().replace("+00:00", "Z")
         payload: dict[str, object] = {
             "line1": line1,
             "line2": line2,
             "frame": frame.value,
+            "target_epoch": target_epoch_text,
+            "target_time_scale": target_time_scale.value,
             "spacecraft": spacecraft.model_dump(mode="json"),
             "force_model": force_model.model_dump(mode="json"),
             "force_model_fingerprint": fingerprint,
         }
         result = _post_conversion(self._url, payload, self._timeout_s, "TLE conversion")
-        _verify_common_result(
-            result,
-            requested_gravity=requested_gravity.value,
-            fingerprint=fingerprint,
-        )
+        _verify_common_result(result, requested_gravity=requested_gravity.value, fingerprint=fingerprint)
         metadata = result.backend_metadata
         if metadata.get("source_authority") != "NORAD-TLE-SGP4":
             raise RuntimeError("TLE conversion returned unexpected source authority")
@@ -169,6 +156,10 @@ class OrekitTleMeanConversionClient:
             raise RuntimeError("TLE conversion omitted the reviewed authority chain")
         if not metadata.get("norad_satellite_number"):
             raise RuntimeError("TLE conversion omitted NORAD satellite number")
-        if not metadata.get("sgp4_epoch"):
-            raise RuntimeError("TLE conversion omitted SGP4 epoch")
+        if not metadata.get("tle_epoch"):
+            raise RuntimeError("TLE conversion omitted source TLE epoch")
+        if metadata.get("sgp4_target_time_scale") != target_time_scale.value:
+            raise RuntimeError("TLE conversion target time scale does not match request")
+        if not metadata.get("sgp4_target_epoch"):
+            raise RuntimeError("TLE conversion omitted target epoch")
         return result
