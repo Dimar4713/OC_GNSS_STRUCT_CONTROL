@@ -118,6 +118,18 @@ final class ApiModels {
             ForceModel forceModel,
             String forceModelFingerprint) {}
 
+    record GpsAlmanacToMeanRequest(
+            String sourceFormat,
+            String sourceName,
+            String sourceText,
+            int prn,
+            String frame,
+            String targetEpoch,
+            String targetTimeScale,
+            SpacecraftModel spacecraft,
+            ForceModel forceModel,
+            String forceModelFingerprint) {}
+
     record MeanConversionResult(
             MeanOrbit meanOrbit,
             Map<String, String> backendMetadata) {}

@@ -25,6 +25,7 @@ public final class OrekitServiceMain {
         PropagationEngine engine = new PropagationEngine(runtime);
         MeanConversionEngine meanConversionEngine = new MeanConversionEngine(runtime);
         TleMeanConversionEngine tleMeanConversionEngine = new TleMeanConversionEngine(runtime);
+        GpsAlmanacMeanConversionEngine gpsAlmanacMeanConversionEngine = new GpsAlmanacMeanConversionEngine(runtime);
         ObjectMapper mapper = mapper();
 
         InetSocketAddress bindAddress = new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port);
@@ -37,6 +38,9 @@ public final class OrekitServiceMain {
         server.createContext(
                 "/v1/orbits/tle-to-mean",
                 exchange -> handleTleToMean(exchange, mapper, tleMeanConversionEngine));
+        server.createContext(
+                "/v1/orbits/gps-almanac-to-mean",
+                exchange -> handleGpsAlmanacToMean(exchange, mapper, gpsAlmanacMeanConversionEngine));
         server.setExecutor(Executors.newFixedThreadPool(
                 Math.max(2, Runtime.getRuntime().availableProcessors())));
         server.start();
@@ -83,49 +87,35 @@ public final class OrekitServiceMain {
         } catch (RequestTooLargeException exception) {
             writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
         } catch (IllegalArgumentException | UnsupportedOperationException exception) {
-            writeJson(exchange, mapper, 422, Map.of(
-                    "error", "invalid_propagation_request",
-                    "detail", safeMessage(exception)));
+            writeJson(exchange, mapper, 422, Map.of("error", "invalid_propagation_request", "detail", safeMessage(exception)));
         } catch (Exception exception) {
             exception.printStackTrace(System.err);
-            writeJson(exchange, mapper, 500, Map.of(
-                    "error", "orekit_propagation_failed",
-                    "detail", safeMessage(exception)));
+            writeJson(exchange, mapper, 500, Map.of("error", "orekit_propagation_failed", "detail", safeMessage(exception)));
         }
     }
 
-    private static void handleOsculatingToMean(
-            HttpExchange exchange,
-            ObjectMapper mapper,
-            MeanConversionEngine engine) throws IOException {
+    private static void handleOsculatingToMean(HttpExchange exchange, ObjectMapper mapper, MeanConversionEngine engine)
+            throws IOException {
         if (!"POST".equals(exchange.getRequestMethod())) {
             writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
             return;
         }
         try {
             byte[] body = readBody(exchange);
-            ApiModels.OsculatingToMeanRequest request =
-                    mapper.readValue(body, ApiModels.OsculatingToMeanRequest.class);
-            ApiModels.MeanConversionResult result = engine.convert(request);
-            writeJson(exchange, mapper, 200, result);
+            ApiModels.OsculatingToMeanRequest request = mapper.readValue(body, ApiModels.OsculatingToMeanRequest.class);
+            writeJson(exchange, mapper, 200, engine.convert(request));
         } catch (RequestTooLargeException exception) {
             writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
         } catch (IllegalArgumentException | UnsupportedOperationException exception) {
-            writeJson(exchange, mapper, 422, Map.of(
-                    "error", "invalid_mean_conversion_request",
-                    "detail", safeMessage(exception)));
+            writeJson(exchange, mapper, 422, Map.of("error", "invalid_mean_conversion_request", "detail", safeMessage(exception)));
         } catch (Exception exception) {
             exception.printStackTrace(System.err);
-            writeJson(exchange, mapper, 500, Map.of(
-                    "error", "orekit_mean_conversion_failed",
-                    "detail", safeMessage(exception)));
+            writeJson(exchange, mapper, 500, Map.of("error", "orekit_mean_conversion_failed", "detail", safeMessage(exception)));
         }
     }
 
-    private static void handleTleToMean(
-            HttpExchange exchange,
-            ObjectMapper mapper,
-            TleMeanConversionEngine engine) throws IOException {
+    private static void handleTleToMean(HttpExchange exchange, ObjectMapper mapper, TleMeanConversionEngine engine)
+            throws IOException {
         if (!"POST".equals(exchange.getRequestMethod())) {
             writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
             return;
@@ -133,19 +123,36 @@ public final class OrekitServiceMain {
         try {
             byte[] body = readBody(exchange);
             ApiModels.TleToMeanRequest request = mapper.readValue(body, ApiModels.TleToMeanRequest.class);
-            ApiModels.MeanConversionResult result = engine.convert(request);
-            writeJson(exchange, mapper, 200, result);
+            writeJson(exchange, mapper, 200, engine.convert(request));
         } catch (RequestTooLargeException exception) {
             writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
         } catch (IllegalArgumentException | UnsupportedOperationException exception) {
-            writeJson(exchange, mapper, 422, Map.of(
-                    "error", "invalid_tle_mean_conversion_request",
-                    "detail", safeMessage(exception)));
+            writeJson(exchange, mapper, 422, Map.of("error", "invalid_tle_mean_conversion_request", "detail", safeMessage(exception)));
         } catch (Exception exception) {
             exception.printStackTrace(System.err);
-            writeJson(exchange, mapper, 500, Map.of(
-                    "error", "orekit_tle_mean_conversion_failed",
-                    "detail", safeMessage(exception)));
+            writeJson(exchange, mapper, 500, Map.of("error", "orekit_tle_mean_conversion_failed", "detail", safeMessage(exception)));
+        }
+    }
+
+    private static void handleGpsAlmanacToMean(
+            HttpExchange exchange,
+            ObjectMapper mapper,
+            GpsAlmanacMeanConversionEngine engine) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
+            return;
+        }
+        try {
+            byte[] body = readBody(exchange);
+            ApiModels.GpsAlmanacToMeanRequest request = mapper.readValue(body, ApiModels.GpsAlmanacToMeanRequest.class);
+            writeJson(exchange, mapper, 200, engine.convert(request));
+        } catch (RequestTooLargeException exception) {
+            writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
+        } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+            writeJson(exchange, mapper, 422, Map.of("error", "invalid_gps_almanac_mean_conversion_request", "detail", safeMessage(exception)));
+        } catch (Exception exception) {
+            exception.printStackTrace(System.err);
+            writeJson(exchange, mapper, 500, Map.of("error", "orekit_gps_almanac_mean_conversion_failed", "detail", safeMessage(exception)));
         }
     }
 
