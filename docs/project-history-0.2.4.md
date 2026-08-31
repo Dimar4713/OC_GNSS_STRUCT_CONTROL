@@ -40,7 +40,9 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next slice is GNSS almanac-family intake (YUMA/SEM first, then GLONASS) with strict format-specific provenance and no silent promotion into canonical high-fidelity mean elements.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #145 | CI pending | Add strict preview-only GNSS almanac intake for GPS YUMA, GPS SEM and labelled GLONASS interchange text. YUMA radian semantics and SEM semicircle/inclination-offset semantics are preserved explicitly; source SHA-256/provenance is retained; duplicate/malformed records fail closed; no almanac record is silently promoted into canonical MeanOrbit or runnable scenario. |
 
 ## Current authority boundaries
 
@@ -50,7 +52,7 @@ No active merged-target PR at this checkpoint. Next slice is GNSS almanac-family
 4. NORAD TLE elements may reach canonical MeanOrbit only through `TLE -> Orekit SGP4/SDP4 TEME@explicit target epoch -> osculating PV -> selected inertial frame -> Orekit DSST mean`; raw TLE values are never relabelled as canonical elements.
 5. The TLE source epoch and target scenario epoch remain separately recorded. The resulting canonical state is defined only at the explicit target scenario epoch/time scale.
 6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
-7. GNSS almanac/broadcast inputs must remain format-specific source representations until a reviewed propagation/conversion authority is implemented; they are not canonical project mean elements by declaration.
+7. GNSS almanac/broadcast inputs remain format-specific source representations. YUMA angles are radians; SEM angular quantities are semicircles and SEM inclination is an offset from 0.30 semicircle. GLONASS labelled-text intake is an explicit interchange format, not a decoder of raw navigation strings. None is canonical project mean-element authority by declaration.
 8. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
 9. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
 10. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
@@ -63,13 +65,13 @@ No active merged-target PR at this checkpoint. Next slice is GNSS almanac-family
   - `preview-package-compat` run `33403572296`;
   - `preview-0.2-package` run `33403572295`.
 - PR #144 merge commit: `efc89160c3f50f7247e31a7139913c24b4c2b6f1`.
-- Prior PR #143 merge commit: `41e1027adc3f2513beb345809bf633fe7790067d`.
+- PR #145 evidence is pending on its exact head.
 
 ## Next incomplete work
 
-Priority order after PR #144 acceptance:
+Priority order after PR #145 acceptance:
 
-1. Add GNSS almanac-family adapters (YUMA/SEM and GLONASS almanac first) with format-specific authority semantics and source provenance.
+1. Add reviewed propagation/conversion authority for supported GNSS almanac families before any runnable promotion; raw almanac records remain preview-only until then.
 2. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
 3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
 4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
