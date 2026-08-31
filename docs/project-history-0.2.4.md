@@ -38,12 +38,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #143 | merged | Consolidated operator TLE authority flow and immutable derived-scenario creation. Raw TLE is promoted only after verified Orekit SGP4/TEME→DSST authority, parent YAML is never overwritten, NORAD source SHA/record/authority are persisted in lineage, and epoch mismatch fails closed. OMM remains blocked. |
 | #144 | merged | TLE authority extended to an explicit target epoch/time scale. Orekit SGP4/SDP4 propagates in TEME from the TLE source epoch to the parent scenario epoch, transforms the target-epoch osculating PV to the selected inertial frame, then delegates to the existing force-model-consistent DSST mean authority. The exact-epoch usability restriction is removed without mixing constellation epochs. OMM remains blocked. |
 | #145 | merged | Strict preview-only GNSS almanac intake for GPS YUMA, GPS SEM and labelled GLONASS interchange text. YUMA radian semantics and SEM semicircle/inclination-offset semantics are preserved explicitly; source SHA-256/provenance is retained; duplicate/malformed records fail closed; no almanac record is silently promoted into canonical MeanOrbit or runnable scenario. |
+| #146 | merged | Explicit propulsion/correction catalog contracts and packaged validation UI. Catalog entries verify declared model/type/thrust/Isp/propellant/mode against each spacecraft operational state, but never auto-fill or overwrite mass, fuel, thrust or Isp. Numerical resource authority remains the scenario operational state and spacecraft parameters. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #146 | CI pending | Add explicit propulsion/correction catalog contracts and packaged validation UI. Catalog entries may verify declared model/type/thrust/Isp/propellant/mode against each spacecraft operational state, but never auto-fill or overwrite mass, fuel, thrust or Isp. Numerical resource authority remains the scenario operational state and spacecraft parameters. |
+No active merged-target PR at this checkpoint. Next slice is reviewed propagation/conversion authority for supported GNSS almanac families before any runnable promotion.
 
 ## Current authority boundaries
 
@@ -61,13 +60,13 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #145 exact head: `8d8a36c43f768bfb8068c8c42c8ca140cc56079d`.
+- PR #146 exact head: `b80009651e5429767a1e925ad0afe590a0fd5295`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33408064939`;
-  - `preview-package-compat` run `33408064896`;
-  - `preview-0.2-package` run `33408064889`.
-- PR #145 merge commit: `aa222830ef699d3ca52c56990723061cd476a744`.
-- PR #146 evidence is pending on its exact head.
+  - `ci` run `33410272803`;
+  - `preview-package-compat` run `33410273032`;
+  - `preview-0.2-package` run `33410272792`.
+- PR #146 merge commit: `1ee86f0a09961bbb10e78d8c9bdcbf29dea14a3f`.
+- Prior PR #145 merge commit: `aa222830ef699d3ca52c56990723061cd476a744`.
 
 ## Next incomplete work
 
