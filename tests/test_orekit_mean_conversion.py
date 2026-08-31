@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -100,7 +100,7 @@ def test_mean_conversion_accepts_verified_orekit_result(monkeypatch: pytest.Monk
     monkeypatch.setattr(module, "open_orekit_url", lambda request, timeout_s: _Response(payload))
 
     result = OrekitMeanConversionClient("http://127.0.0.1:8081").convert(
-        epoch=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        epoch=datetime(2026, 1, 1, tzinfo=UTC),
         frame=FrameName.EME2000,
         time_scale=TimeScaleName.UTC,
         elements=_elements(),
@@ -139,7 +139,7 @@ def test_mean_conversion_rejects_wrong_fingerprint(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(RuntimeError, match="fingerprint"):
         OrekitMeanConversionClient("http://127.0.0.1:8081").convert(
-            epoch=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            epoch=datetime(2026, 1, 1, tzinfo=UTC),
             frame=FrameName.EME2000,
             time_scale=TimeScaleName.UTC,
             elements=_elements(),
