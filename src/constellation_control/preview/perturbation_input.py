@@ -36,6 +36,16 @@ _SCOPE_RANK = {
 }
 
 
+def _safe_existing_scenario(root: Path, name: str) -> Path:
+    if not name or Path(name).name != name or not name.lower().endswith((".yaml", ".yml")):
+        raise ValueError("source_scenario_name must be an existing YAML file name without path components")
+    resolved_root = root.resolve()
+    candidate = (resolved_root / name).resolve()
+    if candidate.parent != resolved_root or not candidate.is_file():
+        raise ValueError("source scenario does not exist inside scenario root")
+    return candidate
+
+
 def _matches(rule: PerturbationRule, satellite: SatelliteSpec, twin: DigitalTwinConfig) -> bool:
     if rule.scope == PerturbationScope.CONSTELLATION:
         return True
@@ -101,13 +111,22 @@ def _replace_parameter(elements: ClassicalElements, parameter: str, delta: float
     return replace(elements, **values)
 
 
+def _validate_rule_targets(source: ScenarioConfig, rules: tuple[PerturbationRule, ...]) -> DigitalTwinConfig:
+    prior_twin = source.digital_twin or DigitalTwinConfig()
+    candidate_twin = prior_twin.model_copy(update={"perturbations": rules, "applied_perturbations": ()})
+    ScenarioConfig.model_validate(
+        source.model_dump(mode="json") | {"digital_twin": candidate_twin.model_dump(mode="json")}
+    )
+    return prior_twin
+
+
 def apply_perturbation_rules(
     source: ScenarioConfig,
     *,
     rules: tuple[PerturbationRule, ...],
     seed: int,
 ) -> tuple[tuple[SatelliteSpec, ...], tuple[AppliedPerturbation, ...]]:
-    twin = source.digital_twin or DigitalTwinConfig()
+    twin = _validate_rule_targets(source, rules)
     for rule in rules:
         expected = _SUPPORTED_PARAMETERS.get(rule.parameter)
         if expected is None:
@@ -153,8 +172,7 @@ def create_perturbed_scenario(
 ) -> dict[str, object]:
     if not rules:
         raise ValueError("at least one enabled perturbation rule is required")
-    source_path = scenario_root / source_scenario_name
-    source = load_scenario(source_path)
+    source = load_scenario(_safe_existing_scenario(scenario_root, source_scenario_name))
     if new_scenario_id == source.scenario_id:
         raise ValueError("new_scenario_id must differ from parent scenario_id")
     if not target_scenario_name or Path(target_scenario_name).name != target_scenario_name:
