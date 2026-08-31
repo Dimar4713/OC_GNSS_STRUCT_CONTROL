@@ -18,6 +18,27 @@ class PerturbationScope(StrEnum):
     SATELLITE = "satellite"
 
 
+class PerturbationParameter(StrEnum):
+    SEMI_MAJOR_AXIS = "semi_major_axis"
+    ECCENTRICITY = "eccentricity"
+    INCLINATION = "inclination"
+    RAAN = "raan"
+    ARGUMENT_OF_PERIGEE = "argument_of_perigee"
+    MEAN_ANOMALY = "mean_anomaly"
+    EPOCH_OFFSET = "epoch_offset"
+
+
+PERTURBATION_PARAMETER_UNITS: dict[PerturbationParameter, str] = {
+    PerturbationParameter.SEMI_MAJOR_AXIS: "m",
+    PerturbationParameter.ECCENTRICITY: "1",
+    PerturbationParameter.INCLINATION: "rad",
+    PerturbationParameter.RAAN: "rad",
+    PerturbationParameter.ARGUMENT_OF_PERIGEE: "rad",
+    PerturbationParameter.MEAN_ANOMALY: "rad",
+    PerturbationParameter.EPOCH_OFFSET: "s",
+}
+
+
 class PropulsionSystem(BaseModel):
     model_config = ConfigDict(frozen=True)
     system_type: str
@@ -79,7 +100,7 @@ class SpacecraftGroup(BaseModel):
 class PerturbationRule(BaseModel):
     model_config = ConfigDict(frozen=True)
     rule_id: str
-    parameter: str
+    parameter: PerturbationParameter
     distribution: PerturbationDistribution
     scope: PerturbationScope
     target_ids: tuple[str, ...] = ()
@@ -91,6 +112,13 @@ class PerturbationRule(BaseModel):
 
     @model_validator(mode="after")
     def validate_distribution_parameters(self) -> PerturbationRule:
+        expected_unit = PERTURBATION_PARAMETER_UNITS[self.parameter]
+        if self.unit != expected_unit:
+            raise ValueError(
+                f"perturbation parameter {self.parameter.value} requires unit {expected_unit!r}, got {self.unit!r}"
+            )
+        if self.scope == PerturbationScope.CONSTELLATION and self.target_ids:
+            raise ValueError("constellation perturbation scope must not define target_ids")
         if self.scope != PerturbationScope.CONSTELLATION and not self.target_ids:
             raise ValueError("non-constellation perturbation scope requires target_ids")
         if self.distribution == PerturbationDistribution.GAUSSIAN:
@@ -112,15 +140,24 @@ class AppliedPerturbation(BaseModel):
     model_config = ConfigDict(frozen=True)
     rule_id: str
     satellite_id: str
-    parameter: str
+    parameter: PerturbationParameter
     sampled_delta: float
     unit: str
+
+    @model_validator(mode="after")
+    def validate_unit(self) -> AppliedPerturbation:
+        expected_unit = PERTURBATION_PARAMETER_UNITS[self.parameter]
+        if self.unit != expected_unit:
+            raise ValueError(
+                f"applied perturbation parameter {self.parameter.value} requires unit {expected_unit!r}, got {self.unit!r}"
+            )
+        return self
 
 
 class ScenarioLineage(BaseModel):
     model_config = ConfigDict(frozen=True)
     parent_scenario_id: str
-    parent_config_hash: str
+    parent_config_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     transformation: Literal[
         "perturbation",
         "import",
