@@ -92,4 +92,23 @@ final class ApiModels {
             List<Double> timesS,
             Map<String, List<MeanOrbit>> meanOrbits,
             Map<String, List<OsculatingState>> cartesianStates) {}
+
+    record OsculatingToMeanRequest(
+            String epoch,
+            String frame,
+            String timeScale,
+            double aM,
+            double e,
+            double iRad,
+            double paRad,
+            double raanRad,
+            double anomalyRad,
+            String anomalyType,
+            SpacecraftModel spacecraft,
+            ForceModel forceModel,
+            String forceModelFingerprint) {}
+
+    record MeanConversionResult(
+            MeanOrbit meanOrbit,
+            Map<String, String> backendMetadata) {}
 }
