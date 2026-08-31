@@ -13,9 +13,9 @@ def _repo_root() -> Path:
 
 def test_consolidated_release_page_and_health(tmp_path: Path) -> None:
     client = TestClient(consolidated.create_preview_app(_repo_root() / "scenarios", tmp_path))
-    assert client.get("/health").json() == {"status": "ok", "preview": "0.2.3"}
+    assert client.get("/health").json() == {"status": "ok", "preview": "0.2.4"}
     page = client.get("/").text
-    assert "Engineering Preview 0.2.3" in page
+    assert "Engineering Preview 0.2.4" in page
     assert "Optimal Operations Workspace 0.2" in page
     assert 'id="scenarioEditor"' in page
     assert "/api/scenario-drafts/validate" in page
