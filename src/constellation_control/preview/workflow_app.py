@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from constellation_control.application.design_pipeline import run_design_application
 from constellation_control.application.robustness import run_robustness_application
 from constellation_control.domain.models import ForceMode
-from constellation_control.preview.app import (
+from constellation_control.preview.base_preview_shell import (
     _classify_yaml,
     _load_preview_scenario,
     _safe_result_file,
