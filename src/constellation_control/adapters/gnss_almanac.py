@@ -93,7 +93,7 @@ class GnssAlmanacPreview(BaseModel):
     promotion_block_reason: str
 
     @model_validator(mode="after")
-    def validate_records(self) -> "GnssAlmanacPreview":
+    def validate_records(self) -> GnssAlmanacPreview:
         if not self.records:
             raise ValueError("almanac contains no records")
         ids: list[int] = []
