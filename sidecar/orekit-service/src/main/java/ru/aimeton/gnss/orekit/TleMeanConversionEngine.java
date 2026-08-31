@@ -5,6 +5,7 @@ import static ru.aimeton.gnss.orekit.ApiModels.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.orekit.errors.OrekitException;
 import org.orekit.frames.Frame;
 import org.orekit.orbits.KeplerianOrbit;
 import org.orekit.propagation.analytical.tle.TLE;
@@ -22,12 +23,17 @@ final class TleMeanConversionEngine {
 
     MeanConversionResult convert(TleToMeanRequest request) {
         validateRequest(request);
-        if (!TLE.isFormatOK(request.line1(), request.line2())) {
-            throw new IllegalArgumentException("TLE lines do not satisfy Orekit/NORAD format checks");
+        final TLE tle;
+        try {
+            if (!TLE.isFormatOK(request.line1(), request.line2())) {
+                throw new IllegalArgumentException("TLE lines do not satisfy Orekit/NORAD format checks");
+            }
+            tle = new TLE(request.line1(), request.line2(), runtime.timeScale("UTC"));
+        } catch (OrekitException exception) {
+            throw new IllegalArgumentException("invalid TLE: " + exception.getMessage(), exception);
         }
 
         var utc = runtime.timeScale("UTC");
-        TLE tle = new TLE(request.line1(), request.line2(), utc);
         Frame teme = runtime.temeFrame();
         Frame outputFrame = runtime.propagationFrame(request.frame());
         TLEPropagator propagator = TLEPropagator.selectExtrapolator(tle, teme);
