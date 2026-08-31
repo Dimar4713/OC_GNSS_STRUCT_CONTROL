@@ -13,6 +13,7 @@ from constellation_control.domain.digital_twin import (
     AppliedPerturbation,
     DigitalTwinConfig,
     PerturbationDistribution,
+    PerturbationParameter,
     PerturbationRule,
     PerturbationScope,
     ScenarioLineage,
@@ -20,13 +21,13 @@ from constellation_control.domain.digital_twin import (
 from constellation_control.domain.models import ScenarioConfig, SatelliteSpec
 from constellation_control.dynamics.orbits import ClassicalElements, classical_to_mean, mean_to_classical, wrap_pi
 
-_SUPPORTED_PARAMETERS: dict[str, str] = {
-    "a_m": "m",
-    "e": "1",
-    "i_rad": "rad",
-    "raan_rad": "rad",
-    "argp_rad": "rad",
-    "mean_anomaly_rad": "rad",
+_SUPPORTED_PARAMETERS: dict[PerturbationParameter, str] = {
+    PerturbationParameter.SEMI_MAJOR_AXIS: "m",
+    PerturbationParameter.ECCENTRICITY: "1",
+    PerturbationParameter.INCLINATION: "rad",
+    PerturbationParameter.RAAN: "rad",
+    PerturbationParameter.ARGUMENT_OF_PERIGEE: "rad",
+    PerturbationParameter.MEAN_ANOMALY: "rad",
 }
 _SCOPE_RANK = {
     PerturbationScope.CONSTELLATION: 0,
@@ -61,7 +62,7 @@ def _selected_rule(
     rules: tuple[PerturbationRule, ...],
     satellite: SatelliteSpec,
     twin: DigitalTwinConfig,
-    parameter: str,
+    parameter: PerturbationParameter,
 ) -> PerturbationRule | None:
     matches = [rule for rule in rules if rule.parameter == parameter and _matches(rule, satellite, twin)]
     if not matches:
@@ -71,13 +72,13 @@ def _selected_rule(
     if len(winners) != 1:
         ids = ", ".join(sorted(rule.rule_id for rule in winners))
         raise ValueError(
-            f"ambiguous perturbation rules for satellite={satellite.satellite_id} parameter={parameter}: {ids}"
+            f"ambiguous perturbation rules for satellite={satellite.satellite_id} parameter={parameter.value}: {ids}"
         )
     return winners[0]
 
 
 def _sample(seed: int, satellite_id: str, rule: PerturbationRule) -> float:
-    key = f"{seed}\0{satellite_id}\0{rule.rule_id}\0{rule.parameter}".encode()
+    key = f"{seed}\0{satellite_id}\0{rule.rule_id}\0{rule.parameter.value}".encode()
     derived = int.from_bytes(hashlib.sha256(key).digest()[:8], "big", signed=False)
     rng = np.random.default_rng(derived)
     if rule.distribution == PerturbationDistribution.GAUSSIAN:
@@ -89,7 +90,11 @@ def _sample(seed: int, satellite_id: str, rule: PerturbationRule) -> float:
     return float(rng.uniform(rule.lower_bound, rule.upper_bound))
 
 
-def _replace_parameter(elements: ClassicalElements, parameter: str, delta: float) -> ClassicalElements:
+def _replace_parameter(
+    elements: ClassicalElements,
+    parameter: PerturbationParameter,
+    delta: float,
+) -> ClassicalElements:
     values = {
         "a_m": elements.a_m,
         "e": elements.e,
@@ -98,7 +103,7 @@ def _replace_parameter(elements: ClassicalElements, parameter: str, delta: float
         "argp_rad": elements.argp_rad,
         "mean_anomaly_rad": elements.mean_anomaly_rad,
     }
-    values[parameter] += delta
+    values[parameter.value] += delta
     if values["a_m"] <= 0.0:
         raise ValueError("perturbation produced non-positive semi-major axis")
     if not 0.0 <= values["e"] < 1.0:
@@ -130,9 +135,9 @@ def apply_perturbation_rules(
     for rule in rules:
         expected = _SUPPORTED_PARAMETERS.get(rule.parameter)
         if expected is None:
-            raise ValueError(f"unsupported perturbation parameter: {rule.parameter}")
+            raise ValueError(f"unsupported perturbation parameter: {rule.parameter.value}")
         if rule.unit != expected:
-            raise ValueError(f"parameter {rule.parameter} requires unit {expected}, got {rule.unit}")
+            raise ValueError(f"parameter {rule.parameter.value} requires unit {expected}, got {rule.unit}")
 
     satellites: list[SatelliteSpec] = []
     applied: list[AppliedPerturbation] = []
