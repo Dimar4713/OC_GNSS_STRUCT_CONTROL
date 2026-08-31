@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC
 from pathlib import Path
 
 import yaml
@@ -76,18 +75,13 @@ def _authority(root: Path, request: NoradAuthorityRequest):
     preview = preview_norad_import(request.filename, request.content_text)
     record = _selected_tle(preview, request.norad_satellite_number)
     source, satellite = _source(root, request)
-    source_epoch = source.epoch.astimezone(UTC)
-    tle_epoch = record.epoch_utc.astimezone(UTC)
-    if abs((tle_epoch - source_epoch).total_seconds()) > 1.0e-6:
-        raise ValueError(
-            "TLE epoch does not match parent scenario epoch; promotion is blocked until the Orekit TLE authority "
-            "supports propagation to the explicit scenario epoch"
-        )
     line1, line2 = _tle_pair(request.content_text, request.norad_satellite_number)
     result = OrekitTleMeanConversionClient(source.orekit_sidecar_url).convert(
         line1=line1,
         line2=line2,
         frame=source.frame,
+        target_epoch=source.epoch,
+        target_time_scale=source.time_scale,
         spacecraft=satellite.spacecraft,
         force_model=source.force_model,
     )
@@ -107,6 +101,8 @@ def preview_norad_authority(root: Path, request: NoradAuthorityRequest) -> dict[
         "satellite_id": satellite.satellite_id,
         "norad_satellite_number": record.satellite_number,
         "tle_epoch_utc": record.epoch_utc.isoformat(),
+        "target_scenario_epoch": source.epoch.isoformat(),
+        "target_time_scale": source.time_scale.value,
         "mean_orbit": result.mean_orbit.model_dump(mode="json"),
         "backend_metadata": result.backend_metadata,
     }
@@ -159,10 +155,7 @@ def create_norad_derived_scenario(root: Path, request: NoradCreateRequest) -> di
             "digital_twin": digital_twin.model_dump(mode="json"),
         }
     )
-    target.write_text(
-        yaml.safe_dump(child.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    target.write_text(yaml.safe_dump(child.model_dump(mode="json"), sort_keys=False, allow_unicode=True), encoding="utf-8")
     return {
         "saved": True,
         "scenario_name": target.name,
@@ -181,13 +174,10 @@ def create_norad_derived_scenario(root: Path, request: NoradCreateRequest) -> di
 NORAD_CARD = r"""
 <div class="card" id="noradCard">
   <h3>NORAD TLE / OMM</h3>
-  <p class="hint">TLE сначала валидируется как NORAD/SGP4 mean-element input, затем только через authoritative Orekit chain TLE→SGP4/TEME→osculating PV→DSST mean может заменить орбиту выбранного КА. OMM остаётся fail-closed. В этом срезе эпоха TLE должна точно совпадать с эпохой parent scenario.</p>
+  <p class="hint">TLE валидируется как NORAD/SGP4 mean-element input, затем authoritative Orekit propagates SGP4/TEME state на явную эпоху выбранного parent scenario и только после этого выполняет DSST mean conversion. OMM остаётся fail-closed.</p>
   <input id="noradFile" type="file" accept=".tle,.txt,.json">
   <button onclick="previewNorad()">Проверить NORAD файл / Preview NORAD file</button>
-  <div class="grid">
-    <label>Запись NORAD / Record <select id="noradRecord"></select></label>
-    <label>КА сценария / Scenario satellite <select id="noradSat"></select></label>
-  </div>
+  <div class="grid"><label>Запись NORAD / Record <select id="noradRecord"></select></label><label>КА сценария / Scenario satellite <select id="noradSat"></select></label></div>
   <button onclick="previewNoradAuthority()">Проверить через Orekit / Preview via Orekit</button>
   <pre id="noradPreview"></pre>
   <label>Новый scenario_id <input id="noradScenarioId" type="text" placeholder="derived-norad-01"></label>
@@ -200,18 +190,9 @@ NORAD_CARD = r"""
 NORAD_SCRIPT = r"""
 let noradLast=null;
 function syncNoradSatellites(){if(!current)return;const sats=((current.normalized||current).constellation||{}).satellites||[];noradSat.replaceChildren(...sats.map(s=>{const o=document.createElement('option');o.value=s.satellite_id;o.textContent=s.satellite_id;return o;}));}
-async function previewNorad(){
- const input=document.getElementById('noradFile');const file=input.files&&input.files[0];
- if(!file){noradStatus.textContent='Выберите .tle/.txt или OMM .json';noradStatus.className='status danger';return;}
- const text=await file.text();noradStatus.textContent='Validation…';
- const r=await fetch('/api/norad/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name,content_text:text})});const d=await r.json();
- if(!r.ok){noradStatus.textContent=d.detail||'NORAD preview failed';noradStatus.className='status danger';return;}
- noradLast={filename:file.name,content_text:text,preview:d};
- noradRecord.replaceChildren(...d.records.map(x=>{const o=document.createElement('option');o.value=String(x.satellite_number);o.textContent=String(x.satellite_number)+(x.object_name?' — '+x.object_name:'')+' ['+x.source_format+']';return o;}));
- noradPreview.textContent=JSON.stringify(d,null,2);noradStatus.textContent='VALID: records='+d.records.length+'; raw promotion='+d.runnable_promotion_allowed;noradStatus.className='status ok';
-}
+async function previewNorad(){const input=document.getElementById('noradFile');const file=input.files&&input.files[0];if(!file){noradStatus.textContent='Выберите .tle/.txt или OMM .json';noradStatus.className='status danger';return;}const text=await file.text();noradStatus.textContent='Validation…';const r=await fetch('/api/norad/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name,content_text:text})});const d=await r.json();if(!r.ok){noradStatus.textContent=d.detail||'NORAD preview failed';noradStatus.className='status danger';return;}noradLast={filename:file.name,content_text:text,preview:d};noradRecord.replaceChildren(...d.records.map(x=>{const o=document.createElement('option');o.value=String(x.satellite_number);o.textContent=String(x.satellite_number)+(x.object_name?' — '+x.object_name:'')+' ['+x.source_format+']';return o;}));noradPreview.textContent=JSON.stringify(d,null,2);noradStatus.textContent='VALID: records='+d.records.length+'; raw promotion='+d.runnable_promotion_allowed;noradStatus.className='status ok';}
 function noradAuthorityPayload(){if(!noradLast)throw new Error('preview NORAD file first');if(!noradRecord.value)throw new Error('NORAD record is required');if(!noradSat.value)throw new Error('scenario satellite is required');return {filename:noradLast.filename,content_text:noradLast.content_text,source_scenario_name:scenario.value,satellite_id:noradSat.value,norad_satellite_number:Number(noradRecord.value)};}
-async function previewNoradAuthority(){let p;try{p=noradAuthorityPayload();}catch(e){noradStatus.textContent=String(e.message||e);noradStatus.className='status danger';return;}noradStatus.textContent='Orekit TLE authority…';const r=await fetch('/api/norad/authority',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){noradStatus.textContent=d.detail||'TLE authority failed';noradStatus.className='status danger';return;}noradPreview.textContent=JSON.stringify(d,null,2);noradStatus.textContent='AUTHORITY VALID: '+d.backend_metadata.source_authority+'; '+d.backend_metadata.sgp4_frame;noradStatus.className='status ok';}
+async function previewNoradAuthority(){let p;try{p=noradAuthorityPayload();}catch(e){noradStatus.textContent=String(e.message||e);noradStatus.className='status danger';return;}noradStatus.textContent='Orekit TLE authority…';const r=await fetch('/api/norad/authority',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){noradStatus.textContent=d.detail||'TLE authority failed';noradStatus.className='status danger';return;}noradPreview.textContent=JSON.stringify(d,null,2);noradStatus.textContent='AUTHORITY VALID: '+d.backend_metadata.source_authority+'; target='+d.target_scenario_epoch;noradStatus.className='status ok';}
 async function createNoradScenario(){let base;try{base=noradAuthorityPayload();}catch(e){noradStatus.textContent=String(e.message||e);noradStatus.className='status danger';return;}const p={...base,new_scenario_id:noradScenarioId.value.trim(),target_scenario_name:noradScenarioFile.value.trim()};if(!p.new_scenario_id||!p.target_scenario_name){noradStatus.textContent='Укажите новый scenario_id и YAML';noradStatus.className='status danger';return;}const r=await fetch('/api/norad/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){noradStatus.textContent=d.detail||'Create failed';noradStatus.className='status danger';return;}const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();noradStatus.textContent='Создан: '+d.scenario_name;noradStatus.className='status ok';}
 """
 
