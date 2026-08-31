@@ -40,12 +40,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #145 | merged | Strict preview-only GNSS almanac intake for GPS YUMA, GPS SEM and labelled GLONASS interchange text. YUMA radian semantics and SEM semicircle/inclination-offset semantics are preserved explicitly; source SHA-256/provenance is retained; duplicate/malformed records fail closed; no almanac record is silently promoted into canonical MeanOrbit or runnable scenario. |
 | #146 | merged | Explicit propulsion/correction catalog contracts and packaged validation UI. Catalog entries verify declared model/type/thrust/Isp/propellant/mode against each spacecraft operational state, but never auto-fill or overwrite mass, fuel, thrust or Isp. Numerical resource authority remains the scenario operational state and spacecraft parameters. |
 | #147 | merged | Reviewed GPS almanac authority: raw YUMA/SEM is reparsed by Orekit 13.1.7, selected by PRN, propagated with Orekit's GPS GNSS analytical propagator to the explicit target epoch, transformed to the selected inertial frame, and delegated to the existing force-model-consistent DSST mean authority. GLONASS remains preview-only and cannot reuse this path. |
+| #148 | merged | Operator-side GPS YUMA/SEM authority preview and immutable derived-scenario creation. The selected parent satellite is replaced only by the verified #147 Orekit GNSS→DSST mean result; source filename/SHA-256/format/PRN/authority are persisted in typed lineage; source and existing target YAML are never overwritten. GLONASS remains fail-closed. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #148 | CI pending | Wire GPS YUMA/SEM operator authority and immutable derived-scenario creation. The selected parent satellite is replaced only by the verified #147 Orekit GNSS→DSST mean result; source filename/SHA-256/format/PRN/authority are persisted in lineage; parent YAML and existing targets are never overwritten. GLONASS remains fail-closed. |
+No active merged-target PR at this checkpoint. Next slice is a dedicated reviewed GLONASS almanac propagation/conversion authority; it must not reuse GPS GNSS semantics.
 
 ## Current authority boundaries
 
@@ -56,7 +55,7 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 5. The TLE source epoch and target scenario epoch remain separately recorded. The resulting canonical state is defined only at the explicit target scenario epoch/time scale.
 6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
 7. GPS YUMA/SEM may reach canonical MeanOrbit only through `raw YUMA/SEM -> Orekit parser -> Orekit GPS GNSS analytical propagator@explicit target epoch -> osculating PV -> selected inertial frame -> Orekit DSST mean`. Python-side normalized almanac values are not a propagation authority and are never copied directly into MeanOrbit.
-8. GPS almanac derived scenarios may be created only from a verified #147 sidecar attestation. Source scenario overwrite and target overwrite are forbidden; lineage must preserve source format, filename, SHA-256, PRN and authority.
+8. GPS almanac derived scenarios may be created only from a verified #147 sidecar attestation. Source scenario overwrite and target overwrite are forbidden; lineage preserves source format, filename, SHA-256, PRN and authority.
 9. GLONASS labelled-text intake remains preview-only. It cannot pass through the GPS authority path; a dedicated reviewed GLONASS analytical authority is required.
 10. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
 11. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
@@ -65,20 +64,19 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #147 exact head: `39f4bf85a26021e158eab3ac8c7d05012c38a671`.
+- PR #148 exact head: `0a99e112ea6ab18f5c61931ddb1399a8d05ab47a`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33411683927`;
-  - `preview-package-compat` run `33411683797`;
-  - `preview-0.2-package` run `33411683756`.
-- PR #147 merge commit: `85e8f46798c9f55a4c11b5f6b60d259b13a001e7`.
-- PR #148 evidence is pending on its exact head.
+  - `ci` run `33413406602`;
+  - `preview-package-compat` run `33413406668`;
+  - `preview-0.2-package` run `33413406568`.
+- PR #148 merge commit: `4329b6eff757c098dc1b5af883db03d68464679f`.
+- Prior PR #147 merge commit: `85e8f46798c9f55a4c11b5f6b60d259b13a001e7`.
 
 ## Next incomplete work
 
-1. Complete exact-head acceptance of #148 GPS almanac derived-scenario flow.
-2. Add a dedicated reviewed GLONASS almanac propagation/conversion authority; do not route GLONASS through GPS GNSS semantics.
-3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Add a dedicated reviewed GLONASS almanac propagation/conversion authority; do not route GLONASS through GPS GNSS semantics.
+2. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+3. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
