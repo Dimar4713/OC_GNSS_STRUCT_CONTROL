@@ -41,12 +41,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #146 | merged | Explicit propulsion/correction catalog contracts and packaged validation UI. Catalog entries verify declared model/type/thrust/Isp/propellant/mode against each spacecraft operational state, but never auto-fill or overwrite mass, fuel, thrust or Isp. Numerical resource authority remains the scenario operational state and spacecraft parameters. |
 | #147 | merged | Reviewed GPS almanac authority: raw YUMA/SEM is reparsed by Orekit 13.1.7, selected by PRN, propagated with Orekit's GPS GNSS analytical propagator to the explicit target epoch, transformed to the selected inertial frame, and delegated to the existing force-model-consistent DSST mean authority. GLONASS remains preview-only and cannot reuse this path. |
 | #148 | merged | Operator-side GPS YUMA/SEM authority preview and immutable derived-scenario creation. The selected parent satellite is replaced only by the verified #147 Orekit GNSS→DSST mean result; source filename/SHA-256/format/PRN/authority are persisted in typed lineage; source and existing target YAML are never overwritten. GLONASS remains fail-closed. |
+| #149 | merged | Dedicated GLONASS almanac authority using explicit authority-ready labelled semantics, Orekit `GLONASSAlmanac` and `GLONASSAnalyticalPropagator`, followed by the existing DSST osculating-to-mean authority. Legacy `draconian_period_s` is never reinterpreted as `deltaT`; incomplete legacy records remain preview-only. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #149 | CI pending | Add a dedicated GLONASS almanac authority using Orekit `GLONASSAlmanac` and `GLONASSAnalyticalPropagator`, followed by the existing DSST osculating-to-mean authority. Authority-ready labelled input requires explicit calendar date, reference time, lambda, delta-i, eccentricity, argument of perigee, delta-T, delta-T-dot and GLONASS/GPS/UTC time corrections. Legacy labelled preview remains non-promotable when these semantics are absent. |
+No active merged-target PR at this checkpoint. Next slice is operator-side immutable GLONASS derived-scenario creation, followed by structural lineage hash validation review.
 
 ## Current authority boundaries
 
@@ -67,20 +66,19 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #148 exact head: `0a99e112ea6ab18f5c61931ddb1399a8d05ab47a`.
+- PR #149 exact head: `1d4ac2e5ee7c8fc2f96f7158d65b4adcdd09f7b5`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33413406602`;
-  - `preview-package-compat` run `33413406668`;
-  - `preview-0.2-package` run `33413406568`.
-- PR #148 merge commit: `4329b6eff757c098dc1b5af883db03d68464679f`.
-- PR #149 exact-head evidence is pending.
+  - `ci` run `33415381271`;
+  - `preview-package-compat` run `33415381057`;
+  - `preview-0.2-package` run `33415381037`.
+- PR #149 merge commit: `833e3480b5df69716484cdff5160c2b35229a307`.
+- Prior PR #148 merge commit: `4329b6eff757c098dc1b5af883db03d68464679f`.
 
 ## Next incomplete work
 
-1. Complete exact-head acceptance of #149 dedicated GLONASS almanac authority.
-2. Wire operator-side immutable GLONASS derived-scenario creation only after #149 sidecar attestation is accepted.
-3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Wire operator-side immutable GLONASS derived-scenario creation only through verified #149 sidecar attestation.
+2. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+3. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
