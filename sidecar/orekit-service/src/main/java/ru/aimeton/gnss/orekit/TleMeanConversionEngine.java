@@ -30,7 +30,7 @@ final class TleMeanConversionEngine {
             }
             tle = new TLE(request.line1(), request.line2(), runtime.timeScale("UTC"));
         } catch (OrekitException exception) {
-            throw new IllegalArgumentException("invalid TLE: " + exception.getMessage(), exception);
+            throw new IllegalArgumentException("invalid TLE format: " + exception.getMessage(), exception);
         }
 
         var utc = runtime.timeScale("UTC");
