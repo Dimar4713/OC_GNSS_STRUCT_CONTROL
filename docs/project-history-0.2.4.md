@@ -42,12 +42,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #147 | merged | Reviewed GPS almanac authority: raw YUMA/SEM is reparsed by Orekit 13.1.7, selected by PRN, propagated with Orekit's GPS GNSS analytical propagator to the explicit target epoch, transformed to the selected inertial frame, and delegated to the existing force-model-consistent DSST mean authority. GLONASS remains preview-only and cannot reuse this path. |
 | #148 | merged | Operator-side GPS YUMA/SEM authority preview and immutable derived-scenario creation. The selected parent satellite is replaced only by the verified #147 Orekit GNSS→DSST mean result; source filename/SHA-256/format/PRN/authority are persisted in typed lineage; source and existing target YAML are never overwritten. GLONASS remains fail-closed. |
 | #149 | merged | Dedicated GLONASS almanac authority using explicit authority-ready labelled semantics, Orekit `GLONASSAlmanac` and `GLONASSAnalyticalPropagator`, followed by the existing DSST osculating-to-mean authority. Legacy `draconian_period_s` is never reinterpreted as `deltaT`; incomplete legacy records remain preview-only. |
+| #150 | merged | Operator-side strict GLONASS authority-source preview and immutable derived-scenario creation. Only authority-ready v1 input may call the accepted #149 Orekit path; the selected parent satellite alone receives the verified DSST mean result. Typed lineage records source SHA-256, slot and authority; parent and existing target YAML remain immutable. Legacy reduced-precision GLONASS preview remains non-promotable. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #150 | CI pending | Wire operator-side strict GLONASS authority-source preview and immutable derived-scenario creation. Only authority-ready v1 input may call the accepted #149 Orekit path; the selected parent satellite alone receives the verified DSST mean result. Typed lineage records source SHA-256, slot and authority; parent and existing target YAML remain immutable. Legacy reduced-precision GLONASS preview remains non-promotable. |
+No active merged-target PR at this checkpoint. Next slice is structural lineage hash validation review against existing scenarios and fixtures before any schema tightening.
 
 ## Current authority boundaries
 
@@ -69,19 +68,18 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #149 exact head: `1d4ac2e5ee7c8fc2f96f7158d65b4adcdd09f7b5`.
+- PR #150 exact head: `07f0eac98f4db129f516628f5f99d366ef2a50c8`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33415381271`;
-  - `preview-package-compat` run `33415381057`;
-  - `preview-0.2-package` run `33415381037`.
-- PR #149 merge commit: `833e3480b5df69716484cdff5160c2b35229a307`.
-- PR #150 exact-head evidence is pending.
+  - `ci` run `33419354025`;
+  - `preview-package-compat` run `33419354041`;
+  - `preview-0.2-package` run `33419353997`.
+- PR #150 merge commit: `4e2d43e73e5b70ef7a2a46d5b7a861432a17dcd3`.
+- The prior transient `verify_high_fidelity_run.py` teardown abort did not reproduce on the accepted exact head.
 
 ## Next incomplete work
 
-1. Complete exact-head acceptance of #150 GLONASS derived-scenario operator flow.
-2. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-3. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+2. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
