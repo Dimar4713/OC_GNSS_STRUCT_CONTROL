@@ -161,10 +161,11 @@ class ScenarioLineage(BaseModel):
         "manual_edit",
         "osculating_import",
         "norad_tle_import",
+        "gps_almanac_import",
         "propagated_state",
     ]
     random_seed: int | None = None
-    source_type: Literal["norad_tle"] | None = None
+    source_type: Literal["norad_tle", "gps_yuma", "gps_sem"] | None = None
     source_name: str | None = None
     source_sha256: str | None = None
     source_record_id: str | None = None
