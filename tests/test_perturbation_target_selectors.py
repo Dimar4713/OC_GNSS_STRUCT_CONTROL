@@ -15,3 +15,10 @@ def test_perturbation_targets_refresh_when_scenario_changes() -> None:
     assert "syncPerturbationTargets();" in PERTURBATION_SCRIPT
     assert "scope==='constellation'?[]" in PERTURBATION_SCRIPT
     assert "Select at least one target" in PERTURBATION_SCRIPT
+
+
+def test_perturbation_scope_has_no_implicit_constellation_default() -> None:
+    assert '<option value="">— выбрать область —</option><option value="constellation">' in PERTURBATION_SCRIPT
+    assert "if(scope==='')" in PERTURBATION_SCRIPT
+    assert "Select scope for every enabled row" in PERTURBATION_SCRIPT
+    assert "явных M, закона распределения и области применения" in PERTURBATION_CARD

@@ -35,7 +35,9 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next hardening slice: require an explicit perturbation scope selection in the packaged operator UI instead of implicitly selecting whole-constellation scope.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #140 | CI pending | Remove the remaining implicit whole-constellation scope from the Perturbation Designer UI. Every enabled rule requires an explicit scope selection; target controls stay disabled before that choice and empty scope fails closed before submission. |
 
 ## Current authority boundaries
 
@@ -54,18 +56,16 @@ No active merged-target PR at this checkpoint. Next hardening slice: require an 
   - `preview-package-compat` run `33387368360`;
   - `preview-0.2-package` run `33387368303`, including the real packaged clean-Windows launcher against a stale sidecar.
 - PR #138 merge commit: `ddedd1fba71631993096ebb76afaf6177d48e48b`.
-- Prior PR #137 merge commit: `796c9fc820834347b782e71ad352ba86f36efd9b`.
-- Project-history document introduced on main at `ae1573a7f8130a62fb3670061cb6119a14a8db02`; engineering hardening note checkpoint on main at `2a608c81c22bd78fdc30c7e17fc27034e3ef3674`.
+- PR #138 history checkpoint on main: `3eaaf913baede5d6f820f483ae82cfb2c41539e2`.
 
 ## Next incomplete work
 
-Priority order after PR #138 acceptance:
+Priority order after PR #140 acceptance:
 
-1. Remove the remaining implicit whole-constellation selection from the Perturbation Designer UI: scope must be an explicit operator choice; empty scope must fail closed before payload submission.
-2. Extend engineer input adapters beyond XLS/manual Walker/manual osculating flow: GNSS almanac and NORAD-family inputs, with explicit authority boundary before canonical mean elements are accepted.
-3. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
-4. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-5. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Extend engineer input adapters beyond XLS/manual Walker/manual osculating flow: GNSS almanac and NORAD-family inputs, with explicit authority boundary before canonical mean elements are accepted.
+2. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
+3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
