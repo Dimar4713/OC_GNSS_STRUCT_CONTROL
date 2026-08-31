@@ -24,6 +24,10 @@ from constellation_control.analysis.relative_operations import (
     analyze_relative_operations,
     forecast_phase_corridor,
 )
+from constellation_control.application.propellant_state import (
+    build_maneuver_resource_rows,
+    resolve_operational_satellites,
+)
 from constellation_control.domain.models import (
     ExperimentRunManifest,
     ForceMode,
@@ -276,12 +280,14 @@ def _build_resource_history(scenario: ScenarioConfig) -> pd.DataFrame:
 
 def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     scenario = load_scenario(scenario_path)
+    resources = pd.DataFrame(build_maneuver_resource_rows(scenario))
+    operational_satellites = resolve_operational_satellites(scenario)
     request = PropagationRequest(
         scenario_id=scenario.scenario_id,
         epoch=scenario.epoch,
         frame=scenario.frame,
         time_scale=scenario.time_scale,
-        satellites=scenario.constellation.satellites,
+        satellites=operational_satellites,
         maneuvers=scenario.maneuvers,
         duration_s=scenario.duration_s,
         output_step_s=scenario.output_step_s,
@@ -305,7 +311,6 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     navigation_geometry = _build_navigation_geometry(scenario, result)
     navigation_summary = _navigation_summary(navigation_geometry)
     representative_pdop = _representative_pdop(navigation_geometry)
-    resources = _build_resource_history(scenario)
 
     satellite_by_id = {sat.satellite_id: sat for sat in scenario.constellation.satellites}
     metrics = []
@@ -488,7 +493,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             "screening": "j2-first-order-v1",
             "navigation_geometry": "ellipsoid-ecef-enu-dop-v1",
             "earth_fixed_reporting": "simple-earth-rotation-z-v1",
-            "resource_accounting": "tsiolkovsky-v1",
+            "resource_accounting": "operational-sequential-tsiolkovsky-v2",
         },
     )
     summary = {
