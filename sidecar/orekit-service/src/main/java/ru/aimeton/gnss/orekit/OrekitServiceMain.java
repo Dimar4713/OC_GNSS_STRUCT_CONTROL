@@ -23,12 +23,16 @@ public final class OrekitServiceMain {
         int port = Integer.parseInt(System.getenv().getOrDefault("OREKIT_PORT", "8081"));
         OrekitRuntime runtime = new OrekitRuntime(Path.of(dataPath));
         PropagationEngine engine = new PropagationEngine(runtime);
+        MeanConversionEngine meanConversionEngine = new MeanConversionEngine(runtime);
         ObjectMapper mapper = mapper();
 
         InetSocketAddress bindAddress = new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port);
         HttpServer server = HttpServer.create(bindAddress, 32);
         server.createContext("/healthz", exchange -> handleHealth(exchange, mapper, runtime));
         server.createContext("/v1/propagate", exchange -> handlePropagate(exchange, mapper, engine));
+        server.createContext(
+                "/v1/orbits/osculating-to-mean",
+                exchange -> handleOsculatingToMean(exchange, mapper, meanConversionEngine));
         server.setExecutor(Executors.newFixedThreadPool(
                 Math.max(2, Runtime.getRuntime().availableProcessors())));
         server.start();
@@ -68,14 +72,12 @@ public final class OrekitServiceMain {
             return;
         }
         try {
-            byte[] body = exchange.getRequestBody().readNBytes(MAX_REQUEST_BYTES + 1);
-            if (body.length > MAX_REQUEST_BYTES) {
-                writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
-                return;
-            }
+            byte[] body = readBody(exchange);
             ApiModels.PropagationRequest request = mapper.readValue(body, ApiModels.PropagationRequest.class);
             ApiModels.PropagationResult result = engine.propagate(request);
             writeJson(exchange, mapper, 200, result);
+        } catch (RequestTooLargeException exception) {
+            writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
         } catch (IllegalArgumentException | UnsupportedOperationException exception) {
             writeJson(exchange, mapper, 422, Map.of(
                     "error", "invalid_propagation_request",
@@ -86,6 +88,42 @@ public final class OrekitServiceMain {
                     "error", "orekit_propagation_failed",
                     "detail", safeMessage(exception)));
         }
+    }
+
+    private static void handleOsculatingToMean(
+            HttpExchange exchange,
+            ObjectMapper mapper,
+            MeanConversionEngine engine) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
+            return;
+        }
+        try {
+            byte[] body = readBody(exchange);
+            ApiModels.OsculatingToMeanRequest request =
+                    mapper.readValue(body, ApiModels.OsculatingToMeanRequest.class);
+            ApiModels.MeanConversionResult result = engine.convert(request);
+            writeJson(exchange, mapper, 200, result);
+        } catch (RequestTooLargeException exception) {
+            writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
+        } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+            writeJson(exchange, mapper, 422, Map.of(
+                    "error", "invalid_mean_conversion_request",
+                    "detail", safeMessage(exception)));
+        } catch (Exception exception) {
+            exception.printStackTrace(System.err);
+            writeJson(exchange, mapper, 500, Map.of(
+                    "error", "orekit_mean_conversion_failed",
+                    "detail", safeMessage(exception)));
+        }
+    }
+
+    private static byte[] readBody(HttpExchange exchange) throws IOException, RequestTooLargeException {
+        byte[] body = exchange.getRequestBody().readNBytes(MAX_REQUEST_BYTES + 1);
+        if (body.length > MAX_REQUEST_BYTES) {
+            throw new RequestTooLargeException();
+        }
+        return body;
     }
 
     private static void writeJson(HttpExchange exchange, ObjectMapper mapper, int status, Object body)
@@ -113,4 +151,6 @@ public final class OrekitServiceMain {
         }
         return value;
     }
+
+    private static final class RequestTooLargeException extends Exception {}
 }
