@@ -33,12 +33,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #137 | merged | Explicit Walker/osculating engineering inputs: removed hidden orbital defaults, explicit argument of perigee/anomaly type, singularity guards and blank-input protection. |
 | #138 | merged | Hardened digital-twin perturbation contracts: typed canonical parameter registry, domain-level unit checks and stricter target-scope invariants without changing numerical authority or sampling semantics. |
 | #140 | merged | Perturbation Designer now requires explicit scope selection for every enabled rule; no implicit whole-constellation scope remains and empty scope fails closed in the packaged operator UI. |
+| #141 | merged | First NORAD-family intake slice: strict TLE and OMM JSON validation/normalization with source SHA-256 provenance. TLE/OMM remain explicitly typed as SGP4/NORAD mean elements and runnable promotion remains blocked until authoritative Orekit TLE/SGP4 conversion exists. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #141 | CI pending | First NORAD-family intake slice: strict TLE and OMM JSON validation/normalization with source SHA-256 provenance. TLE/OMM remain explicitly typed as SGP4/NORAD mean elements and cannot be promoted to a runnable scenario until an authoritative Orekit TLE/SGP4 conversion boundary exists. |
+No active merged-target PR at this checkpoint. Next slice is authoritative Orekit TLE/SGP4 propagation/conversion for reviewed NORAD inputs.
 
 ## Current authority boundaries
 
@@ -52,13 +51,13 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #140 exact head: `751705fa4b73c8c92bc73ff1b8233c041cfc58ae`.
+- PR #141 exact head: `d868f3b81ddd72d5fe0ebbacd4db00d4e1265046`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33389159950`;
-  - `preview-package-compat` run `33389159942`;
-  - `preview-0.2-package` run `33389159986`.
-- PR #140 merge commit: `1102ea44efa0a4dbb73472d16fdfc151188534f9`.
-- PR #140 history checkpoint on main: `9f1d24b86bf6f866a92ea536d2a4c884b4ecd133`.
+  - `ci` run `33396005051`;
+  - `preview-package-compat` run `33396005037`;
+  - `preview-0.2-package` run `33396005040`.
+- PR #141 merge commit: `a6b85db161084495699f9a5dd3b853e561d014bb`.
+- Prior PR #140 merge commit: `1102ea44efa0a4dbb73472d16fdfc151188534f9`.
 
 ## Next incomplete work
 
