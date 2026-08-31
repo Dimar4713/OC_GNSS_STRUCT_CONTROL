@@ -151,7 +151,7 @@ def _required_omm_number(payload: dict[str, object], key: str) -> float:
     if key not in payload:
         raise ValueError(f"OMM field {key} is required")
     try:
-        return float(payload[key])
+        return float(str(payload[key]))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"OMM field {key} must be numeric") from exc
 
@@ -180,7 +180,7 @@ def _parse_omm_object(payload: dict[str, object]) -> NoradMeanElements:
         argument_of_pericenter_deg=_required_omm_number(payload, "ARG_OF_PERICENTER"),
         mean_anomaly_deg=_required_omm_number(payload, "MEAN_ANOMALY"),
         mean_motion_rev_per_day=_required_omm_number(payload, "MEAN_MOTION"),
-        bstar=float(bstar_raw) if bstar_raw is not None else None,
+        bstar=float(str(bstar_raw)) if bstar_raw is not None else None,
         classification=str(payload["CLASSIFICATION_TYPE"]).strip() if payload.get("CLASSIFICATION_TYPE") else None,
         international_designator=str(payload["OBJECT_ID"]).strip() if payload.get("OBJECT_ID") else None,
         element_set_number=int(str(payload["ELEMENT_SET_NO"])) if payload.get("ELEMENT_SET_NO") is not None else None,
