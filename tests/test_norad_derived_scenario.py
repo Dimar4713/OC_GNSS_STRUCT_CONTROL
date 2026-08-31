@@ -22,7 +22,7 @@ LINE2 = "2 25544  51.6400 123.4567 0005000  10.0000 350.0000 15.50000000123456"
 TLE = f"ISS (ZARYA)\n{LINE1}\n{LINE2}\n"
 
 
-def _scenario_root(tmp_path: Path, *, epoch: str = "2024-01-01T12:00:00Z") -> Path:
+def _scenario_root(tmp_path: Path, *, epoch: str = "2026-01-01T00:00:00Z") -> Path:
     source = Path("scenarios/orekit_design_smoke.yaml").read_text(encoding="utf-8")
     source = source.replace("2026-01-01T00:00:00Z", epoch)
     root = tmp_path / "scenarios"
@@ -31,9 +31,21 @@ def _scenario_root(tmp_path: Path, *, epoch: str = "2024-01-01T12:00:00Z") -> Pa
     return root
 
 
-def _fake_convert(self, *, line1, line2, frame, spacecraft, force_model):  # noqa: ANN001, ANN202
+def _fake_convert(  # noqa: ANN202
+    self,  # noqa: ANN001
+    *,
+    line1,
+    line2,
+    frame,
+    target_epoch,
+    target_time_scale,
+    spacecraft,
+    force_model,
+):  # noqa: ANN001
     assert line1 == LINE1
     assert line2 == LINE2
+    assert target_epoch.isoformat().startswith("2026-01-01T00:00:00")
+    assert target_time_scale.value == "UTC"
     return MeanConversionResult(
         mean_orbit=MeanOrbit(
             a_m=6_800_000.0,
@@ -52,14 +64,16 @@ def _fake_convert(self, *, line1, line2, frame, spacecraft, force_model):  # noq
             "backend": "orekit-dsst-mean-conversion",
             "source_authority": "NORAD-TLE-SGP4",
             "sgp4_frame": "TEME",
-            "sgp4_epoch": "2024-01-01T12:00:00.000Z",
+            "tle_epoch": "2024-01-01T12:00:00.000Z",
+            "sgp4_target_epoch": "2026-01-01T00:00:00.000Z",
+            "sgp4_target_time_scale": "UTC",
             "norad_satellite_number": "25544",
-            "conversion_chain": "TLE->Orekit-SGP4/TEME->osculating-PV->inertial-frame->Orekit-DSST-mean",
+            "conversion_chain": "TLE->Orekit-SGP4/TEME@target-epoch->osculating-PV->inertial-frame->Orekit-DSST-mean",
         },
     )
 
 
-def test_creates_immutable_tle_derived_scenario_with_provenance(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+def test_creates_immutable_tle_derived_scenario_at_parent_epoch_with_provenance(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
     root = _scenario_root(tmp_path)
     monkeypatch.setattr(OrekitTleMeanConversionClient, "convert", _fake_convert)
     source_before = (root / "source.yaml").read_text(encoding="utf-8")
@@ -94,28 +108,22 @@ def test_creates_immutable_tle_derived_scenario_with_provenance(tmp_path: Path, 
     assert lineage.source_sha256 == result["source_sha256"]
 
 
-def test_blocks_tle_when_epoch_differs_from_parent(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+def test_tle_epoch_may_differ_when_authority_targets_parent_epoch(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
     root = _scenario_root(tmp_path, epoch="2026-01-01T00:00:00Z")
-    called = False
-
-    def should_not_convert(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
-        nonlocal called
-        called = True
-        raise AssertionError("authority must not be called for epoch mismatch")
-
-    monkeypatch.setattr(OrekitTleMeanConversionClient, "convert", should_not_convert)
-    with pytest.raises(ValueError, match="TLE epoch does not match parent scenario epoch"):
-        preview_norad_authority(
-            root,
-            NoradAuthorityRequest(
-                filename="iss.tle",
-                content_text=TLE,
-                source_scenario_name="source.yaml",
-                satellite_id="SYNTH-REF",
-                norad_satellite_number=25544,
-            ),
-        )
-    assert called is False
+    monkeypatch.setattr(OrekitTleMeanConversionClient, "convert", _fake_convert)
+    result = preview_norad_authority(
+        root,
+        NoradAuthorityRequest(
+            filename="iss.tle",
+            content_text=TLE,
+            source_scenario_name="source.yaml",
+            satellite_id="SYNTH-REF",
+            norad_satellite_number=25544,
+        ),
+    )
+    assert result["tle_epoch_utc"].startswith("2024-01-01T12:00:00")
+    assert result["target_scenario_epoch"].startswith("2026-01-01T00:00:00")
+    assert result["backend_metadata"]["sgp4_target_time_scale"] == "UTC"
 
 
 def test_omm_remains_fail_closed_for_derived_scenario(tmp_path: Path) -> None:
