@@ -32,12 +32,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #136 | merged | Completed-run promotion wired into packaged operator UI; successful runs persist exact `propagation_result.json`. |
 | #137 | merged | Explicit Walker/osculating engineering inputs: removed hidden orbital defaults, explicit argument of perigee/anomaly type, singularity guards and blank-input protection. |
 | #138 | merged | Hardened digital-twin perturbation contracts: typed canonical parameter registry, domain-level unit checks and stricter target-scope invariants without changing numerical authority or sampling semantics. |
+| #140 | merged | Perturbation Designer now requires explicit scope selection for every enabled rule; no implicit whole-constellation scope remains and empty scope fails closed in the packaged operator UI. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #140 | CI pending | Remove the remaining implicit whole-constellation scope from the Perturbation Designer UI. Every enabled rule requires an explicit scope selection; target controls stay disabled before that choice and empty scope fails closed before submission. |
+No active merged-target PR at this checkpoint. Next engineering slice is input-adapter expansion beyond XLS/manual Walker/manual osculating flows.
 
 ## Current authority boundaries
 
@@ -50,13 +49,13 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #138 exact head: `6b97b599f518aedc75884a6fbd0ae0e71662d522`.
+- PR #140 exact head: `751705fa4b73c8c92bc73ff1b8233c041cfc58ae`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33387368299`;
-  - `preview-package-compat` run `33387368360`;
-  - `preview-0.2-package` run `33387368303`, including the real packaged clean-Windows launcher against a stale sidecar.
-- PR #138 merge commit: `ddedd1fba71631993096ebb76afaf6177d48e48b`.
-- PR #138 history checkpoint on main: `3eaaf913baede5d6f820f483ae82cfb2c41539e2`.
+  - `ci` run `33389159950`;
+  - `preview-package-compat` run `33389159942`;
+  - `preview-0.2-package` run `33389159986`.
+- PR #140 merge commit: `1102ea44efa0a4dbb73472d16fdfc151188534f9`.
+- Prior PR #138 merge commit: `ddedd1fba71631993096ebb76afaf6177d48e48b`.
 
 ## Next incomplete work
 
