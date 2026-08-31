@@ -36,16 +36,19 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next engineering slice is input-adapter expansion beyond XLS/manual Walker/manual osculating flows.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #141 | CI pending | First NORAD-family intake slice: strict TLE and OMM JSON validation/normalization with source SHA-256 provenance. TLE/OMM remain explicitly typed as SGP4/NORAD mean elements and cannot be promoted to a runnable scenario until an authoritative Orekit TLE/SGP4 conversion boundary exists. |
 
 ## Current authority boundaries
 
 1. Screening is not design/validation authority.
 2. High-fidelity osculating-to-mean conversion is Orekit/DSST-only and fails closed if authority/fingerprints mismatch.
 3. Perturbations act on the canonical mean-element representation and never silently reinterpret osculating inputs.
-4. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
-5. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
-6. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+4. NORAD TLE/OMM elements are SGP4 mean elements; they are not osculating Keplerian elements and are not canonical project MeanOrbit values. Runnable promotion is blocked until reviewed Orekit TLE/SGP4 authority exists.
+5. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
+6. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+7. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
 
 ## Current main evidence checkpoint
 
@@ -55,16 +58,17 @@ No active merged-target PR at this checkpoint. Next engineering slice is input-a
   - `preview-package-compat` run `33389159942`;
   - `preview-0.2-package` run `33389159986`.
 - PR #140 merge commit: `1102ea44efa0a4dbb73472d16fdfc151188534f9`.
-- Prior PR #138 merge commit: `ddedd1fba71631993096ebb76afaf6177d48e48b`.
+- PR #140 history checkpoint on main: `9f1d24b86bf6f866a92ea536d2a4c884b4ecd133`.
 
 ## Next incomplete work
 
-Priority order after PR #140 acceptance:
+Priority order after PR #141 acceptance:
 
-1. Extend engineer input adapters beyond XLS/manual Walker/manual osculating flow: GNSS almanac and NORAD-family inputs, with explicit authority boundary before canonical mean elements are accepted.
-2. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
-3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Add authoritative Orekit TLE/SGP4 propagation/conversion and only then permit NORAD input to produce immutable derived scenarios.
+2. Add GNSS almanac-family adapters (YUMA/SEM and GLONASS almanac first) with format-specific authority semantics.
+3. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
+4. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+5. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
