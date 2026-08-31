@@ -183,6 +183,16 @@ class ScenarioLineage(BaseModel):
     source_record_id: str | None = None
     authority: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def infer_integrity_version(cls, data: object) -> object:
+        if not isinstance(data, dict) or "integrity_version" in data:
+            return data
+        parent_hash = data.get("parent_config_hash")
+        if isinstance(parent_hash, str) and _is_sha256_hex(parent_hash):
+            return {**data, "integrity_version": 1}
+        return data
+
     @model_validator(mode="after")
     def validate_integrity_and_source_provenance(self) -> ScenarioLineage:
         if self.integrity_version == 1 and not _is_sha256_hex(self.parent_config_hash):
