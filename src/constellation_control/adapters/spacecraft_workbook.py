@@ -50,6 +50,16 @@ def _required_text(row: pd.Series, name: str) -> str:
     return str(value).strip()
 
 
+def _required_float(row: pd.Series, name: str) -> float:
+    value = _optional(row, name)
+    if value is None:
+        raise ValueError(f"required workbook value is empty: {name}")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"required workbook value must be numeric: {name}") from exc
+
+
 def _require_columns(frame: pd.DataFrame, required: set[str], sheet: str) -> None:
     missing = sorted(required - set(frame.columns))
     if missing:
@@ -93,8 +103,8 @@ def _states(frame: pd.DataFrame) -> tuple[SpacecraftOperationalState, ...]:
                 SpacecraftOperationalState(
                     satellite_id=_required_text(row, "satellite_id"),
                     spacecraft_model_id=_optional(row, "spacecraft_model_id"),
-                    dry_mass_kg=_optional(row, "dry_mass_kg"),
-                    current_propellant_mass_kg=_optional(row, "current_propellant_mass_kg"),
+                    dry_mass_kg=_required_float(row, "dry_mass_kg"),
+                    current_propellant_mass_kg=_required_float(row, "current_propellant_mass_kg"),
                     propellant_capacity_kg=_optional(row, "propellant_capacity_kg"),
                     current_mass_kg=_optional(row, "current_mass_kg"),
                     propulsion=_propulsion(row),
