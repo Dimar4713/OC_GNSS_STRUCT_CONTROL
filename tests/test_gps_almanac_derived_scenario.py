@@ -11,7 +11,7 @@ from constellation_control.adapters.orekit.mean_conversion import (
 )
 from constellation_control.application.run import load_scenario
 from constellation_control.domain.models import MeanElementDefinition, MeanOrbit
-from constellation_control.preview.gps_almanac_promotion import (
+from constellation_control.preview.gnss_almanac_input import (
     GpsAlmanacAuthorityRequest,
     GpsAlmanacCreateRequest,
     create_gps_almanac_derived_scenario,
@@ -144,12 +144,24 @@ def test_preview_attests_parent_epoch_and_authority(tmp_path: Path, monkeypatch)
 
 def test_glonass_is_rejected_by_gps_promotion_path(tmp_path: Path) -> None:
     root = _scenario_root(tmp_path)
-    with pytest.raises(ValueError, match="only GPS YUMA/SEM"):
+    glonass = """Slot: 1
+Frequency channel: -7
+Health: 0
+Reference day: 1
+Reference time(s): 0
+Lambda(rad): 0.1
+Delta i(rad): 0.01
+Eccentricity: 0.001
+Argument of perigee(rad): 0.2
+Draconian period(s): 40544
+Draconian period rate(s/orbit): 0
+"""
+    with pytest.raises(ValueError, match="GLONASS remains preview-only"):
         preview_gps_almanac_authority(
             root,
             GpsAlmanacAuthorityRequest(
                 filename="glo.txt",
-                content_text="Slot: 1",
+                content_text=glonass,
                 source_format=GnssAlmanacFormat.GLONASS_TEXT,
                 source_scenario_name="source.yaml",
                 satellite_id="SYNTH-REF",
