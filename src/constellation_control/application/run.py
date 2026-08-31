@@ -534,4 +534,8 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         json.dumps(scenario.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    (run_dir / "propagation_result.json").write_text(
+        result.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
     return run_dir
