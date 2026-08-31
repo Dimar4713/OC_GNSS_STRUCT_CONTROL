@@ -52,10 +52,13 @@ class SpacecraftSystemsCatalog(BaseModel):
     def validate_ids(self) -> SpacecraftSystemsCatalog:
         propulsion_ids = [item.model_id for item in self.propulsion]
         correction_ids = [item.model_id for item in self.correction]
+        correction_types = [item.system_type for item in self.correction]
         if len(propulsion_ids) != len(set(propulsion_ids)):
             raise ValueError("propulsion catalog model_id values must be unique")
         if len(correction_ids) != len(set(correction_ids)):
             raise ValueError("correction catalog model_id values must be unique")
+        if len(correction_types) != len(set(correction_types)):
+            raise ValueError("correction catalog system_type values must be unique for unambiguous legacy binding")
         return self
 
 
@@ -77,7 +80,7 @@ def validate_operational_systems(
     states: tuple[SpacecraftOperationalState, ...], catalog: SpacecraftSystemsCatalog
 ) -> tuple[CatalogValidationFinding, ...]:
     propulsion_by_id = {item.model_id: item for item in catalog.propulsion}
-    correction_by_id = {item.model_id: item for item in catalog.correction}
+    correction_by_type = {item.system_type: item for item in catalog.correction}
     findings: list[CatalogValidationFinding] = []
 
     for state in states:
@@ -111,23 +114,15 @@ def validate_operational_systems(
         correction = state.correction_system
         if correction is not None:
             issues = []
-            model_id = correction.model_id
-            if not model_id:
-                issues.append("correction_system.model_id is required for catalog validation")
-                entry_c = None
-            else:
-                entry_c = correction_by_id.get(model_id)
-                if entry_c is None:
-                    issues.append("correction model_id is absent from catalog")
-            if entry_c is not None:
-                if correction.system_type != entry_c.system_type:
-                    issues.append("correction system_type does not match catalog")
-                if correction.mode is not None and entry_c.allowed_modes and correction.mode not in entry_c.allowed_modes:
-                    issues.append("correction mode is not allowed by catalog")
+            entry_c = correction_by_type.get(correction.system_type)
+            if entry_c is None:
+                issues.append("correction system_type is absent from catalog")
+            elif correction.mode is not None and entry_c.allowed_modes and correction.mode not in entry_c.allowed_modes:
+                issues.append("correction mode is not allowed by catalog")
             findings.append(CatalogValidationFinding(
                 satellite_id=state.satellite_id,
                 system_kind="correction",
-                model_id=model_id,
+                model_id=None if entry_c is None else entry_c.model_id,
                 valid=not issues,
                 issues=tuple(issues),
             ))
