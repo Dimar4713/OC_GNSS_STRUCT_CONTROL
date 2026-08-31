@@ -135,7 +135,7 @@ def test_preview_attests_slot_and_authority(tmp_path: Path, monkeypatch) -> None
 
 def test_legacy_preview_format_cannot_enter_authority_flow(tmp_path: Path) -> None:
     root = _scenario_root(tmp_path)
-    with pytest.raises(ValueError, match="missing fields"):
+    with pytest.raises(ValueError) as exc_info:
         preview_glonass_authority(
             root,
             GlonassAuthorityRequest(
@@ -146,6 +146,7 @@ def test_legacy_preview_format_cannot_enter_authority_flow(tmp_path: Path) -> No
                 slot=1,
             ),
         )
+    assert "GLONASS authority" in str(exc_info.value)
 
 
 def test_existing_target_is_never_overwritten(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
