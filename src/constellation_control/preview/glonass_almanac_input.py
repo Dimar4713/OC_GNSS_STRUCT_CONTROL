@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from constellation_control.adapters.glonass_almanac_authority import (
     GlonassAuthorityRecord,
+    GlonassAuthoritySource,
     parse_glonass_authority_source,
 )
 from constellation_control.adapters.orekit.mean_conversion import OrekitGlonassAlmanacMeanConversionClient
@@ -16,9 +17,12 @@ from constellation_control.domain.digital_twin import DigitalTwinConfig, Scenari
 from constellation_control.domain.models import ScenarioConfig
 
 
-class GlonassAuthorityRequest(BaseModel):
+class GlonassSourcePreviewRequest(BaseModel):
     filename: str
     content_text: str
+
+
+class GlonassAuthorityRequest(GlonassSourcePreviewRequest):
     source_scenario_name: str
     satellite_id: str
     slot: int
@@ -39,7 +43,7 @@ def _source(root: Path, request: GlonassAuthorityRequest):
     return source, satellite
 
 
-def _record(request: GlonassAuthorityRequest) -> tuple[object, GlonassAuthorityRecord]:
+def _record(request: GlonassAuthorityRequest) -> tuple[GlonassAuthoritySource, GlonassAuthorityRecord]:
     parsed = parse_glonass_authority_source(request.filename, request.content_text)
     record = next((item for item in parsed.records if item.slot == request.slot), None)
     if record is None:
@@ -188,17 +192,7 @@ async function createGlonassScenario(){let base;try{base=glonassAuthorityPayload
 
 def install_glonass_almanac_routes(app: FastAPI, scenario_root: Path = Path("scenarios")) -> None:
     @app.post("/api/glonass-almanac/source-preview")
-    def source_preview(request: BaseModel) -> dict[str, object]:
-        raise AssertionError("unreachable")
-
-    app.router.routes.pop()
-
-    class SourceRequest(BaseModel):
-        filename: str
-        content_text: str
-
-    @app.post("/api/glonass-almanac/source-preview")
-    def source_preview_typed(request: SourceRequest) -> dict[str, object]:
+    def source_preview(request: GlonassSourcePreviewRequest) -> dict[str, object]:
         try:
             return parse_glonass_authority_source(request.filename, request.content_text).model_dump(mode="json")
         except (ValueError, TypeError) as exc:
