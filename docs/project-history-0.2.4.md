@@ -37,12 +37,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #142 | merged | Authoritative TLE conversion boundary: Orekit 13.1.7 validates raw TLE, selects SGP4/SDP4 in explicit TEME, evaluates osculating PV at the TLE epoch, transforms to selected Earth-centered inertial frame, and delegates to the existing force-model-consistent Orekit DSST osculating-to-mean authority. OMM remains fail-closed. |
 | #143 | merged | Consolidated operator TLE authority flow and immutable derived-scenario creation. Raw TLE is promoted only after verified Orekit SGP4/TEME→DSST authority, parent YAML is never overwritten, NORAD source SHA/record/authority are persisted in lineage, and epoch mismatch fails closed. OMM remains blocked. |
 | #144 | merged | TLE authority extended to an explicit target epoch/time scale. Orekit SGP4/SDP4 propagates in TEME from the TLE source epoch to the parent scenario epoch, transforms the target-epoch osculating PV to the selected inertial frame, then delegates to the existing force-model-consistent DSST mean authority. The exact-epoch usability restriction is removed without mixing constellation epochs. OMM remains blocked. |
+| #145 | merged | Strict preview-only GNSS almanac intake for GPS YUMA, GPS SEM and labelled GLONASS interchange text. YUMA radian semantics and SEM semicircle/inclination-offset semantics are preserved explicitly; source SHA-256/provenance is retained; duplicate/malformed records fail closed; no almanac record is silently promoted into canonical MeanOrbit or runnable scenario. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #145 | CI pending | Add strict preview-only GNSS almanac intake for GPS YUMA, GPS SEM and labelled GLONASS interchange text. YUMA radian semantics and SEM semicircle/inclination-offset semantics are preserved explicitly; source SHA-256/provenance is retained; duplicate/malformed records fail closed; no almanac record is silently promoted into canonical MeanOrbit or runnable scenario. |
+No active merged-target PR at this checkpoint. Next slice is propulsion/correction-system catalog semantics tied to existing operational mass/fuel accounting.
 
 ## Current authority boundaries
 
@@ -54,25 +53,26 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
 7. GNSS almanac/broadcast inputs remain format-specific source representations. YUMA angles are radians; SEM angular quantities are semicircles and SEM inclination is an offset from 0.30 semicircle. GLONASS labelled-text intake is an explicit interchange format, not a decoder of raw navigation strings. None is canonical project mean-element authority by declaration.
 8. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
-9. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
-10. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+9. Propulsion/correction-system metadata must remain attached to per-spacecraft operational state and maneuver semantics; catalog data may validate/configure that state but must not create a detached mass or fuel authority.
+10. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+11. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
 
 ## Current main evidence checkpoint
 
-- PR #144 exact head: `c4ef684dd1bc028eb1865d32fb868b955682d9d1`.
+- PR #145 exact head: `8d8a36c43f768bfb8068c8c42c8ca140cc56079d`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33403572343`;
-  - `preview-package-compat` run `33403572296`;
-  - `preview-0.2-package` run `33403572295`.
-- PR #144 merge commit: `efc89160c3f50f7247e31a7139913c24b4c2b6f1`.
-- PR #145 evidence is pending on its exact head.
+  - `ci` run `33408064939`;
+  - `preview-package-compat` run `33408064896`;
+  - `preview-0.2-package` run `33408064889`.
+- PR #145 merge commit: `aa222830ef699d3ca52c56990723061cd476a744`.
+- Prior PR #144 merge commit: `efc89160c3f50f7247e31a7139913c24b4c2b6f1`.
 
 ## Next incomplete work
 
 Priority order after PR #145 acceptance:
 
-1. Add reviewed propagation/conversion authority for supported GNSS almanac families before any runnable promotion; raw almanac records remain preview-only until then.
-2. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
+1. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
+2. Add reviewed propagation/conversion authority for supported GNSS almanac families before any runnable promotion; raw almanac records remain preview-only until then.
 3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
 4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
