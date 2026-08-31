@@ -202,7 +202,7 @@ async function createGpsAlmanacScenario(){let base;try{base=gpsAlmanacAuthorityP
 """
 
 
-def install_gnss_almanac_routes(app: FastAPI, scenario_root: Path) -> None:
+def install_gnss_almanac_routes(app: FastAPI, scenario_root: Path = Path("scenarios")) -> None:
     @app.post("/api/gnss-almanac/preview")
     def preview(request: GnssAlmanacPreviewRequest) -> dict[str, object]:
         try:
