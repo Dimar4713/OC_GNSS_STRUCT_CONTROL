@@ -139,18 +139,18 @@ def apply_perturbation_rules(
     for satellite in source.constellation.satellites:
         elements = mean_to_classical(satellite.mean_orbit)
         for parameter in _SUPPORTED_PARAMETERS:
-            rule = _selected_rule(rules, satellite, twin, parameter)
-            if rule is None:
+            selected_rule = _selected_rule(rules, satellite, twin, parameter)
+            if selected_rule is None:
                 continue
-            delta = _sample(seed, satellite.satellite_id, rule)
+            delta = _sample(seed, satellite.satellite_id, selected_rule)
             elements = _replace_parameter(elements, parameter, delta)
             applied.append(
                 AppliedPerturbation(
-                    rule_id=rule.rule_id,
+                    rule_id=selected_rule.rule_id,
                     satellite_id=satellite.satellite_id,
                     parameter=parameter,
                     sampled_delta=delta,
-                    unit=rule.unit,
+                    unit=selected_rule.unit,
                 )
             )
         satellites.append(
