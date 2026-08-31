@@ -94,6 +94,10 @@ final class OrekitRuntime {
         };
     }
 
+    Frame temeFrame() {
+        return context.getFrames().getTEME();
+    }
+
     Frame bodyFixedFrame() {
         return context.getFrames().getITRF(IERSConventions.IERS_2010, false);
     }
