@@ -21,9 +21,10 @@ class WalkerDeltaRequest(BaseModel):
     phasing: int = Field(ge=0)
     semi_major_axis_m: float = Field(gt=0.0)
     eccentricity: float = Field(ge=0.0, lt=1.0)
-    inclination_deg: float = Field(ge=0.0, le=180.0)
-    raan0_deg: float = 0.0
-    mean_anomaly0_deg: float = 0.0
+    inclination_deg: float = Field(ge=0.0, lt=180.0)
+    raan0_deg: float
+    argument_of_perigee_deg: float
+    mean_anomaly0_deg: float
 
     @model_validator(mode="after")
     def validate_walker(self) -> WalkerDeltaRequest:
@@ -53,17 +54,17 @@ def _equinoctial_mean_orbit(
     e: float,
     i_rad: float,
     raan_rad: float,
+    argument_of_perigee_rad: float,
     mean_anomaly_rad: float,
     force_fingerprint: str,
 ) -> MeanOrbit:
-    # Walker input uses circular/near-circular project geometry. Argument of perigee is fixed at zero;
-    # longitude of perigee therefore equals RAAN, and mean longitude is RAAN + M.
-    ex = e * math.cos(raan_rad)
-    ey = e * math.sin(raan_rad)
+    longitude_of_perigee = raan_rad + argument_of_perigee_rad
+    ex = e * math.cos(longitude_of_perigee)
+    ey = e * math.sin(longitude_of_perigee)
     t = math.tan(i_rad / 2.0)
     ix = t * math.cos(raan_rad)
     iy = t * math.sin(raan_rad)
-    lam = (raan_rad + mean_anomaly_rad) % (2.0 * math.pi)
+    lam = (longitude_of_perigee + mean_anomaly_rad) % (2.0 * math.pi)
     return MeanOrbit(
         a_m=a_m,
         ex=ex,
@@ -88,6 +89,7 @@ def build_walker_constellation(source: ScenarioConfig, request: WalkerDeltaReque
     satellites: list[SatelliteSpec] = []
     planes: list[PlaneSpec] = []
     first_id = "W-P01-S01"
+    argument_of_perigee_rad = math.radians(request.argument_of_perigee_deg)
 
     for plane_index in range(request.planes):
         plane_id = f"W-P{plane_index + 1:02d}"
@@ -112,6 +114,7 @@ def build_walker_constellation(source: ScenarioConfig, request: WalkerDeltaReque
                         e=request.eccentricity,
                         i_rad=math.radians(request.inclination_deg),
                         raan_rad=math.radians(raan_deg % 360.0),
+                        argument_of_perigee_rad=argument_of_perigee_rad,
                         mean_anomaly_rad=math.radians(mean_anomaly_deg % 360.0),
                         force_fingerprint=force_fingerprint,
                     ),

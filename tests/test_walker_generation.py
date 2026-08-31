@@ -21,6 +21,7 @@ def _request(**overrides: object) -> WalkerDeltaRequest:
         "eccentricity": 0.001,
         "inclination_deg": 64.8,
         "raan0_deg": 10.0,
+        "argument_of_perigee_deg": 0.0,
         "mean_anomaly0_deg": 20.0,
     }
     payload.update(overrides)
