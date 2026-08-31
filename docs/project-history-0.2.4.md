@@ -35,12 +35,11 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #140 | merged | Perturbation Designer now requires explicit scope selection for every enabled rule; no implicit whole-constellation scope remains and empty scope fails closed in the packaged operator UI. |
 | #141 | merged | First NORAD-family intake slice: strict TLE and OMM JSON validation/normalization with source SHA-256 provenance. TLE/OMM remain explicitly typed as SGP4/NORAD mean elements and runnable promotion remains blocked until authoritative Orekit TLE/SGP4 conversion exists. |
 | #142 | merged | Authoritative TLE conversion boundary: Orekit 13.1.7 validates raw TLE, selects SGP4/SDP4 in explicit TEME, evaluates osculating PV at the TLE epoch, transforms to selected Earth-centered inertial frame, and delegates to the existing force-model-consistent Orekit DSST osculating-to-mean authority. OMM remains fail-closed. |
+| #143 | merged | Consolidated operator TLE authority flow and immutable derived-scenario creation. Raw TLE is promoted only after verified Orekit SGP4/TEME→DSST authority, parent YAML is never overwritten, NORAD source SHA/record/authority are persisted in lineage, and epoch mismatch fails closed. OMM remains blocked. |
 
 ## Active change
 
-| PR | Status | Engineering increment |
-|---|---|---|
-| #143 | CI pending | Consolidated operator TLE authority flow and immutable derived-scenario creation. Raw TLE is promoted only after verified Orekit SGP4/TEME→DSST authority, parent YAML is never overwritten, NORAD source SHA/record/authority are persisted in lineage, and epoch mismatch fails closed. OMM remains blocked. |
+No active merged-target PR at this checkpoint. Next slice is target-epoch TLE authority so a reviewed TLE can be propagated to the explicit parent scenario epoch without mixed-epoch state.
 
 ## Current authority boundaries
 
@@ -48,7 +47,7 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 2. High-fidelity osculating-to-mean conversion is Orekit/DSST-only and fails closed if authority/fingerprints mismatch.
 3. Perturbations act on the canonical mean-element representation and never silently reinterpret osculating inputs.
 4. NORAD TLE elements may reach canonical MeanOrbit only through the explicit chain `TLE -> Orekit SGP4/SDP4 TEME -> osculating PV -> selected inertial frame -> Orekit DSST mean`; raw TLE values are never relabelled as canonical elements.
-5. PR #143 additionally requires the selected TLE epoch to match the parent scenario epoch before replacing a satellite state; mixed-epoch constellation scenarios are rejected.
+5. PR #143 requires the selected TLE epoch to match the parent scenario epoch before replacing a satellite state; mixed-epoch constellation scenarios are rejected.
 6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
 7. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
 8. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
@@ -56,13 +55,13 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Current main evidence checkpoint
 
-- PR #142 exact head: `f48ffc660a41a89f87f3d5451723a6f2cb1f58b7`.
+- PR #143 exact head: `1fea94e1b906a79b666d5cc1c36dedc5c0b10ee0`.
 - Exact-head required workflows all terminal success:
-  - `ci` run `33398296239`;
-  - `preview-package-compat` run `33398296258`;
-  - `preview-0.2-package` run `33398296228`.
-- PR #142 merge commit: `b06835223d6843945c907750ca82229e6bcfe382`.
-- PR #143 evidence is pending on its exact head.
+  - `ci` run `33400824359`;
+  - `preview-package-compat` run `33400824360`;
+  - `preview-0.2-package` run `33400824350`.
+- PR #143 merge commit: `41e1027adc3f2513beb345809bf633fe7790067d`.
+- Prior PR #142 merge commit: `b06835223d6843945c907750ca82229e6bcfe382`.
 
 ## Next incomplete work
 
