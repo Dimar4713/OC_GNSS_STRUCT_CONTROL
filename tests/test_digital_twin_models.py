@@ -61,7 +61,7 @@ def test_gaussian_rule_requires_sigma() -> None:
     with pytest.raises(ValidationError, match="requires sigma"):
         PerturbationRule(
             rule_id="r1",
-            parameter="semi_major_axis",
+            parameter="a_m",
             distribution=PerturbationDistribution.GAUSSIAN,
             scope=PerturbationScope.CONSTELLATION,
             mean=0.0,
@@ -87,7 +87,7 @@ def test_group_and_individual_targets_validate_against_constellation() -> None:
         perturbations=(
             PerturbationRule(
                 rule_id="group-a",
-                parameter="raan",
+                parameter="raan_rad",
                 distribution=PerturbationDistribution.GAUSSIAN,
                 scope=PerturbationScope.GROUP,
                 target_ids=("type-1",),
@@ -97,7 +97,7 @@ def test_group_and_individual_targets_validate_against_constellation() -> None:
             ),
             PerturbationRule(
                 rule_id="sat-a",
-                parameter="semi_major_axis",
+                parameter="a_m",
                 distribution=PerturbationDistribution.UNIFORM,
                 scope=PerturbationScope.SATELLITE,
                 target_ids=(first,),
@@ -120,7 +120,7 @@ def test_unknown_spacecraft_target_fails_closed() -> None:
         perturbations=(
             PerturbationRule(
                 rule_id="bad-target",
-                parameter="inclination",
+                parameter="i_rad",
                 distribution=PerturbationDistribution.GAUSSIAN,
                 scope=PerturbationScope.SATELLITE,
                 target_ids=("UNKNOWN-SAT",),
