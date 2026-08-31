@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -39,6 +40,22 @@ def _gps_record(preview, prn: int):
     return record
 
 
+def _gps_source_format(source_format: GnssAlmanacFormat) -> Literal["gps-yuma", "gps-sem"]:
+    if source_format == GnssAlmanacFormat.GPS_YUMA:
+        return "gps-yuma"
+    if source_format == GnssAlmanacFormat.GPS_SEM:
+        return "gps-sem"
+    raise ValueError("GLONASS remains preview-only and cannot use GPS almanac authority")
+
+
+def _lineage_source_type(source_format: GnssAlmanacFormat) -> Literal["gps_yuma", "gps_sem"]:
+    if source_format == GnssAlmanacFormat.GPS_YUMA:
+        return "gps_yuma"
+    if source_format == GnssAlmanacFormat.GPS_SEM:
+        return "gps_sem"
+    raise ValueError("GLONASS remains preview-only and cannot use GPS almanac authority")
+
+
 def _source(root: Path, request: GpsAlmanacAuthorityRequest):
     source = load_scenario(root / request.source_scenario_name)
     satellite = next((item for item in source.constellation.satellites if item.satellite_id == request.satellite_id), None)
@@ -54,7 +71,7 @@ def _authority(root: Path, request: GpsAlmanacAuthorityRequest):
     record = _gps_record(preview, request.prn)
     source, satellite = _source(root, request)
     result = OrekitGpsAlmanacMeanConversionClient(source.orekit_sidecar_url).convert(
-        source_format=request.source_format.value,
+        source_format=_gps_source_format(request.source_format),
         source_name=preview.source_filename,
         source_text=request.content_text,
         prn=request.prn,
@@ -111,7 +128,7 @@ def create_gps_almanac_derived_scenario(root: Path, request: GpsAlmanacCreateReq
     )
     constellation = source.constellation.model_copy(update={"satellites": satellites})
     prior_twin = source.digital_twin or DigitalTwinConfig()
-    source_type = "gps_yuma" if preview.source_format == GnssAlmanacFormat.GPS_YUMA else "gps_sem"
+    source_type = _lineage_source_type(preview.source_format)
     digital_twin = prior_twin.model_copy(
         update={
             "lineage": ScenarioLineage(
