@@ -45,7 +45,9 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next slice is operator-side immutable GLONASS derived-scenario creation, followed by structural lineage hash validation review.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #150 | CI pending | Wire operator-side strict GLONASS authority-source preview and immutable derived-scenario creation. Only authority-ready v1 input may call the accepted #149 Orekit path; the selected parent satellite alone receives the verified DSST mean result. Typed lineage records source SHA-256, slot and authority; parent and existing target YAML remain immutable. Legacy reduced-precision GLONASS preview remains non-promotable. |
 
 ## Current authority boundaries
 
@@ -59,10 +61,11 @@ No active merged-target PR at this checkpoint. Next slice is operator-side immut
 8. GPS almanac derived scenarios may be created only from a verified #147 sidecar attestation. Source scenario overwrite and target overwrite are forbidden; lineage preserves source format, filename, SHA-256, PRN and authority.
 9. GLONASS must not reuse GPS GNSS semantics. A GLONASS record may reach canonical MeanOrbit only through explicit authority-ready almanac semantics -> Orekit `GLONASSAlmanac` -> Orekit `GLONASSAnalyticalPropagator` at the explicit target epoch -> osculating PV in the selected inertial frame -> Orekit DSST mean. The legacy `draconian_period_s` preview field is not silently reinterpreted as Orekit/ICD `deltaT`.
 10. Legacy GLONASS labelled-text records that omit calendar date, `deltaT`, `deltaTDot` or time-correction fields remain preview-only and fail closed for authority conversion.
-11. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
-12. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
-13. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
-14. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+11. GLONASS derived scenarios may be created only after #149 authority attestation; lineage must preserve `glonass_authority_v1`, source filename/SHA-256, slot and source authority, and no existing scenario YAML may be overwritten.
+12. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
+13. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
+14. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+15. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
 
 ## Current main evidence checkpoint
 
@@ -72,11 +75,11 @@ No active merged-target PR at this checkpoint. Next slice is operator-side immut
   - `preview-package-compat` run `33415381057`;
   - `preview-0.2-package` run `33415381037`.
 - PR #149 merge commit: `833e3480b5df69716484cdff5160c2b35229a307`.
-- Prior PR #148 merge commit: `4329b6eff757c098dc1b5af883db03d68464679f`.
+- PR #150 exact-head evidence is pending.
 
 ## Next incomplete work
 
-1. Wire operator-side immutable GLONASS derived-scenario creation only through verified #149 sidecar attestation.
+1. Complete exact-head acceptance of #150 GLONASS derived-scenario operator flow.
 2. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
 3. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
