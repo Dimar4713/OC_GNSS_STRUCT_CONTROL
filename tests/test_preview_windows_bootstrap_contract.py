@@ -19,7 +19,7 @@ def test_windows_bootstrap_exports_bundled_orekit_revision_before_launcher() -> 
 def test_real_windows_launcher_reasserts_authority_and_clears_only_stale_orekit() -> None:
     text = Path("preview/start-preview.ps1").read_text(encoding="utf-8")
 
-    assert "Engineering Preview Python 0.2.3" in text
+    assert "Engineering Preview Python 0.2.4" in text
     assert "$env:OREKIT_DATA_REVISION = $PinnedRevision" in text
     assert "Clear-StaleOrekitListener 8081" in text
     assert "Get-NetTCPConnection" in text
