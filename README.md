@@ -14,9 +14,11 @@
 
 Design/Validation работают fail-closed: без проверенного Orekit runtime нет скрытого перехода на Screening.
 
-### Engineering Preview Windows 10
+### Engineering Preview Windows 10/11
 
-Текущая экспертная сборка: **Engineering Preview Python 0.1.1**.
+Текущая стабильная экспертная сборка: **Engineering Preview Python 0.2.3**.
+
+Текущая ветка функционального развития: **0.2.4** — инженерский ввод ОГ, цифровой двойник, Walker/osculating input, XLS/XLSX и Perturbation Designer. До отдельного release evidence 0.2.4 не считается новой стабильной сборкой.
 
 Запуск:
 
@@ -78,6 +80,8 @@ openjdk version "17.x.x"
 
 Вся пользовательская и проектная документация ведётся на русском и английском языках.
 
+Инженерская история изменений: `docs/engineering/change-history.md`.
+
 ---
 
 ## English
@@ -94,9 +98,11 @@ Production-oriented platform for reproducible analysis, modelling, design and co
 
 Design/Validation fail closed when reviewed Orekit runtime is unavailable.
 
-### Engineering Preview Windows 10
+### Engineering Preview Windows 10/11
 
-Current expert build: **Engineering Preview Python 0.1.1**.
+Current stable expert build: **Engineering Preview Python 0.2.3**.
+
+Current functional-development line: **0.2.4** — engineering constellation input, digital twin, Walker/osculating input, XLS/XLSX and Perturbation Designer. Version 0.2.4 is not a new stable package until separate release evidence is completed.
 
 Start:
 
@@ -156,3 +162,5 @@ No administrator rights are required:
 ### Documentation policy
 
 All user-facing and project documentation is maintained in Russian and English.
+
+Engineering change history: `docs/engineering/change-history.md`.
