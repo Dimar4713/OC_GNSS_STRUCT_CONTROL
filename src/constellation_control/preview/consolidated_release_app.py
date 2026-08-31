@@ -22,6 +22,11 @@ from constellation_control.preview.release_app import (
     create_preview_app as create_release_preview_app,
     render_preview_page_for_test as render_release_page,
 )
+from constellation_control.preview.resource_state_ui import (
+    RESOURCE_STATE_CARD,
+    RESOURCE_STATE_SCRIPT,
+    install_resource_state_routes,
+)
 from constellation_control.preview.walker_input import WALKER_CARD, WALKER_SCRIPT, install_walker_routes
 from constellation_control.preview.workbook_upload import (
     WORKBOOK_CARD,
@@ -117,6 +122,7 @@ function syncScenarioEditor(){
   saveAs.value=stem+'-edited'+ext;
   scenarioEditorMessage('YAML загружен. Измените параметры и выполните проверку / YAML loaded. Edit parameters and validate.');
   if(typeof syncOsculatingSatellites==='function')syncOsculatingSatellites();
+  if(typeof previewResourceState==='function')previewResourceState();
 }
 loadScenario=async function(){await originalLoadScenarioForEditor();syncScenarioEditor();};
 async function validateScenarioDraft(){
@@ -150,12 +156,12 @@ def render_preview_page_for_test() -> str:
     page = render_release_page().replace("Engineering Preview 0.2.0", f"Engineering Preview {PREVIEW_VERSION}")
     page = page.replace(
         "</section></main>",
-        f"{PERTURBATION_CARD}{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
+        f"{RESOURCE_STATE_CARD}{PERTURBATION_CARD}{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
         1,
     )
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\n{PERTURBATION_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
+        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\n{PERTURBATION_SCRIPT}\n{RESOURCE_STATE_SCRIPT}\nbootstrap().catch(e=>setStatus(String(e),'danger'));",
         1,
     )
     return page
@@ -205,4 +211,5 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
     install_walker_routes(app, scenario_root)
     install_osculating_routes(app, scenario_root)
     install_perturbation_routes(app, scenario_root)
+    install_resource_state_routes(app, scenario_root, output_root)
     return app
