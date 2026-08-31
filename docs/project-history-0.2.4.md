@@ -39,15 +39,17 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next slice is target-epoch TLE authority so a reviewed TLE can be propagated to the explicit parent scenario epoch without mixed-epoch state.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #144 | CI pending | Extend the authoritative TLE boundary with explicit target epoch/time scale. Orekit SGP4/SDP4 propagates in TEME from the TLE epoch to the parent scenario epoch, transforms the resulting osculating PV to the selected inertial frame, then delegates to the existing DSST mean authority. The prior exact-epoch restriction is removed without mixing constellation epochs. OMM remains blocked. |
 
 ## Current authority boundaries
 
 1. Screening is not design/validation authority.
 2. High-fidelity osculating-to-mean conversion is Orekit/DSST-only and fails closed if authority/fingerprints mismatch.
 3. Perturbations act on the canonical mean-element representation and never silently reinterpret osculating inputs.
-4. NORAD TLE elements may reach canonical MeanOrbit only through the explicit chain `TLE -> Orekit SGP4/SDP4 TEME -> osculating PV -> selected inertial frame -> Orekit DSST mean`; raw TLE values are never relabelled as canonical elements.
-5. PR #143 requires the selected TLE epoch to match the parent scenario epoch before replacing a satellite state; mixed-epoch constellation scenarios are rejected.
+4. NORAD TLE elements may reach canonical MeanOrbit only through `TLE -> Orekit SGP4/SDP4 TEME@explicit target epoch -> osculating PV -> selected inertial frame -> Orekit DSST mean`; raw TLE values are never relabelled as canonical elements.
+5. The TLE source epoch and target scenario epoch remain separately recorded. The resulting canonical state is defined only at the explicit target scenario epoch/time scale.
 6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
 7. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
 8. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
@@ -61,17 +63,16 @@ No active merged-target PR at this checkpoint. Next slice is target-epoch TLE au
   - `preview-package-compat` run `33400824360`;
   - `preview-0.2-package` run `33400824350`.
 - PR #143 merge commit: `41e1027adc3f2513beb345809bf633fe7790067d`.
-- Prior PR #142 merge commit: `b06835223d6843945c907750ca82229e6bcfe382`.
+- PR #144 evidence is pending on its exact head.
 
 ## Next incomplete work
 
-Priority order after PR #143 acceptance:
+Priority order after PR #144 acceptance:
 
-1. Extend Orekit TLE authority to propagate from TLE epoch to an explicit target scenario epoch, removing the current exact-epoch usability restriction without mixing state epochs.
-2. Add GNSS almanac-family adapters (YUMA/SEM and GLONASS almanac first) with format-specific authority semantics.
-3. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
-4. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-5. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Add GNSS almanac-family adapters (YUMA/SEM and GLONASS almanac first) with format-specific authority semantics.
+2. Extend propulsion/correction-system catalog semantics and resource-history/operator tooling without creating detached mass models.
+3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
