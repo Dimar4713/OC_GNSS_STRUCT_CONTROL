@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from math import pi
 from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
@@ -23,11 +24,11 @@ class OsculatingKeplerianElements(BaseModel):
 
     a_m: float = Field(gt=0.0)
     e: float = Field(ge=0.0, lt=1.0)
-    i_rad: float = Field(ge=0.0, le=3.141592653589793)
+    i_rad: float = Field(ge=0.0, lt=pi)
     pa_rad: float
     raan_rad: float
     anomaly_rad: float
-    anomaly_type: Literal["mean", "eccentric", "true"] = "true"
+    anomaly_type: Literal["mean", "eccentric", "true"]
 
 
 class MeanConversionResult(BaseModel):
