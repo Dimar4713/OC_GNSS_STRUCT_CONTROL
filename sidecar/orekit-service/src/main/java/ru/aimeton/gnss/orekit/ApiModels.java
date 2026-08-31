@@ -108,6 +108,14 @@ final class ApiModels {
             ForceModel forceModel,
             String forceModelFingerprint) {}
 
+    record TleToMeanRequest(
+            String line1,
+            String line2,
+            String frame,
+            SpacecraftModel spacecraft,
+            ForceModel forceModel,
+            String forceModelFingerprint) {}
+
     record MeanConversionResult(
             MeanOrbit meanOrbit,
             Map<String, String> backendMetadata) {}
