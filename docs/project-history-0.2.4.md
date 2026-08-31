@@ -44,7 +44,9 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Active change
 
-No active merged-target PR at this checkpoint. Next slice is a dedicated reviewed GLONASS almanac propagation/conversion authority; it must not reuse GPS GNSS semantics.
+| PR | Status | Engineering increment |
+|---|---|---|
+| #149 | CI pending | Add a dedicated GLONASS almanac authority using Orekit `GLONASSAlmanac` and `GLONASSAnalyticalPropagator`, followed by the existing DSST osculating-to-mean authority. Authority-ready labelled input requires explicit calendar date, reference time, lambda, delta-i, eccentricity, argument of perigee, delta-T, delta-T-dot and GLONASS/GPS/UTC time corrections. Legacy labelled preview remains non-promotable when these semantics are absent. |
 
 ## Current authority boundaries
 
@@ -56,11 +58,12 @@ No active merged-target PR at this checkpoint. Next slice is a dedicated reviewe
 6. OMM remains SGP4/NORAD mean-element intake only and is non-promotable until its own reviewed Orekit conversion boundary exists.
 7. GPS YUMA/SEM may reach canonical MeanOrbit only through `raw YUMA/SEM -> Orekit parser -> Orekit GPS GNSS analytical propagator@explicit target epoch -> osculating PV -> selected inertial frame -> Orekit DSST mean`. Python-side normalized almanac values are not a propagation authority and are never copied directly into MeanOrbit.
 8. GPS almanac derived scenarios may be created only from a verified #147 sidecar attestation. Source scenario overwrite and target overwrite are forbidden; lineage preserves source format, filename, SHA-256, PRN and authority.
-9. GLONASS labelled-text intake remains preview-only. It cannot pass through the GPS authority path; a dedicated reviewed GLONASS analytical authority is required.
-10. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
-11. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
-12. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
-13. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
+9. GLONASS must not reuse GPS GNSS semantics. A GLONASS record may reach canonical MeanOrbit only through explicit authority-ready almanac semantics -> Orekit `GLONASSAlmanac` -> Orekit `GLONASSAnalyticalPropagator` at the explicit target epoch -> osculating PV in the selected inertial frame -> Orekit DSST mean. The legacy `draconian_period_s` preview field is not silently reinterpreted as Orekit/ICD `deltaT`.
+10. Legacy GLONASS labelled-text records that omit calendar date, `deltaT`, `deltaTDot` or time-correction fields remain preview-only and fail closed for authority conversion.
+11. Maneuver resource accounting is a preflight/ledger coupled to the same maneuver schedule; it does not replace Orekit impulse physics.
+12. Propulsion/correction catalog data is validation/reference metadata only. It must not auto-populate or override current mass, propellant mass, thrust or Isp; those remain explicit scenario/operational-state numerical authority.
+13. A runnable continuation scenario may be created only from complete persisted propagation evidence reaching the exact scenario horizon.
+14. Historical runs without persisted `propagation_result.json` are intentionally non-promotable without rerun.
 
 ## Current main evidence checkpoint
 
@@ -70,13 +73,14 @@ No active merged-target PR at this checkpoint. Next slice is a dedicated reviewe
   - `preview-package-compat` run `33413406668`;
   - `preview-0.2-package` run `33413406568`.
 - PR #148 merge commit: `4329b6eff757c098dc1b5af883db03d68464679f`.
-- Prior PR #147 merge commit: `85e8f46798c9f55a4c11b5f6b60d259b13a001e7`.
+- PR #149 exact-head evidence is pending.
 
 ## Next incomplete work
 
-1. Add a dedicated reviewed GLONASS almanac propagation/conversion authority; do not route GLONASS through GPS GNSS semantics.
-2. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
-3. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
+1. Complete exact-head acceptance of #149 dedicated GLONASS almanac authority.
+2. Wire operator-side immutable GLONASS derived-scenario creation only after #149 sidecar attestation is accepted.
+3. Evaluate structural lineage hash validation against all existing scenario/test fixtures before tightening the schema; do not break historical derived scenarios merely to enforce formatting.
+4. Run package-level Windows acceptance before calling the accumulated 0.2.4 line a distributable release.
 
 ## Maintenance rule
 
