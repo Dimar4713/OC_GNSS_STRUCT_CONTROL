@@ -22,11 +22,11 @@ class OsculatingInputRequest(BaseModel):
     satellite_id: str
     a_m: float = Field(gt=0.0)
     e: float = Field(ge=0.0, lt=1.0)
-    i_deg: float = Field(ge=0.0, le=180.0)
+    i_deg: float = Field(ge=0.0, lt=180.0)
     pa_deg: float
     raan_deg: float
     anomaly_deg: float
-    anomaly_type: Literal["mean", "eccentric", "true"] = "true"
+    anomaly_type: Literal["mean", "eccentric", "true"]
 
 
 class OsculatingCreateRequest(OsculatingInputRequest):
@@ -142,16 +142,16 @@ def create_osculating_derived_scenario(root: Path, request: OsculatingCreateRequ
 OSCULATING_CARD = r"""
 <div class="card" id="osculatingCard">
   <h3>Оскулирующие элементы / Osculating elements</h3>
-  <p class="hint">Вводится состояние выбранного КА. Перед созданием сценария выполняется authoritative Orekit DSST osculating→mean conversion; скрытого fallback нет.</p>
+  <p class="hint">Все элементы и тип аномалии задаются явно. Перед созданием сценария выполняется authoritative Orekit DSST osculating→mean conversion; скрытого fallback и предзаполненной орбиты нет.</p>
   <div class="grid">
     <label>КА / Satellite <select id="oscSat"></select></label>
-    <label>a, m <input id="oscA" type="number" step="1" value="26560000"></label>
-    <label>e <input id="oscE" type="number" step="0.000001" value="0.001"></label>
-    <label>i, deg <input id="oscI" type="number" step="0.001" value="64.8"></label>
-    <label>ω, deg <input id="oscPa" type="number" step="0.001" value="0"></label>
-    <label>Ω, deg <input id="oscRaan" type="number" step="0.001" value="0"></label>
-    <label>Anomaly, deg <input id="oscAnomaly" type="number" step="0.001" value="0"></label>
-    <label>Тип / Type <select id="oscType"><option value="true">true</option><option value="mean">mean</option><option value="eccentric">eccentric</option></select></label>
+    <label>a, m <input id="oscA" type="number" step="1" placeholder="required"></label>
+    <label>e <input id="oscE" type="number" min="0" max="0.999999999" step="0.000001" placeholder="required"></label>
+    <label>i, deg <input id="oscI" type="number" min="0" max="179.999999" step="0.001" placeholder="required"></label>
+    <label>ω, deg <input id="oscPa" type="number" step="0.001" placeholder="required"></label>
+    <label>Ω, deg <input id="oscRaan" type="number" step="0.001" placeholder="required"></label>
+    <label>Anomaly, deg <input id="oscAnomaly" type="number" step="0.001" placeholder="required"></label>
+    <label>Тип / Type <select id="oscType"><option value="">— required —</option><option value="true">true</option><option value="mean">mean</option><option value="eccentric">eccentric</option></select></label>
   </div>
   <button onclick="previewOsculating()">Проверить через Orekit / Preview via Orekit</button>
   <pre id="oscPreview"></pre>
@@ -163,10 +163,11 @@ OSCULATING_CARD = r"""
 """
 
 OSCULATING_SCRIPT = r"""
-function oscPayload(){return {source_scenario_name:scenario.value,satellite_id:oscSat.value,a_m:+oscA.value,e:+oscE.value,i_deg:+oscI.value,pa_deg:+oscPa.value,raan_deg:+oscRaan.value,anomaly_deg:+oscAnomaly.value,anomaly_type:oscType.value};}
+function oscNumber(id,label){const raw=document.getElementById(id).value.trim();if(raw==='')throw new Error(label+' is required');const value=Number(raw);if(!Number.isFinite(value))throw new Error(label+' must be finite');return value;}
+function oscPayload(){if(!oscSat.value)throw new Error('satellite is required');if(!oscType.value)throw new Error('anomaly type is required');return {source_scenario_name:scenario.value,satellite_id:oscSat.value,a_m:oscNumber('oscA','a'),e:oscNumber('oscE','e'),i_deg:oscNumber('oscI','i'),pa_deg:oscNumber('oscPa','omega'),raan_deg:oscNumber('oscRaan','RAAN'),anomaly_deg:oscNumber('oscAnomaly','anomaly'),anomaly_type:oscType.value};}
 function syncOsculatingSatellites(){if(!current)return;const sats=((current.normalized||current).constellation||{}).satellites||[];oscSat.replaceChildren(...sats.map(s=>{const o=document.createElement('option');o.value=s.satellite_id;o.textContent=s.satellite_id;return o;}));}
-async function previewOsculating(){oscStatus.textContent='Orekit conversion…';const r=await fetch('/api/osculating/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(oscPayload())});const d=await r.json();if(!r.ok){oscStatus.textContent=d.detail||'Conversion failed';oscStatus.className='status danger';return;}oscPreview.textContent=JSON.stringify(d,null,2);oscStatus.textContent='VALID: '+d.backend_metadata.backend+'; '+d.backend_metadata.orekit_version;oscStatus.className='status ok';}
-async function createOsculating(){const p={...oscPayload(),new_scenario_id:oscScenarioId.value.trim(),target_scenario_name:oscFile.value.trim()};if(!p.new_scenario_id||!p.target_scenario_name){oscStatus.textContent='Укажите новый scenario_id и YAML';oscStatus.className='status danger';return;}const r=await fetch('/api/osculating/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){oscStatus.textContent=d.detail||'Create failed';oscStatus.className='status danger';return;}const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();oscStatus.textContent='Создан: '+d.scenario_name;oscStatus.className='status ok';}
+async function previewOsculating(){let p;try{p=oscPayload();}catch(e){oscStatus.textContent=String(e.message||e);oscStatus.className='status danger';return;}oscStatus.textContent='Orekit conversion…';const r=await fetch('/api/osculating/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){oscStatus.textContent=d.detail||'Conversion failed';oscStatus.className='status danger';return;}oscPreview.textContent=JSON.stringify(d,null,2);oscStatus.textContent='VALID: '+d.backend_metadata.backend+'; '+d.backend_metadata.orekit_version;oscStatus.className='status ok';}
+async function createOsculating(){let base;try{base=oscPayload();}catch(e){oscStatus.textContent=String(e.message||e);oscStatus.className='status danger';return;}const p={...base,new_scenario_id:oscScenarioId.value.trim(),target_scenario_name:oscFile.value.trim()};if(!p.new_scenario_id||!p.target_scenario_name){oscStatus.textContent='Укажите новый scenario_id и YAML';oscStatus.className='status danger';return;}const r=await fetch('/api/osculating/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){oscStatus.textContent=d.detail||'Create failed';oscStatus.className='status danger';return;}const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();oscStatus.textContent='Создан: '+d.scenario_name;oscStatus.className='status ok';}
 """
 
 
