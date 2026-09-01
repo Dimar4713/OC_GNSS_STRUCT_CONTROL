@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import pi, sqrt
+from math import pi
 
 import numpy as np
 
@@ -73,7 +73,7 @@ def kepler_relative_drift_baseline(
 ) -> KeplerRelativeDriftBaseline:
     """Build an independent central-field relative drift baseline from mean ``a`` histories.
 
-    The returned ``Delta n`` is deputy minus reference.  It is a Kepler central-field
+    The returned ``Delta n`` is deputy minus reference. It is a Kepler central-field
     consistency diagnostic only; it is not an expectation that a full-force mean
     ``Delta lambda`` or ``Delta u`` secular rate must be identical.
     """
@@ -129,3 +129,50 @@ def kepler_relative_drift_baseline(
         time_mean_delta_n_rad_s=time_mean_delta_n,
         time_mean_delta_n_deg_day=angular_rate_deg_day(time_mean_delta_n),
     )
+
+
+def kepler_drift_consistency_summary(
+    baseline: KeplerRelativeDriftBaseline,
+    *,
+    mu_m3_s2: float,
+    measured_delta_lambda_rad_s: float,
+    measured_delta_u_rad_s: float,
+) -> dict[str, float | str]:
+    measured_lambda = float(measured_delta_lambda_rad_s)
+    measured_u = float(measured_delta_u_rad_s)
+    kepler_rate = baseline.time_mean_delta_n_rad_s
+    lambda_residual = measured_lambda - kepler_rate
+    u_residual = measured_u - kepler_rate
+    return {
+        "authority": "independent-central-field-consistency-diagnostic-v1",
+        "source_elements": "propagated force-model-consistent mean semi-major-axis histories",
+        "osculating_a_used": "false",
+        "sign_convention": "Delta n = n_deputy - n_reference; period difference = P_deputy - P_reference",
+        "interpretation": (
+            "Kepler Delta n is a central-field baseline, not an expected equality for full-force "
+            "Delta lambda or Delta u; node, perigee and other non-Kepler perturbations may contribute to residuals."
+        ),
+        "mu_m3_s2": float(mu_m3_s2),
+        "reference_initial_a_mean_m": baseline.reference_initial_a_mean_m,
+        "deputy_initial_a_mean_m": baseline.deputy_initial_a_mean_m,
+        "reference_time_mean_a_mean_m": baseline.reference_time_mean_a_mean_m,
+        "deputy_time_mean_a_mean_m": baseline.deputy_time_mean_a_mean_m,
+        "reference_initial_kepler_period_s": baseline.reference_initial_period_s,
+        "deputy_initial_kepler_period_s": baseline.deputy_initial_period_s,
+        "initial_period_difference_s": baseline.initial_period_difference_s,
+        "reference_kepler_period_at_time_mean_a_s": baseline.reference_period_at_time_mean_a_s,
+        "deputy_kepler_period_at_time_mean_a_s": baseline.deputy_period_at_time_mean_a_s,
+        "period_difference_at_time_mean_a_s": baseline.period_difference_at_time_mean_a_s,
+        "initial_kepler_delta_n_rad_s": baseline.initial_delta_n_rad_s,
+        "initial_kepler_delta_n_deg_day": baseline.initial_delta_n_deg_day,
+        "time_mean_kepler_delta_n_rad_s": kepler_rate,
+        "time_mean_kepler_delta_n_deg_day": baseline.time_mean_delta_n_deg_day,
+        "measured_harmonic_delta_lambda_rad_s": measured_lambda,
+        "measured_harmonic_delta_lambda_deg_day": angular_rate_deg_day(measured_lambda),
+        "measured_harmonic_delta_u_rad_s": measured_u,
+        "measured_harmonic_delta_u_deg_day": angular_rate_deg_day(measured_u),
+        "delta_lambda_minus_kepler_residual_rad_s": lambda_residual,
+        "delta_lambda_minus_kepler_residual_deg_day": angular_rate_deg_day(lambda_residual),
+        "delta_u_minus_kepler_residual_rad_s": u_residual,
+        "delta_u_minus_kepler_residual_deg_day": angular_rate_deg_day(u_residual),
+    }
