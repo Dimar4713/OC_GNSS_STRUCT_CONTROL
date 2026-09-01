@@ -1,8 +1,8 @@
 # Engineering Preview 0.2.4 — project change history
 
-Status: Windows engineering-evaluation package accepted on exact-head CI and merged to `main`.
+Status: Windows engineering-evaluation package accepted on exact-head CI and merged to `main`; post-acceptance runtime fixes remain evidence-gated.
 
-This document is the repository-side chronology for the 0.2.4 functional increment. It records merged engineering slices, authority boundaries, and package-level evidence.
+This document is the repository-side chronology for the 0.2.4 functional increment. It records merged engineering slices, authority boundaries, package-level evidence, and post-acceptance runtime corrections.
 
 ## Baseline
 
@@ -46,6 +46,12 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #151 | merged | Backward-compatible structural lineage integrity contract with `integrity_version: 1` for real 64-hex parent SHA-256 hashes. |
 | #152 | merged | **Windows package acceptance for Engineering Preview 0.2.4.** Versioning synchronized to 0.2.4; package stages the consolidated operator surface; packaged legacy `preview/app.py` is excluded; shared base shell is internalized as `base_preview_shell.py`; package lock includes workbook dependencies; CLI routes to `consolidated_release_app`; real clean-Windows packaged launch reaches `/health=0.2.4` and verifies pinned Orekit 13.1.7 data revision/SHA. |
 
+## Active post-acceptance correction
+
+| PR | Status | Engineering increment |
+|---|---|---|
+| #153 | CI pending | Fix Python→Java GLONASS almanac request contract after real operator test exposed HTTP 500. Python now sends the exact sidecar fields `delta_irad`, `delta_ts`, `delta_tdot` instead of incompatible `delta_i_rad`, `delta_t_s`, `delta_t_dot`; regression test prevents future drift. Numerical GLONASS/Orekit/DSST authority semantics are unchanged. |
+
 ## Current authority boundaries
 
 1. Screening is not design/validation authority.
@@ -80,7 +86,7 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 
 ## Next incomplete work
 
-1. Optional release-surface publication/Release packaging can now be performed from the accepted 0.2.4 line without changing numerical authority.
+1. Complete exact-head acceptance of #153 and rebuild/reaccept the Windows package before distributing a replacement package for GLONASS-almanac testing.
 2. Continue remaining authority hardening separately: OMM authoritative conversion, GPS/GLONASS raw-source SHA attestation through sidecar, GPS week ambiguity handling, and exact returned target-epoch verification where applicable.
 
 ## Maintenance rule
