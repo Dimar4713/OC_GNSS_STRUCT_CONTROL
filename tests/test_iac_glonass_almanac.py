@@ -1,4 +1,4 @@
-from datetime import timezone
+from datetime import UTC
 from math import isclose, pi
 
 import pytest
@@ -29,7 +29,7 @@ def test_normalizes_declared_glonass_iac_units_and_time_scale() -> None:
     assert isclose(record.ascending_node_longitude_rad, 134.09329 * pi / 180.0)
     assert isclose(record.argument_of_perigee_rad, 37.58972 * pi / 180.0)
     assert record.ascending_node_epoch_dmv.utcoffset().total_seconds() == 3 * 3600
-    assert record.ascending_node_epoch_utc.tzinfo == timezone.utc
+    assert record.ascending_node_epoch_utc.tzinfo == UTC
     assert record.ascending_node_epoch_utc.isoformat() == "2026-08-07T22:34:39.750000+00:00"
 
 
