@@ -3,7 +3,14 @@ import math
 import numpy as np
 import pytest
 
-from constellation_control.analysis.drift import SIDEREAL_YEAR_S, harmonic_regression
+from constellation_control.analysis.drift import (
+    DEFAULT_HARMONIC_LABELS,
+    SIDEREAL_YEAR_S,
+    default_harmonic_frequencies,
+    harmonic_regression,
+    linear_rate,
+    select_identifiable_harmonic_basis,
+)
 
 
 def test_harmonic_regression_reports_component_period_amplitude_and_peak_to_peak() -> None:
@@ -46,10 +53,8 @@ def test_multi_harmonic_rss_amplitude_has_components_with_individual_periods() -
 
 
 def test_short_horizon_recovers_secular_drift_with_annual_harmonic() -> None:
-    # This is the failure mode seen in engineering review: a long-period basis
-    # shares a short observation window with a very small secular rate. Raw
-    # seconds in the linear least-squares column make the design matrix nearly
-    # singular and can bias the inferred drift.
+    # Low-level harmonic_regression deliberately fits the explicitly requested
+    # basis. This regression protects the time centering/scaling fix from #158.
     times = np.linspace(0.0, 10.0 * 86400.0, 241)
     annual_frequency = 2.0 * math.pi / SIDEREAL_YEAR_S
     expected_rate_rad_s = 1.25e-11
@@ -64,3 +69,58 @@ def test_short_horizon_recovers_secular_drift_with_annual_harmonic() -> None:
 
     assert fit.secular_drift_rad_s == pytest.approx(expected_rate_rad_s, rel=2.0e-5, abs=1.0e-15)
     assert np.max(np.abs(fit.residual_rad)) < 1.0e-10
+
+
+def test_six_hour_gnss_arc_excludes_all_unresolved_default_harmonics() -> None:
+    times = np.linspace(0.0, 6.0 * 3600.0, 25)
+    orbital_period_s = 43_077.757
+    frequencies = default_harmonic_frequencies(orbital_period_s)
+
+    selection = select_identifiable_harmonic_basis(times, frequencies)
+
+    assert selection.observation_span_s == pytest.approx(21_600.0)
+    assert selection.minimum_observed_cycles == 1.0
+    assert selection.included_frequencies_rad_s == ()
+    assert selection.included_labels == ()
+    assert [term.label for term in selection.excluded_terms] == list(DEFAULT_HARMONIC_LABELS)
+    assert all(term.observed_cycles < 1.0 for term in selection.excluded_terms)
+    assert all(
+        term.exclusion_reason == "observation_span_contains_less_than_minimum_cycles"
+        for term in selection.excluded_terms
+    )
+
+
+def test_application_basis_short_arc_reduces_to_direct_linear_secular_rate() -> None:
+    times = np.linspace(0.0, 6.0 * 3600.0, 25)
+    orbital_period_s = 43_077.757
+    frequencies = default_harmonic_frequencies(orbital_period_s)
+    # Small secular drift plus curvature from a harmonic that is not observable
+    # over a complete cycle. The application policy must not claim that the
+    # long-period component has been independently estimated.
+    angle = (
+        0.7853978
+        + 1.1e-10 * times
+        + 8.0e-7 * np.sin(2.0 * math.pi * times / (2.5 * 86400.0))
+    )
+
+    selection = select_identifiable_harmonic_basis(times, frequencies)
+    fit = harmonic_regression(times, angle, selection.included_frequencies_rad_s)
+    expected_direct_rate = linear_rate(times, np.unwrap(angle))
+
+    assert selection.included_frequencies_rad_s == ()
+    assert fit.components == ()
+    assert fit.periodic_amplitude_rad == 0.0
+    assert fit.secular_drift_rad_s == pytest.approx(expected_direct_rate, rel=1e-12, abs=1e-18)
+
+
+def test_basis_selection_admits_harmonics_only_after_complete_cycles() -> None:
+    orbital_period_s = 12.0 * 3600.0
+    frequencies = default_harmonic_frequencies(orbital_period_s)
+    times = np.linspace(0.0, 24.0 * 3600.0, 97)
+
+    selection = select_identifiable_harmonic_basis(times, frequencies)
+
+    assert selection.included_labels == ("orbital", "sidereal_day")
+    assert [term.label for term in selection.excluded_terms] == ["lunar", "sidereal_year"]
+    assert selection.included_terms[0].observed_cycles == pytest.approx(2.0)
+    assert selection.included_terms[1].observed_cycles > 1.0
