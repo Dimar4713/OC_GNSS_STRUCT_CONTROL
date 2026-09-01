@@ -15,6 +15,8 @@ import com.sun.net.httpserver.HttpServer;
 
 public final class OrekitServiceMain {
     private static final int MAX_REQUEST_BYTES = 16 * 1024 * 1024;
+    private static final String PROGRESS_HEADER = "X-OC-GNSS-Progress-Id";
+    private static final String PROGRESS_PATH = "/v1/progress";
 
     private OrekitServiceMain() {}
 
@@ -23,6 +25,7 @@ public final class OrekitServiceMain {
         int port = Integer.parseInt(System.getenv().getOrDefault("OREKIT_PORT", "8081"));
         OrekitRuntime runtime = new OrekitRuntime(Path.of(dataPath));
         PropagationEngine engine = new PropagationEngine(runtime);
+        PropagationProgressRegistry progressRegistry = new PropagationProgressRegistry();
         MeanConversionEngine meanConversionEngine = new MeanConversionEngine(runtime);
         TleMeanConversionEngine tleMeanConversionEngine = new TleMeanConversionEngine(runtime);
         GpsAlmanacMeanConversionEngine gpsAlmanacMeanConversionEngine = new GpsAlmanacMeanConversionEngine(runtime);
@@ -32,7 +35,12 @@ public final class OrekitServiceMain {
         InetSocketAddress bindAddress = new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port);
         HttpServer server = HttpServer.create(bindAddress, 32);
         server.createContext("/healthz", exchange -> handleHealth(exchange, mapper, runtime));
-        server.createContext("/v1/propagate", exchange -> handlePropagate(exchange, mapper, engine));
+        server.createContext(
+                "/v1/propagate",
+                exchange -> handlePropagate(exchange, mapper, engine, progressRegistry));
+        server.createContext(
+                PROGRESS_PATH,
+                exchange -> handlePropagationProgress(exchange, mapper, progressRegistry));
         server.createContext(
                 "/v1/orbits/osculating-to-mean",
                 exchange -> handleOsculatingToMean(exchange, mapper, meanConversionEngine));
@@ -77,25 +85,62 @@ public final class OrekitServiceMain {
         writeJson(exchange, mapper, 200, body);
     }
 
-    private static void handlePropagate(HttpExchange exchange, ObjectMapper mapper, PropagationEngine engine)
-            throws IOException {
+    private static void handlePropagate(
+            HttpExchange exchange,
+            ObjectMapper mapper,
+            PropagationEngine engine,
+            PropagationProgressRegistry progressRegistry) throws IOException {
         if (!"POST".equals(exchange.getRequestMethod())) {
             writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
             return;
         }
+        String telemetryId = exchange.getRequestHeaders().getFirst(PROGRESS_HEADER);
         try {
             byte[] body = readBody(exchange);
             ApiModels.PropagationRequest request = mapper.readValue(body, ApiModels.PropagationRequest.class);
-            ApiModels.PropagationResult result = engine.propagate(request);
+            ApiModels.PropagationResult result;
+            if (telemetryId == null || telemetryId.isBlank()) {
+                result = engine.propagate(request);
+            } else {
+                progressRegistry.start(telemetryId);
+                result = engine.propagate(request, event -> progressRegistry.update(telemetryId, event));
+                progressRegistry.complete(telemetryId);
+            }
             writeJson(exchange, mapper, 200, result);
         } catch (RequestTooLargeException exception) {
+            failProgress(progressRegistry, telemetryId, "request_too_large");
             writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
         } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+            failProgress(progressRegistry, telemetryId, safeMessage(exception));
             writeJson(exchange, mapper, 422, Map.of("error", "invalid_propagation_request", "detail", safeMessage(exception)));
         } catch (Exception exception) {
+            failProgress(progressRegistry, telemetryId, safeMessage(exception));
             exception.printStackTrace(System.err);
             writeJson(exchange, mapper, 500, Map.of("error", "orekit_propagation_failed", "detail", safeMessage(exception)));
         }
+    }
+
+    private static void handlePropagationProgress(
+            HttpExchange exchange,
+            ObjectMapper mapper,
+            PropagationProgressRegistry progressRegistry) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            writeJson(exchange, mapper, 405, Map.of("error", "method_not_allowed"));
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        String prefix = PROGRESS_PATH + "/";
+        if (!path.startsWith(prefix) || path.length() <= prefix.length()) {
+            writeJson(exchange, mapper, 400, Map.of("error", "progress_id_required"));
+            return;
+        }
+        String telemetryId = path.substring(prefix.length());
+        PropagationProgressRegistry.Snapshot snapshot = progressRegistry.get(telemetryId);
+        if (snapshot == null) {
+            writeJson(exchange, mapper, 404, Map.of("error", "progress_not_found"));
+            return;
+        }
+        writeJson(exchange, mapper, 200, snapshot);
     }
 
     private static void handleOsculatingToMean(HttpExchange exchange, ObjectMapper mapper, MeanConversionEngine engine)
@@ -170,7 +215,7 @@ public final class OrekitServiceMain {
         }
         try {
             byte[] body = readBody(exchange);
-            ApiModels.GlonassAlmanacToMeanRequest request = mapper.readValue(body, ApiModels.GlonassAlmanacToMeanRequest.class);
+            ApiModels.GlonassAlmanacToMeanRequest request = mapper.readValue(body, ApiModels.GlonassAlmanacMeanConversionRequest.class);
             writeJson(exchange, mapper, 200, engine.convert(request));
         } catch (RequestTooLargeException exception) {
             writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
@@ -179,6 +224,15 @@ public final class OrekitServiceMain {
         } catch (Exception exception) {
             exception.printStackTrace(System.err);
             writeJson(exchange, mapper, 500, Map.of("error", "orekit_glonass_almanac_mean_conversion_failed", "detail", safeMessage(exception)));
+        }
+    }
+
+    private static void failProgress(
+            PropagationProgressRegistry progressRegistry,
+            String telemetryId,
+            String error) {
+        if (telemetryId != null && !telemetryId.isBlank() && progressRegistry.get(telemetryId) != null) {
+            progressRegistry.fail(telemetryId, error);
         }
     }
 
