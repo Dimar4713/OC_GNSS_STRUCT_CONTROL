@@ -47,6 +47,8 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #152 | merged | **Windows package acceptance for Engineering Preview 0.2.4.** Versioning synchronized to 0.2.4; package stages the consolidated operator surface; packaged legacy `preview/app.py` is excluded; shared base shell is internalized as `base_preview_shell.py`; package lock includes workbook dependencies; CLI routes to `consolidated_release_app`; real clean-Windows packaged launch reaches `/health=0.2.4` and verifies pinned Orekit 13.1.7 data revision/SHA. |
 | #153 | merged | **GLONASS almanac Python→Java contract fix.** Real operator testing exposed HTTP 500 because the Python client sent `delta_i_rad`, `delta_t_s`, `delta_t_dot` while the Java sidecar contract is `delta_irad`, `delta_ts`, `delta_tdot`. The client now sends the exact sidecar field names and a regression test locks the request contract. Numerical GLONASS/Orekit/DSST authority semantics are unchanged. |
 | #156 | merged | **Constellation spacecraft editor.** Consolidated operator UI and backend now support safe spacecraft rename, move between planes, physical-parameter edit, explicit clone-as-new, and fail-closed remove. Rename is an identity migration that atomically updates `reference_id`, maneuvers, digital-twin operational states, groups, satellite-scoped perturbations/applied perturbations and plane membership. Every accepted edit creates a new immutable derived scenario with `constellation_editor` lineage; orbital-element changes remain on reviewed Orekit authority paths. |
+| #158 | merged | **Secular drift regression conditioning fix.** Harmonic least-squares post-processing now centers/scales the linear time basis before solving and converts the fitted slope back to SI rad/s, preventing raw-second conditioning from biasing very small secular rates in the presence of long-period harmonics. |
+| #169 | merged | **Selectable Earth gravity model from Kepler 0×0 through EIGEN-6S 32×32.** Operator UI exposes presets 0×0, 2×0, 4×4, 8×8, 16×16, 24×24, 32×32 plus custom `0 ≤ order ≤ degree ≤ 32`; DESIGN/VALIDATION pass exact degree/order to Orekit. SCREENING is fail-closed above first-order J2 and 0×0 now truly disables J2. Every gravity change creates an immutable derived scenario with a new force-model fingerprint. |
 
 ## Current authority boundaries
 
@@ -65,6 +67,8 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 13. Historical runs without persisted `propagation_result.json` remain non-promotable without rerun.
 14. The distributable Windows Preview 0.2.4 package must route through `consolidated_release_app`, exclude the legacy public `preview/app.py`, and attest pinned Orekit revision/SHA at runtime.
 15. Structural constellation edits never mutate source YAML and never bypass reviewed orbital authority boundaries.
+16. In SCREENING, gravity is intentionally limited to true Kepler 0×0 or first-order J2 2×0. Harmonics above J2 require Orekit DESIGN/VALIDATION.
+17. A gravity-model sweep that reuses the same numerical mean coordinates explicitly rebinds those coordinates to the new force-model definition/fingerprint; it is not a claim of identical osculating-state preservation.
 
 ## Accepted Windows package evidence — PR #152
 
@@ -108,12 +112,29 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 - Artifact retention expiry: 2026-09-15.
 - PR #156 merge commit: `0532d9b7deb6f4c524999b67cd4b6a23c1679780`.
 
+## Accepted gravity-model-range evidence — PR #169
+
+- PR #169 exact head: `ea08eaf934d80e2b8ca729cc86024fd41c7a99b9`.
+- Exact-head required workflows all terminal success:
+  - `ci` run `33508092950` — GREEN;
+  - `preview-package-compat` run `33508092979` — GREEN;
+  - `preview-0.2-package` run `33508093094` — GREEN.
+- `quality` passed Ruff, mypy and tests, including gravity-range, 32×32, invalid-shape, Kepler and screening fail-closed regressions.
+- Orekit integration/E2E passed on the exact head.
+- `windows-preview-024-smoke` real packaged clean-Windows acceptance — GREEN.
+- Replacement Windows artifact: `engineering-preview-python-0.2.4-win10`, artifact id `9800446059`, size `34,066,554` bytes.
+- Artifact digest: `sha256:4871758174347fafe65e560a3c0e67f8b172ff3a7cd36aadde6debd6360bbc8a`.
+- Artifact retention expiry: 2026-09-15.
+- PR #169 merge commit: `c582477ae1e05a45e90a90b1a044ac9e60d5d20b`.
+- This artifact supersedes artifact `9789775636` for testing the selectable gravity-model range.
+
 ## Next incomplete work
 
 1. Complete issue #154: GPS almanac bulk/select import must create correctly identified GPS spacecraft or update only explicitly mapped existing spacecraft; no silent `GLO-01` replacement.
-2. Extend the constellation editor with explicit group-membership editing and richer pre-save diff/impact preview.
-3. Retest the real GLONASS authority flow with the operator-provided `glonass-labelled-authority-v1` fixture against the current replacement package.
-4. Continue remaining authority hardening separately: OMM authoritative conversion, GPS/GLONASS raw-source SHA attestation through sidecar, GPS week ambiguity handling, and exact returned target-epoch verification where applicable.
+2. Implement issue #160: real non-blocking calculation progress telemetry with model time, point/satellite counters, phase and percent complete.
+3. Harden time/epoch authority contracts tracked in #157 and GPS week rollover handling tracked in #159.
+4. Retest the real GLONASS authority flow with the operator-provided `glonass-labelled-authority-v1` fixture against the current replacement package.
+5. Continue remaining authority hardening separately: OMM authoritative conversion, GPS/GLONASS raw-source SHA attestation through sidecar, and exact returned target-epoch verification where applicable.
 
 ## Maintenance rule
 
