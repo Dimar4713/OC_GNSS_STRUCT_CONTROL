@@ -46,20 +46,21 @@ def test_glonass_live_json_contract_maps_exact_iac_fields() -> None:
 
 
 def test_gps_live_json_contract_maps_exact_iac_fields() -> None:
-    source = """[{"PRN":"1","datetime":"01.09.26","t":"100","e":"0.01","i":"0.95","DomegaDT":"-1e-9","A":"5153.6","Lomega":"1.2","w":"0.2","mm":"0.3","af0":"1e-4","af1":"1e-12","color":"#fff"}]"""
+    source = """[{"PRN":"01","datetime":"09.08.26","t":"61440","e":"0,00186","i":"54,83668","DomegaDT":"-4,59040E-7","A":"26559,08565","Lomega":"14,57309","w":"9,86332","mm":"7,59378","af0":"2,01225E-4","af1":"-1,09139E-11","color":"#FFFFFF"}]"""
     table = parse_iac_json(IacDataset.GPS_ALMANAC, source, source_url=IAC_DATA_URLS[IacDataset.GPS_ALMANAC])
     assert table.headers == ("PRN", "Date", "t", "e", "i", "dΩ/dt", "A", "LΩ", "ω", "m", "af0", "af1")
-    assert table.rows[0][0] == "1"
-    assert table.rows[0][6] == "5153.6"
+    assert table.rows[0][0] == "01"
+    assert table.rows[0][6] == "26559,08565"
 
 
 def test_beidou_live_json_contract_skips_datetime_marker_and_prefixes_prn() -> None:
-    source = """["01.09.26",{"ID":"1","Health":"000","Eccentricity":0.001,"Time of Applicability(s)":100,"Orbital Inclination(rad)":0.96,"Rate of Right Ascen(r/s)":-1e-9,"SQRT(A) (m 1/2)":5282.6,"Right Ascen at Week(rad)":1.1,"Argument of Perigee(rad)":0.2,"Mean Anom(rad)":0.3,"Af0(s)":0.0001,"Af1(s/s)":1e-12,"week":1200}]"""
+    source = """["26.08.26",{"ID":"01","Health":"000","Eccentricity":0.00055980682373,"Time of Applicability(s)":16384,"Orbital Inclination(rad)":0.0074242273,"Rate of Right Ascen(r/s)":1.63435379e-09,"SQRT(A)  (m 1/2)":6493.561035,"Right Ascen at Week(rad)":0.390737039,"Argument of Perigee(rad)":-3.013041993,"Mean Anom(rad)":-0.022596631,"Af0(s)":-9.536743e-07,"Af1(s/s)":0,"week":1077}]"""
     table = parse_iac_json(IacDataset.BEIDOU_ALMANAC, source, source_url=IAC_DATA_URLS[IacDataset.BEIDOU_ALMANAC])
     assert table.headers == ("PRN", "H", "e", "t", "δi", "Ω", "A", "Ω0", "ω", "m", "af0", "af1", "week")
-    assert table.rows[0][0] == "C1"
+    assert table.rows[0][0] == "C01"
     assert table.rows[0][1] == "000"
-    assert table.rows[0][-1] == "1200"
+    assert table.rows[0][6] == "6493.561035"
+    assert table.rows[0][-1] == "1077"
 
 
 def test_json_contract_fails_closed_when_required_field_is_missing() -> None:
