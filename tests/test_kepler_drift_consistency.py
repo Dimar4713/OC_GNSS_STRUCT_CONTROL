@@ -51,7 +51,9 @@ def test_kepler_period_and_delta_n_match_independent_hand_formula() -> None:
 
     assert kepler_period_s(ref_a, MU) == pytest.approx(ref_period, rel=1e-14)
     assert kepler_mean_motion_rad_s(dep_a, MU) == pytest.approx(2.0 * pi / dep_period, rel=1e-14)
-    assert diagnostic.initial_period_difference_s == pytest.approx(dep_period - ref_period, rel=1e-12)
+    # Delta T is obtained by subtracting two ~40 ks values; nanosecond-level
+    # cancellation is expected in binary float and is irrelevant to the drift check.
+    assert diagnostic.initial_period_difference_s == pytest.approx(dep_period - ref_period, abs=1e-9)
     assert diagnostic.initial_kepler_delta_n_rad_s == pytest.approx(expected_delta_n, rel=1e-12)
     assert diagnostic.initial_kepler_delta_n_deg_day == pytest.approx(expected_deg_day, rel=1e-12)
     assert diagnostic.time_mean_kepler_delta_n_deg_day == pytest.approx(expected_deg_day, rel=1e-12)
