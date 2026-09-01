@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
 from constellation_control.application.run_duration import run_scenario_with_duration
-from constellation_control.preview.app import PreviewRunRequest, _load_preview_scenario
+from constellation_control.preview.base_preview_shell import PreviewRunRequest, _load_preview_scenario
 from constellation_control.preview.duration import predicted_output_sample_count, resolve_duration_s
 from constellation_control.preview.gravity_release_app import (
     create_preview_app as create_gravity_preview_app,
