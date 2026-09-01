@@ -175,6 +175,7 @@ class ScenarioLineage(BaseModel):
         "gps_almanac_import",
         "glonass_almanac_import",
         "propagated_state",
+        "constellation_editor",
     ]
     random_seed: int | None = None
     source_type: Literal["norad_tle", "gps_yuma", "gps_sem", "glonass_authority_v1"] | None = None
@@ -197,7 +198,6 @@ class ScenarioLineage(BaseModel):
     def validate_integrity_and_source_provenance(self) -> ScenarioLineage:
         if self.integrity_version == 1 and not _is_sha256_hex(self.parent_config_hash):
             raise ValueError("integrity_version=1 requires parent_config_hash to be a 64-character SHA-256 hex digest")
-
         fields = (self.source_type, self.source_name, self.source_sha256, self.source_record_id, self.authority)
         if not any(value is not None for value in fields):
             return self
