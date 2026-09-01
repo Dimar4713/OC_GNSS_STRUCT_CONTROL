@@ -4,6 +4,7 @@ from typing import Annotated
 import typer
 
 from constellation_control.application.design_pipeline import run_design_application
+from constellation_control.application.kepler_drift_audit import enrich_run_with_kepler_drift_audit
 from constellation_control.application.robustness import run_robustness_application
 from constellation_control.application.run import run_scenario
 
@@ -26,6 +27,7 @@ def run(
     """Run one validated YAML scenario and write reproducible artifacts."""
     output_root = output if output is not None else Path("runs")
     run_dir = run_scenario(scenario, output_root)
+    enrich_run_with_kepler_drift_audit(run_dir)
     typer.echo(run_dir)
 
 
