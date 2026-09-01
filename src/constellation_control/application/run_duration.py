@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 
 import yaml
 
+from constellation_control.application.kepler_drift_audit import enrich_run_with_kepler_drift_audit
 from constellation_control.application.run import load_scenario, run_scenario
 from constellation_control.preview.duration import (
     effective_scenario_with_duration,
@@ -57,6 +58,7 @@ def run_scenario_with_duration(
             )
             run_dir = run_scenario(effective_path, output_root)
 
+    enrich_run_with_kepler_drift_audit(run_dir)
     return DurationRunResult(
         run_dir=run_dir,
         duration_s=effective.duration_s,
