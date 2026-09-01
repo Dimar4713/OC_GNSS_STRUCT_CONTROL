@@ -59,7 +59,10 @@ def test_kepler_period_and_delta_n_match_independent_hand_formula() -> None:
     assert diagnostic.time_mean_kepler_delta_n_deg_day == pytest.approx(expected_deg_day, rel=1e-12)
     assert diagnostic.delta_lambda_minus_kepler_deg_day == pytest.approx(0.0, abs=1e-12)
     assert diagnostic.delta_u_minus_kepler_deg_day == pytest.approx(0.0, abs=1e-12)
-    assert np.allclose(delta_n, expected_delta_n, rtol=1e-12, atol=0.0)
+    # The vector path uses NumPy sqrt while the hand formula uses scalar math.sqrt.
+    # Their last bits need not match for a ~1e-11 rad/s difference; 1e-18 rad/s is
+    # far below the engineering scale under test while still catching sign/unit errors.
+    assert np.allclose(delta_n, expected_delta_n, rtol=1e-9, atol=1e-18)
     assert expected_delta_n < 0.0
 
 
