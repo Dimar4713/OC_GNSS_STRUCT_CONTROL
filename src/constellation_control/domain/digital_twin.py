@@ -176,6 +176,7 @@ class ScenarioLineage(BaseModel):
         "glonass_almanac_import",
         "propagated_state",
         "constellation_editor",
+        "gravity_model_change",
     ]
     random_seed: int | None = None
     source_type: Literal["norad_tle", "gps_yuma", "gps_sem", "glonass_authority_v1"] | None = None
