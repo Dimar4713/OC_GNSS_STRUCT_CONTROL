@@ -43,7 +43,7 @@ class _TableParser(HTMLParser):
         self._row: list[str] | None = None
         self._cell: list[str] | None = None
 
-    def handle_starttag(self, tag: str, attrs) -> None:  # type: ignore[no-untyped-def]
+    def handle_starttag(self, tag: str, attrs) -> None:
         if tag == "table" and self._table is None:
             self._table = []
         elif self._table is not None and tag == "tr":
