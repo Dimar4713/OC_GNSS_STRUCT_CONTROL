@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from constellation_control.analysis.drift import harmonic_regression
+from constellation_control.analysis.drift import SIDEREAL_YEAR_S, harmonic_regression
 
 
 def test_harmonic_regression_reports_component_period_amplitude_and_peak_to_peak() -> None:
@@ -43,3 +43,24 @@ def test_multi_harmonic_rss_amplitude_has_components_with_individual_periods() -
         abs=1e-10,
     )
     assert fit.periodic_amplitude_rad == pytest.approx(math.hypot(*amplitudes), abs=1e-10)
+
+
+def test_short_horizon_recovers_secular_drift_with_annual_harmonic() -> None:
+    # This is the failure mode seen in engineering review: a long-period basis
+    # shares a short observation window with a very small secular rate. Raw
+    # seconds in the linear least-squares column make the design matrix nearly
+    # singular and can bias the inferred drift.
+    times = np.linspace(0.0, 10.0 * 86400.0, 241)
+    annual_frequency = 2.0 * math.pi / SIDEREAL_YEAR_S
+    expected_rate_rad_s = 1.25e-11
+    angle = (
+        0.4
+        + expected_rate_rad_s * times
+        + 3.0e-4 * np.sin(annual_frequency * times)
+        - 2.0e-4 * np.cos(annual_frequency * times)
+    )
+
+    fit = harmonic_regression(times, angle, (annual_frequency,))
+
+    assert fit.secular_drift_rad_s == pytest.approx(expected_rate_rad_s, rel=2.0e-5, abs=1.0e-15)
+    assert np.max(np.abs(fit.residual_rad)) < 1.0e-10
