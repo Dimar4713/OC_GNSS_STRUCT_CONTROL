@@ -1,12 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from threading import Lock, Thread
 from time import time
-from typing import Callable, Generic, TypeVar
 from uuid import uuid4
-
-T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -35,7 +33,7 @@ class ProgressSnapshot:
         return asdict(self)
 
 
-class PreviewRunJobManager(Generic[T]):
+class PreviewRunJobManager:
     """Thread-safe local job registry for non-blocking Preview execution.
 
     Workers receive a progress callback and return the final API-compatible result payload.
