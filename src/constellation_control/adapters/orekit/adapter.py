@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from threading import Event, Thread
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
@@ -11,6 +13,16 @@ from constellation_control.adapters.orekit.http import open_orekit_url
 from constellation_control.domain.models import PropagationRequest, PropagationResult
 
 ProgressCallback = Callable[[dict[str, object]], None]
+_PROGRESS_CALLBACK: ContextVar[ProgressCallback | None] = ContextVar("orekit_progress_callback", default=None)
+
+
+@contextmanager
+def orekit_progress_callback(callback: ProgressCallback | None) -> Iterator[None]:
+    token = _PROGRESS_CALLBACK.set(callback)
+    try:
+        yield
+    finally:
+        _PROGRESS_CALLBACK.reset(token)
 
 
 class OrekitSidecarPropagator:
@@ -21,10 +33,11 @@ class OrekitSidecarPropagator:
     and Orekit-data fingerprint are all validated before a result enters
     application code.
 
-    When a progress callback is supplied, propagation receives an explicit
-    telemetry id and a separate polling thread reads authoritative point/phase
-    snapshots from the sidecar. Progress percentage is derived only from entered
-    physical work units; elapsed wall-clock time never changes it.
+    When a progress callback is supplied explicitly or by the local ContextVar,
+    propagation receives an explicit telemetry id and a separate polling thread
+    reads authoritative point/phase snapshots from the sidecar. Progress
+    percentage is derived only from entered physical work units; elapsed
+    wall-clock time never changes it.
     """
 
     def __init__(
@@ -37,7 +50,7 @@ class OrekitSidecarPropagator:
         self._url = root + "/v1/propagate"
         self._progress_root = root + "/v1/progress"
         self._timeout_s = timeout_s
-        self._progress_callback = progress_callback
+        self._progress_callback = progress_callback if progress_callback is not None else _PROGRESS_CALLBACK.get()
 
     def propagate(self, request: PropagationRequest) -> PropagationResult:
         request_payload = request.model_dump(mode="json")
