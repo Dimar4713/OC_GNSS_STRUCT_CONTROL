@@ -20,7 +20,7 @@ def mean_motion(a_m: float, mu_m3_s2: float) -> float:
 
 def first_order_j2_rates(elements: ClassicalElements, force: ForceModelConfig) -> SecularRates:
     n = mean_motion(elements.a_m, force.mu_m3_s2)
-    if force.j2 == 0.0:
+    if force.gravity_degree < 2 or force.j2 == 0.0:
         return SecularRates(0.0, 0.0, n)
     p = elements.a_m * (1.0 - elements.e**2)
     factor = force.j2 * n * (force.reference_radius_m / p) ** 2
