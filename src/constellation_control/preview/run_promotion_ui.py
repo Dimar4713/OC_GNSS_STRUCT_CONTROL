@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from constellation_control.application.acceptance_evidence import export_completed_run_acceptance_evidence
 from constellation_control.application.run_promotion import list_promotable_runs, promote_completed_run
 
 
@@ -13,6 +15,11 @@ class PromoteRunRequest(BaseModel):
     run_id: str
     target_scenario_name: str
     new_scenario_id: str
+
+
+class ExportAcceptanceEvidenceRequest(BaseModel):
+    scenario_id: str
+    run_id: str
 
 
 RUN_PROMOTION_CARD = r"""
@@ -28,12 +35,19 @@ RUN_PROMOTION_CARD = r"""
   <input id="promotionScenarioName" type="text" placeholder="continued-scenario.yaml">
   <button onclick="promoteCompletedRun()">Создать продолжение / Create continuation</button>
   <div id="runPromotionStatus" class="status">Доступны только runs с полным propagation evidence / Only runs with complete propagation evidence are listed.</div>
+  <hr>
+  <h4>Canonical acceptance evidence</h4>
+  <p class="hint">Экспортирует выбранный completed run как неизменяемый ZIP с SHA-256 manifest. Требует независимый Kepler ↔ Orekit drift diagnostic; ничего не пересчитывает и не восстанавливает. / Exports the selected completed run as an immutable checksummed ZIP. Requires the independent Kepler ↔ Orekit drift diagnostic; no values are rerun or reconstructed.</p>
+  <button id="exportAcceptanceEvidenceButton" onclick="exportAcceptanceEvidence()">Экспортировать evidence ZIP / Export evidence ZIP</button>
+  <div id="acceptanceEvidenceStatus" class="status">Для #171 используйте реальный GLONASS run; synthetic run не заменяет authoritative acceptance. / Use a real GLONASS run for #171; a synthetic run is not authoritative acceptance.</div>
+  <div id="acceptanceEvidenceLink"></div>
 </div>
 """
 
 
 RUN_PROMOTION_SCRIPT = r"""
 function promotionStatus(text,kind=''){const e=document.getElementById('runPromotionStatus');e.textContent=text;e.className='status '+kind;}
+function evidenceStatus(text,kind=''){const e=document.getElementById('acceptanceEvidenceStatus');e.textContent=text;e.className='status '+kind;}
 async function refreshPromotableRuns(){
   const r=await fetch('/api/promotable-runs');const d=await r.json();
   if(!r.ok){promotionStatus(d.detail||'Cannot list promotable runs','danger');return;}
@@ -64,7 +78,29 @@ async function promoteCompletedRun(){
   await loadScenario();
   promotionStatus('Создано продолжение: '+d.scenario_name+'; epoch='+d.epoch+' / Continuation created','ok');
 }
+async function exportAcceptanceEvidence(){
+  const sel=document.getElementById('promotableRun');
+  if(!sel.value){evidenceStatus('Выберите завершённый расчёт / Select a completed run','danger');return;}
+  const [scenarioId,runId]=sel.value.split('|');
+  evidenceStatus('Проверка authority и упаковка evidence… / Validating authority and packaging evidence…');
+  document.getElementById('acceptanceEvidenceLink').replaceChildren();
+  const r=await fetch('/api/acceptance-evidence/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_id:scenarioId,run_id:runId})});
+  const d=await r.json();
+  if(!r.ok){evidenceStatus(d.detail||'Evidence export failed','danger');return;}
+  evidenceStatus('Evidence готов: '+d.package_id+'; ZIP SHA-256='+d.zip_sha256,'ok');
+  const a=document.createElement('a');a.href=d.download_url;a.textContent='Скачать evidence ZIP / Download evidence ZIP';a.setAttribute('download',d.zip_name);document.getElementById('acceptanceEvidenceLink').appendChild(a);
+}
 """
+
+
+def _safe_evidence_zip(output_root: Path, zip_name: str) -> Path:
+    if not zip_name or Path(zip_name).name != zip_name or not zip_name.endswith(".zip"):
+        raise ValueError("invalid evidence ZIP name")
+    root = (output_root.resolve() / "acceptance-evidence").resolve()
+    candidate = (root / zip_name).resolve()
+    if candidate.parent != root or not candidate.is_file():
+        raise ValueError("acceptance evidence ZIP not found")
+    return candidate
 
 
 def install_run_promotion_routes(app: FastAPI, scenario_root: Path, output_root: Path) -> None:
@@ -88,3 +124,28 @@ def install_run_promotion_routes(app: FastAPI, scenario_root: Path, output_root:
             )
         except (ValueError, OSError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post('/api/acceptance-evidence/export')
+    def export_acceptance_evidence(request: ExportAcceptanceEvidenceRequest) -> dict[str, object]:
+        try:
+            result = export_completed_run_acceptance_evidence(
+                output_root,
+                scenario_id=request.scenario_id,
+                run_id=request.run_id,
+            )
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {
+            "package_id": result["package_id"],
+            "zip_name": result["zip_name"],
+            "zip_sha256": result["zip_sha256"],
+            "download_url": f"/api/acceptance-evidence/{result['zip_name']}",
+        }
+
+    @app.get('/api/acceptance-evidence/{zip_name}')
+    def download_acceptance_evidence(zip_name: str) -> FileResponse:
+        try:
+            path = _safe_evidence_zip(output_root, zip_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return FileResponse(path, media_type="application/zip", filename=path.name)
