@@ -40,7 +40,22 @@ def default_harmonic_frequencies(orbital_period_s: float) -> tuple[float, ...]:
 def harmonic_regression(times_s: np.ndarray, angle_rad: np.ndarray, frequencies_rad_s: tuple[float, ...]) -> HarmonicFit:
     t = np.asarray(times_s, dtype=float)
     y = np.unwrap(np.asarray(angle_rad, dtype=float))
-    columns: list[np.ndarray] = [np.ones_like(t), t]
+    if t.ndim != 1 or y.ndim != 1 or t.shape != y.shape or t.size == 0:
+        raise ValueError("harmonic regression requires matching non-empty one-dimensional time and angle arrays")
+    if not np.all(np.isfinite(t)) or not np.all(np.isfinite(y)):
+        raise ValueError("harmonic regression inputs must be finite")
+
+    # Keep the physical harmonic arguments in SI seconds, but center and scale the
+    # linear time basis before least squares.  Using raw epoch seconds beside
+    # O(1) sin/cos columns creates a severely ill-conditioned design matrix and
+    # can bias the recovered secular drift, especially on short horizons when a
+    # long-period harmonic is also present.
+    t_center = float(t.mean())
+    t_span = float(np.ptp(t))
+    time_scale_s = t_span if t_span > 0.0 else 1.0
+    t_scaled = (t - t_center) / time_scale_s
+
+    columns: list[np.ndarray] = [np.ones_like(t), t_scaled]
     for frequency in frequencies_rad_s:
         columns.extend((np.sin(frequency * t), np.cos(frequency * t)))
     design = np.column_stack(columns)
@@ -48,7 +63,9 @@ def harmonic_regression(times_s: np.ndarray, angle_rad: np.ndarray, frequencies_
         raise ValueError("harmonic regression needs more samples than fitted coefficients")
     coefficients, *_ = np.linalg.lstsq(design, y, rcond=None)
     fitted = design @ coefficients
-    trend = coefficients[0] + coefficients[1] * t
+    secular_drift_rad_s = float(coefficients[1] / time_scale_s)
+    intercept_rad = float(coefficients[0] - secular_drift_rad_s * t_center)
+    trend = intercept_rad + secular_drift_rad_s * t
     harmonic = fitted - trend
     amplitudes: list[float] = []
     components: list[HarmonicComponent] = []
@@ -67,8 +84,8 @@ def harmonic_regression(times_s: np.ndarray, angle_rad: np.ndarray, frequencies_
             )
         )
     return HarmonicFit(
-        intercept_rad=float(coefficients[0]),
-        secular_drift_rad_s=float(coefficients[1]),
+        intercept_rad=intercept_rad,
+        secular_drift_rad_s=secular_drift_rad_s,
         periodic_amplitude_rad=float(np.sqrt(np.sum(np.square(amplitudes)))),
         fitted_rad=fitted,
         trend_rad=trend,
