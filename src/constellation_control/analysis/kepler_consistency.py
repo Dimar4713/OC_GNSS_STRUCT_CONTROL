@@ -137,7 +137,7 @@ def kepler_drift_consistency_summary(
     mu_m3_s2: float,
     measured_delta_lambda_rad_s: float,
     measured_delta_u_rad_s: float,
-) -> dict[str, float | str]:
+) -> dict[str, object]:
     measured_lambda = float(measured_delta_lambda_rad_s)
     measured_u = float(measured_delta_u_rad_s)
     kepler_rate = baseline.time_mean_delta_n_rad_s
@@ -146,7 +146,7 @@ def kepler_drift_consistency_summary(
     return {
         "authority": "independent-central-field-consistency-diagnostic-v1",
         "source_elements": "propagated force-model-consistent mean semi-major-axis histories",
-        "osculating_a_used": "false",
+        "osculating_a_used": False,
         "sign_convention": "Delta n = n_deputy - n_reference; period difference = P_deputy - P_reference",
         "interpretation": (
             "Kepler Delta n is a central-field baseline, not an expected equality for full-force "
