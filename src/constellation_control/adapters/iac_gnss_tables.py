@@ -80,7 +80,7 @@ _JSON_FIELDS: dict[IacDataset, tuple[tuple[str, str], ...]] = {
         ("t", "Time of Applicability(s)"),
         ("δi", "Orbital Inclination(rad)"),
         ("Ω", "Rate of Right Ascen(r/s)"),
-        ("A", "SQRT(A) (m 1/2)"),
+        ("A", "SQRT(A)  (m 1/2)"),
         ("Ω0", "Right Ascen at Week(rad)"),
         ("ω", "Argument of Perigee(rad)"),
         ("m", "Mean Anom(rad)"),
