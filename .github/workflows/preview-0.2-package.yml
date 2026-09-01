@@ -233,9 +233,9 @@ jobs:
               Get-Content $previewErr -ErrorAction SilentlyContinue
               throw 'Packaged Engineering Preview 0.2.4 did not become ready'
             }
-            $home = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
-            if ($home.Content -notmatch 'gravityModelCard') { throw 'Gravity model card missing from packaged Preview UI' }
-            if ($home.Content -notmatch 'EIGEN-6S 32x32') { throw '32x32 gravity preset missing from packaged Preview UI' }
+            $homeResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
+            if ($homeResponse.Content -notmatch 'gravityModelCard') { throw 'Gravity model card missing from packaged Preview UI' }
+            if ($homeResponse.Content -notmatch 'EIGEN-6S 32x32') { throw '32x32 gravity preset missing from packaged Preview UI' }
             $authority = Invoke-RestMethod -Uri 'http://127.0.0.1:8081/healthz' -TimeoutSec 2
             if ($authority.orekit_version -ne '13.1.7') { throw "Wrong Orekit version: $($authority.orekit_version)" }
             if ($authority.orekit_data_revision -ne $pinned) { throw "Wrong Orekit data revision: $($authority.orekit_data_revision)" }
