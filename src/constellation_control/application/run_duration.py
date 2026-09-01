@@ -58,7 +58,8 @@ def run_scenario_with_duration(
             )
             run_dir = run_scenario(effective_path, output_root)
 
-    enrich_run_with_kepler_drift_audit(run_dir)
+    if (run_dir / "summary.json").exists():
+        enrich_run_with_kepler_drift_audit(run_dir)
     return DurationRunResult(
         run_dir=run_dir,
         duration_s=effective.duration_s,
