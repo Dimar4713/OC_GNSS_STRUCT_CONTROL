@@ -13,6 +13,11 @@ from constellation_control.preview.constellation_editor import (
     CONSTELLATION_EDITOR_SCRIPT,
     install_constellation_editor_routes,
 )
+from constellation_control.preview.drift_consistency_ui import (
+    DRIFT_CONSISTENCY_CARD,
+    DRIFT_CONSISTENCY_SCRIPT,
+    install_drift_consistency_routes,
+)
 from constellation_control.preview.glonass_almanac_input import (
     GLONASS_ALMANAC_CARD,
     GLONASS_ALMANAC_SCRIPT,
@@ -186,12 +191,12 @@ def render_preview_page_for_test() -> str:
     page = render_release_page().replace("Engineering Preview 0.2.0", f"Engineering Preview {PREVIEW_VERSION}")
     page = page.replace(
         "</section></main>",
-        f"{RUN_PROMOTION_CARD}{RESOURCE_STATE_CARD}{SPACECRAFT_CATALOG_CARD}{CONSTELLATION_EDITOR_CARD}{PERTURBATION_CARD}{GLONASS_ALMANAC_CARD}{GNSS_ALMANAC_CARD}{NORAD_CARD}{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
+        f"{DRIFT_CONSISTENCY_CARD}{RUN_PROMOTION_CARD}{RESOURCE_STATE_CARD}{SPACECRAFT_CATALOG_CARD}{CONSTELLATION_EDITOR_CARD}{PERTURBATION_CARD}{GLONASS_ALMANAC_CARD}{GNSS_ALMANAC_CARD}{NORAD_CARD}{OSCULATING_CARD}{WALKER_CARD}{WORKBOOK_CARD}{_EDITOR_CARD}</section></main>",
         1,
     )
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\n{NORAD_SCRIPT}\n{GNSS_ALMANAC_SCRIPT}\n{GLONASS_ALMANAC_SCRIPT}\n{PERTURBATION_SCRIPT}\n{RESOURCE_STATE_SCRIPT}\n{SPACECRAFT_CATALOG_SCRIPT}\n{CONSTELLATION_EDITOR_SCRIPT}\n{RUN_PROMOTION_SCRIPT}\nconst promotionBootstrap=bootstrap;bootstrap=async function(){{await promotionBootstrap();await refreshPromotableRuns();}};bootstrap().catch(e=>setStatus(String(e),'danger'));",
+        f"{_EDITOR_SCRIPT}\n{WORKBOOK_SCRIPT}\n{WALKER_SCRIPT}\n{OSCULATING_SCRIPT}\n{NORAD_SCRIPT}\n{GNSS_ALMANAC_SCRIPT}\n{GLONASS_ALMANAC_SCRIPT}\n{PERTURBATION_SCRIPT}\n{RESOURCE_STATE_SCRIPT}\n{SPACECRAFT_CATALOG_SCRIPT}\n{CONSTELLATION_EDITOR_SCRIPT}\n{RUN_PROMOTION_SCRIPT}\n{DRIFT_CONSISTENCY_SCRIPT}\nconst promotionBootstrap=bootstrap;bootstrap=async function(){{await promotionBootstrap();await refreshPromotableRuns();}};bootstrap().catch(e=>setStatus(String(e),'danger'));",
         1,
     )
     return page
@@ -248,4 +253,5 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
     install_spacecraft_catalog_routes(app, scenario_root)
     install_constellation_editor_routes(app, scenario_root)
     install_run_promotion_routes(app, scenario_root, output_root)
+    install_drift_consistency_routes(app, output_root)
     return app
