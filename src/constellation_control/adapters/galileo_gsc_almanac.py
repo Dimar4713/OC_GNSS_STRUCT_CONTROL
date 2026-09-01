@@ -1,0 +1,246 @@
+from __future__ import annotations
+
+import hashlib
+import re
+from dataclasses import dataclass
+from html.parser import HTMLParser
+from math import pi, radians, sqrt
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
+from xml.etree import ElementTree
+
+
+GSC_ALMANAC_INDEX_URL = "https://www.gsc-europa.eu/gsc-products/almanac"
+GSC_FILE_PREFIX = "https://www.gsc-europa.eu/sites/default/files/sites/all/files/"
+GALILEO_NOMINAL_SEMI_MAJOR_AXIS_M = 29_600_000.0
+GALILEO_REFERENCE_INCLINATION_RAD = radians(56.0)
+
+_REQUIRED_FIELDS = (
+    "SVID",
+    "aSqRoot",
+    "ecc",
+    "deltai",
+    "omega0",
+    "omegaDot",
+    "w",
+    "m0",
+    "af0",
+    "af1",
+    "iod",
+    "t0a",
+    "wna",
+    "statusE5a",
+    "statusE5b",
+    "statusE1B",
+)
+
+
+@dataclass(frozen=True)
+class GalileoGscAlmanacRecord:
+    svid: int
+    delta_sqrt_a_m_sqrt: float
+    eccentricity: float
+    delta_inclination_semicircles: float
+    raan_semicircles: float
+    raan_rate_semicircles_s: float
+    argument_of_perigee_semicircles: float
+    mean_anomaly_semicircles: float
+    af0_s: float
+    af1_s_s: float
+    iod: int
+    t0a_s: float
+    wna_mod4: int
+    status_e5a: int
+    status_e5b: int
+    status_e1b: int
+
+    @property
+    def sqrt_a_m_sqrt(self) -> float:
+        return sqrt(GALILEO_NOMINAL_SEMI_MAJOR_AXIS_M) + self.delta_sqrt_a_m_sqrt
+
+    @property
+    def semi_major_axis_m(self) -> float:
+        return self.sqrt_a_m_sqrt**2
+
+    @property
+    def inclination_rad(self) -> float:
+        return GALILEO_REFERENCE_INCLINATION_RAD + self.delta_inclination_semicircles * pi
+
+    @property
+    def raan_rad(self) -> float:
+        return self.raan_semicircles * pi
+
+    @property
+    def raan_rate_rad_s(self) -> float:
+        return self.raan_rate_semicircles_s * pi
+
+    @property
+    def argument_of_perigee_rad(self) -> float:
+        return self.argument_of_perigee_semicircles * pi
+
+    @property
+    def mean_anomaly_rad(self) -> float:
+        return self.mean_anomaly_semicircles * pi
+
+
+@dataclass(frozen=True)
+class GalileoGscAlmanac:
+    source_url: str | None
+    source_filename: str
+    source_sha256: str
+    records: tuple[GalileoGscAlmanacRecord, ...]
+    authority_note: str = (
+        "Official European GNSS Service Centre Galileo almanac XML; OS SIS ICD almanac semantics are preserved explicitly"
+    )
+
+
+class _LinkParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        for name, value in attrs:
+            if name == "href" and value:
+                self.hrefs.append(value)
+
+
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _number(value: str, label: str) -> float:
+    try:
+        return float(value.strip().replace("D", "E").replace("d", "e"))
+    except ValueError as exc:
+        raise ValueError(f"invalid Galileo GSC {label}: {value!r}") from exc
+
+
+def _integer(value: str, label: str) -> int:
+    try:
+        return int(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"invalid Galileo GSC {label}: {value!r}") from exc
+
+
+def _candidate_sort_key(url: str) -> tuple[int, str]:
+    name = url.rsplit("/", 1)[-1]
+    daily = re.search(r"GalileoGSCAlmanac_(\d{14})_.*\.xml$", name, re.IGNORECASE)
+    if daily:
+        return 2, daily.group(1)
+    legacy = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})\.xml", name, re.IGNORECASE)
+    if legacy:
+        return 1, "".join(legacy.groups()) + "000000"
+    return 0, ""
+
+
+def discover_latest_gsc_almanac_url(index_html: str) -> str:
+    parser = _LinkParser()
+    parser.feed(index_html)
+    candidates: list[str] = []
+    for href in parser.hrefs:
+        absolute = urljoin(GSC_ALMANAC_INDEX_URL, href)
+        parsed = urlparse(absolute)
+        if parsed.scheme != "https" or parsed.netloc != "www.gsc-europa.eu":
+            continue
+        if not absolute.startswith(GSC_FILE_PREFIX):
+            continue
+        if _candidate_sort_key(absolute)[0] == 0:
+            continue
+        candidates.append(absolute)
+    if not candidates:
+        raise ValueError("GSC almanac index contains no supported Galileo XML link")
+    return max(candidates, key=_candidate_sort_key)
+
+
+def parse_galileo_gsc_almanac(
+    filename: str,
+    xml_text: str,
+    *,
+    source_url: str | None = None,
+) -> GalileoGscAlmanac:
+    if not filename or "/" in filename or "\\" in filename:
+        raise ValueError("Galileo GSC source filename must not contain path components")
+    if not filename.lower().endswith(".xml"):
+        raise ValueError("Galileo GSC source filename must end with .xml")
+    if not xml_text.strip():
+        raise ValueError("Galileo GSC XML is empty")
+    try:
+        root = ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError as exc:
+        raise ValueError("Galileo GSC XML is invalid") from exc
+
+    records: list[GalileoGscAlmanacRecord] = []
+    for element in root.iter():
+        children = {_local_name(child.tag): (child.text or "").strip() for child in list(element)}
+        if "SVID" not in children:
+            continue
+        missing = [field for field in _REQUIRED_FIELDS if field not in children]
+        if missing:
+            raise ValueError("Galileo GSC record missing fields: " + ", ".join(missing))
+        record = GalileoGscAlmanacRecord(
+            svid=_integer(children["SVID"], "SVID"),
+            delta_sqrt_a_m_sqrt=_number(children["aSqRoot"], "aSqRoot"),
+            eccentricity=_number(children["ecc"], "ecc"),
+            delta_inclination_semicircles=_number(children["deltai"], "deltai"),
+            raan_semicircles=_number(children["omega0"], "omega0"),
+            raan_rate_semicircles_s=_number(children["omegaDot"], "omegaDot"),
+            argument_of_perigee_semicircles=_number(children["w"], "w"),
+            mean_anomaly_semicircles=_number(children["m0"], "m0"),
+            af0_s=_number(children["af0"], "af0"),
+            af1_s_s=_number(children["af1"], "af1"),
+            iod=_integer(children["iod"], "iod"),
+            t0a_s=_number(children["t0a"], "t0a"),
+            wna_mod4=_integer(children["wna"], "wna"),
+            status_e5a=_integer(children["statusE5a"], "statusE5a"),
+            status_e5b=_integer(children["statusE5b"], "statusE5b"),
+            status_e1b=_integer(children["statusE1B"], "statusE1B"),
+        )
+        if not 1 <= record.svid <= 36:
+            raise ValueError(f"Galileo GSC SVID out of range: {record.svid}")
+        if not 0.0 <= record.eccentricity < 1.0:
+            raise ValueError(f"Galileo GSC eccentricity out of range for SVID {record.svid}")
+        if record.sqrt_a_m_sqrt <= 0.0:
+            raise ValueError(f"Galileo GSC sqrt(A) is non-positive for SVID {record.svid}")
+        if record.t0a_s < 0.0:
+            raise ValueError(f"Galileo GSC t0a is negative for SVID {record.svid}")
+        if not 0 <= record.wna_mod4 <= 3:
+            raise ValueError(f"Galileo GSC WNa modulo-4 is out of range for SVID {record.svid}")
+        records.append(record)
+
+    if not records:
+        raise ValueError("Galileo GSC XML contains no almanac records")
+    svids = [record.svid for record in records]
+    if len(svids) != len(set(svids)):
+        raise ValueError("duplicate Galileo GSC SVID values")
+
+    return GalileoGscAlmanac(
+        source_url=source_url,
+        source_filename=filename,
+        source_sha256=hashlib.sha256(xml_text.encode("utf-8")).hexdigest(),
+        records=tuple(records),
+    )
+
+
+def _fetch_text(url: str, timeout_s: float) -> str:
+    request = Request(url, headers={"User-Agent": "OC-GNSS-STRUCT-CONTROL/0.2.5"})
+    try:
+        with urlopen(request, timeout=timeout_s) as response:  # noqa: S310 - URL is fixed/reviewed GSC allowlist
+            charset = response.headers.get_content_charset() or "utf-8"
+            raw = response.read()
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        raise ValueError(f"Galileo GSC online source unavailable: {url}: {exc}") from exc
+    try:
+        return raw.decode(charset)
+    except (LookupError, UnicodeDecodeError) as exc:
+        raise ValueError(f"Galileo GSC response cannot be decoded as {charset}") from exc
+
+
+def fetch_latest_galileo_gsc_almanac(*, timeout_s: float = 20.0) -> GalileoGscAlmanac:
+    index_html = _fetch_text(GSC_ALMANAC_INDEX_URL, timeout_s)
+    xml_url = discover_latest_gsc_almanac_url(index_html)
+    xml_text = _fetch_text(xml_url, timeout_s)
+    return parse_galileo_gsc_almanac(xml_url.rsplit("/", 1)[-1], xml_text, source_url=xml_url)
