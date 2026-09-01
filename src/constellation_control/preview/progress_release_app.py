@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
+from constellation_control.adapters.orekit.adapter import orekit_progress_callback
 from constellation_control.application.run_duration import DurationRunResult, run_scenario_with_duration
 from constellation_control.preview.base_preview_shell import PreviewRunRequest, _load_preview_scenario
 from constellation_control.preview.duration import predicted_output_sample_count, resolve_duration_s
@@ -33,7 +34,8 @@ function renderRunProgress(d){
   const p=d.point_index==null?'':` | point ${d.point_index}/${d.point_total}`;
   const s=d.satellite_id?` | ${d.satellite_id}${d.satellite_index==null?'':` (${d.satellite_index}/${d.satellite_total})`}`:'';
   const t=d.time_s==null?'':` | t=${d.time_s}/${d.duration_s} s`;
-  box.textContent=`${String(d.phase).toUpperCase()}${s}${t}${p} | ${Number(d.percent||0).toFixed(1)} %${d.message?' | '+d.message:''}`;
+  const e=d.epoch?` | epoch=${d.epoch}`:'';
+  box.textContent=`${String(d.phase).toUpperCase()}${s}${t}${p}${e} | ${Number(d.percent||0).toFixed(1)} %${d.message?' | '+d.message:''}`;
   box.className='status '+(d.state==='failed'?'danger':d.state==='completed'?'ok':'');
 }
 async function pollRunProgress(){
@@ -130,18 +132,15 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
                     satellite_id=scenario.constellation.satellites[0].satellite_id if satellite_total else None,
                     time_s=0.0,
                     epoch=scenario.epoch.isoformat(),
-                    message=(
-                        "Orekit numerical propagation; detailed sidecar point telemetry pending"
-                        if scenario.force_model.mode.value == "validation"
-                        else "propagation"
-                    ),
+                    message="starting authoritative propagation",
                 )
-                execution = run_scenario_with_duration(
-                    scenario_path,
-                    output_root,
-                    preset=request.duration_preset,
-                    custom_duration_s=request.custom_duration_s,
-                )
+                with orekit_progress_callback(update):
+                    execution = run_scenario_with_duration(
+                        scenario_path,
+                        output_root,
+                        preset=request.duration_preset,
+                        custom_duration_s=request.custom_duration_s,
+                    )
                 update(
                     phase="post_processing",
                     percent=95.0,
