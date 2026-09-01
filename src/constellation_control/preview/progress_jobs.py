@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from threading import Lock, Thread
 from time import time
+from typing import Any, cast
 from uuid import uuid4
 
 
@@ -98,14 +99,14 @@ class PreviewRunJobManager:
     def update(self, job_id: str, **changes: object) -> ProgressSnapshot:
         with self._lock:
             current = self._jobs[job_id]
-            requested_percent = float(changes.get("percent", current.percent))
+            requested_percent = float(cast(Any, changes.get("percent", current.percent)))
             if requested_percent < current.percent:
                 requested_percent = current.percent
             if requested_percent > 100.0:
                 requested_percent = 100.0
             changes["percent"] = requested_percent
             changes["updated_at_unix_s"] = time()
-            updated = replace(current, **changes)
+            updated = replace(current, **cast(Any, changes))
             self._jobs[job_id] = updated
             return updated
 
