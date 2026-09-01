@@ -80,7 +80,8 @@ def preview(
     try:
         import uvicorn
 
-        from constellation_control.preview.gravity_release_app import create_preview_app
+        # progress_release_app wraps gravity_release_app and preserves all gravity controls.
+        from constellation_control.preview.progress_release_app import create_preview_app
     except ImportError as exc:
         missing = getattr(exc, "name", None) or str(exc)
         raise typer.BadParameter(
