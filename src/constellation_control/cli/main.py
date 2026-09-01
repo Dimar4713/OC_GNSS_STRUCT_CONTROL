@@ -27,7 +27,8 @@ def run(
     """Run one validated YAML scenario and write reproducible artifacts."""
     output_root = output if output is not None else Path("runs")
     run_dir = run_scenario(scenario, output_root)
-    enrich_run_with_kepler_drift_audit(run_dir)
+    if (run_dir / "summary.json").exists():
+        enrich_run_with_kepler_drift_audit(run_dir)
     typer.echo(run_dir)
 
 
