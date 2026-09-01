@@ -45,12 +45,7 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #150 | merged | Strict GLONASS authority-source preview and immutable derived-scenario creation; legacy reduced-precision records remain non-promotable. |
 | #151 | merged | Backward-compatible structural lineage integrity contract with `integrity_version: 1` for real 64-hex parent SHA-256 hashes. |
 | #152 | merged | **Windows package acceptance for Engineering Preview 0.2.4.** Versioning synchronized to 0.2.4; package stages the consolidated operator surface; packaged legacy `preview/app.py` is excluded; shared base shell is internalized as `base_preview_shell.py`; package lock includes workbook dependencies; CLI routes to `consolidated_release_app`; real clean-Windows packaged launch reaches `/health=0.2.4` and verifies pinned Orekit 13.1.7 data revision/SHA. |
-
-## Active post-acceptance correction
-
-| PR | Status | Engineering increment |
-|---|---|---|
-| #153 | CI pending | Fix Python→Java GLONASS almanac request contract after real operator test exposed HTTP 500. Python now sends the exact sidecar fields `delta_irad`, `delta_ts`, `delta_tdot` instead of incompatible `delta_i_rad`, `delta_t_s`, `delta_t_dot`; regression test prevents future drift. Numerical GLONASS/Orekit/DSST authority semantics are unchanged. |
+| #153 | merged | **GLONASS almanac Python→Java contract fix.** Real operator testing exposed HTTP 500 because the Python client sent `delta_i_rad`, `delta_t_s`, `delta_t_dot` while the Java sidecar contract is `delta_irad`, `delta_ts`, `delta_tdot`. The client now sends the exact sidecar field names and a regression test locks the request contract. Numerical GLONASS/Orekit/DSST authority semantics are unchanged. |
 
 ## Current authority boundaries
 
@@ -84,9 +79,22 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 - PR #152 merge commit: `25f704d35833664fda8f183501f6e8e49422da8a`.
 - Runtime acceptance proves Preview `/health` reports `0.2.4` and the packaged Orekit sidecar reports Orekit `13.1.7` with the pinned reviewed data revision and physical SHA-256.
 
+## Accepted post-acceptance correction evidence — PR #153
+
+- PR #153 exact head: `b31bf7d60ff545dfca5b0458beb912aaed6d331a`.
+- Exact-head required workflows all terminal success:
+  - `ci` run `33474303934` — GREEN;
+  - `preview-package-compat` run `33474304042` — GREEN;
+  - `preview-0.2-package` run `33474303969` — GREEN.
+- Replacement Windows artifact: `engineering-preview-python-0.2.4-win10`, artifact id `9787611406`.
+- Replacement artifact digest: `sha256:aa6e8ab6e870f22fba6d324f3555ad93b9ef8b1e4cbece6222dc7341619f7959`.
+- Replacement artifact retention expiry: 2026-09-15.
+- PR #153 merge commit: `60ef46a2c60079b1e99aa79e2b1e8ea2ae448022`.
+- This artifact supersedes artifact `9773032400` for GLONASS almanac testing because it contains the corrected Python→Java request contract.
+
 ## Next incomplete work
 
-1. Complete exact-head acceptance of #153 and rebuild/reaccept the Windows package before distributing a replacement package for GLONASS-almanac testing.
+1. Retest the real GLONASS authority flow with the operator-provided `glonass-labelled-authority-v1` fixture against the #153 replacement package.
 2. Continue remaining authority hardening separately: OMM authoritative conversion, GPS/GLONASS raw-source SHA attestation through sidecar, GPS week ambiguity handling, and exact returned target-epoch verification where applicable.
 
 ## Maintenance rule
