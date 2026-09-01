@@ -1,0 +1,39 @@
+name: iac-online-acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'src/constellation_control/adapters/iac_gnss_tables.py'
+      - 'src/constellation_control/preview/iac_gnss_intake.py'
+      - 'tests/test_iac_gnss_intake.py'
+      - '.github/workflows/iac-online-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-iac-server:
+    runs-on: [self-hosted, Linux, X64, infra-control]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Fetch and parse live IAC GNSS tables from server egress
+        run: |
+          python - <<'PY'
+          from constellation_control.adapters.iac_gnss_tables import IAC_URLS, IacDataset, fetch_iac_table
+
+          for dataset in IacDataset:
+              table = fetch_iac_table(dataset, timeout_s=30.0)
+              assert table.source_url == IAC_URLS[dataset]
+              assert len(table.source_sha256) == 64
+              assert table.headers
+              assert table.rows
+              assert table.canonical_tsv
+              print(f'IAC LIVE OK: {dataset.value}: rows={len(table.rows)} sha256={table.source_sha256}')
+          PY
