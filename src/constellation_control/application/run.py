@@ -19,6 +19,11 @@ from constellation_control.analysis.drift import (
     linear_rate,
 )
 from constellation_control.analysis.fuel import propellant_used_kg
+from constellation_control.analysis.kepler_consistency import (
+    angular_rate_deg_day,
+    kepler_drift_consistency_summary,
+    kepler_relative_drift_baseline,
+)
 from constellation_control.analysis.navigation_geometry import evaluate_navigation_geometry, inertial_to_ecef_m
 from constellation_control.analysis.relative_operations import (
     analyze_relative_operations,
@@ -315,6 +320,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     satellite_by_id = {sat.satellite_id: sat for sat in scenario.constellation.satellites}
     metrics = []
     relative_operations: list[dict[str, object]] = []
+    kepler_consistency_diagnostics: list[dict[str, object]] = []
     rows: list[dict[str, float | str]] = []
 
     for deputy in scenario.constellation.satellites:
@@ -344,6 +350,20 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         raan_fit = harmonic_regression(times, delta_raan, frequencies)
         operations, delta_u, along_track = analyze_relative_operations(times, ref_series, dep_series)
         delta_u_fit = harmonic_regression(times, delta_u, frequencies)
+        ref_a_mean = np.asarray([item.a_m for item in ref_series], dtype=float)
+        dep_a_mean = np.asarray([item.a_m for item in dep_series], dtype=float)
+        kepler_baseline = kepler_relative_drift_baseline(
+            times,
+            ref_a_mean,
+            dep_a_mean,
+            scenario.force_model.mu_m3_s2,
+        )
+        kepler_consistency = kepler_drift_consistency_summary(
+            kepler_baseline,
+            mu_m3_s2=scenario.force_model.mu_m3_s2,
+            measured_delta_lambda_rad_s=phase_fit.secular_drift_rad_s,
+            measured_delta_u_rad_s=delta_u_fit.secular_drift_rad_s,
+        )
         corridor = forecast_phase_corridor(
             current_delta_u_rad=float(delta_u[-1]),
             secular_delta_u_rate_rad_s=operations.secular_delta_u_rate_rad_s,
@@ -390,6 +410,13 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             pdop=representative_pdop,
         )
         metrics.append(metric)
+        pair_kepler_consistency = {
+            "pair_id": pair_id,
+            "reference_id": reference.satellite_id,
+            "deputy_id": deputy.satellite_id,
+            **kepler_consistency,
+        }
+        kepler_consistency_diagnostics.append(pair_kepler_consistency)
         periodic_components = [
             {
                 "basis": label,
@@ -412,6 +439,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                 "along_track_semantics": "near-circular mean arc proxy a_ref*Delta_u; not Cartesian separation",
                 "phase_corridor_semantics": "symmetric +/- constraints.phase_corridor_rad around Delta_u=0",
                 "phase_corridor": corridor.__dict__,
+                "kepler_drift_consistency": kepler_consistency,
                 "periodic_delta_u": {
                     "basis": "orbital + sidereal_day + lunar + sidereal_year",
                     "components": periodic_components,
@@ -426,6 +454,10 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             }
         )
         corridor_deg = float(np.degrees(scenario.constraints.phase_corridor_rad))
+        measured_lambda_rate = phase_fit.secular_drift_rad_s
+        measured_u_rate = delta_u_fit.secular_drift_rad_s
+        lambda_residual = measured_lambda_rate - kepler_baseline.time_mean_delta_n_rad_s
+        u_residual = measured_u_rate - kepler_baseline.time_mean_delta_n_rad_s
         for index, (time_s, roe) in enumerate(zip(times, roes, strict=True)):
             rows.append(
                 {
@@ -445,7 +477,32 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                     "phase_corridor_upper_deg": corridor_deg,
                     "phase_corridor_lower_deg": -corridor_deg,
                     "along_track_mean_arc_proxy_m": float(along_track[index]),
+                    "reference_a_mean_m": float(kepler_baseline.reference_a_mean_m[index]),
+                    "deputy_a_mean_m": float(kepler_baseline.deputy_a_mean_m[index]),
                     "delta_a_mean_m": float(dep_series[index].a_m - ref_series[index].a_m),
+                    "reference_kepler_period_s": float(kepler_baseline.reference_period_s[index]),
+                    "deputy_kepler_period_s": float(kepler_baseline.deputy_period_s[index]),
+                    "kepler_period_difference_s": float(kepler_baseline.period_difference_s[index]),
+                    "reference_kepler_mean_motion_rad_s": float(
+                        kepler_baseline.reference_mean_motion_rad_s[index]
+                    ),
+                    "deputy_kepler_mean_motion_rad_s": float(
+                        kepler_baseline.deputy_mean_motion_rad_s[index]
+                    ),
+                    "kepler_delta_n_rad_s": float(kepler_baseline.delta_n_rad_s[index]),
+                    "kepler_delta_n_deg_day": angular_rate_deg_day(
+                        float(kepler_baseline.delta_n_rad_s[index])
+                    ),
+                    "measured_harmonic_delta_lambda_rad_s": measured_lambda_rate,
+                    "measured_harmonic_delta_lambda_deg_day": angular_rate_deg_day(
+                        measured_lambda_rate
+                    ),
+                    "measured_harmonic_delta_u_rad_s": measured_u_rate,
+                    "measured_harmonic_delta_u_deg_day": angular_rate_deg_day(measured_u_rate),
+                    "delta_lambda_minus_kepler_residual_rad_s": lambda_residual,
+                    "delta_lambda_minus_kepler_residual_deg_day": angular_rate_deg_day(lambda_residual),
+                    "delta_u_minus_kepler_residual_rad_s": u_residual,
+                    "delta_u_minus_kepler_residual_deg_day": angular_rate_deg_day(u_residual),
                     "delta_ex": roe.delta_ex,
                     "delta_ey": roe.delta_ey,
                     "delta_ix": roe.delta_ix,
@@ -487,6 +544,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
             "raan_drift": "harmonic-lstsq-v1",
             "relative_mean_phase": "u-mean-lambda-minus-raan-v1",
             "relative_phase_periodic": "harmonic-lstsq-default-basis-v1",
+            "kepler_relative_drift_consistency": "mean-a-central-field-v1",
             "along_track_proxy": "mean-arc-a-delta-u-v1",
             "phase_corridor_forecast": "linear-secular-rate-v1",
             "roe": "damico-v1",
@@ -499,6 +557,7 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
     summary = {
         "metrics": [metric.model_dump(mode="json") for metric in metrics],
         "relative_operations": relative_operations,
+        "kepler_drift_consistency": kepler_consistency_diagnostics,
         "constraints": scenario.constraints.model_dump(mode="json"),
         "navigation_geometry": navigation_summary,
         "provenance": {
