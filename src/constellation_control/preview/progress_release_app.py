@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
-from constellation_control.application.run_duration import run_scenario_with_duration
+from constellation_control.application.run_duration import DurationRunResult, run_scenario_with_duration
 from constellation_control.preview.base_preview_shell import PreviewRunRequest, _load_preview_scenario
 from constellation_control.preview.duration import predicted_output_sample_count, resolve_duration_s
 from constellation_control.preview.gravity_release_app import (
@@ -63,7 +63,7 @@ runScenario=async function(){
 """
 
 
-def _result_payload(output_root: Path, execution: object) -> dict[str, object]:
+def _result_payload(output_root: Path, execution: DurationRunResult) -> dict[str, object]:
     run_dir = execution.run_dir
     relative = run_dir.resolve().relative_to(output_root.resolve())
     if len(relative.parts) != 2:
