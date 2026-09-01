@@ -87,7 +87,7 @@ class PreviewRunJobManager:
                 update(state="running", phase="artifacts", percent=99.0, message="finalizing artifacts")
                 update(state="completed", phase="completed", percent=100.0, result=result, message="completed")
             except Exception as exc:  # noqa: BLE001 - boundary must retain exact failure text
-                update(state="failed", phase="failed", error=str(exc), message=str(exc))
+                update(state="failed", error=str(exc), message=str(exc))
             finally:
                 with self._lock:
                     if self._active_keys.get(key) == job_id:
