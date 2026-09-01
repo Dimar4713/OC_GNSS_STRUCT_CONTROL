@@ -2,21 +2,78 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from constellation_control.adapters.iac_gnss_tables import IAC_URLS, IacDataset, parse_iac_html, parse_iac_text
+from constellation_control.adapters.iac_gnss_tables import (
+    IAC_DATA_URLS,
+    IAC_URLS,
+    IacDataset,
+    parse_iac_html,
+    parse_iac_json,
+    parse_iac_text,
+)
 from constellation_control.preview.consolidated_release_app import create_preview_app, render_preview_page_for_test
 
 
 def test_html_table_is_canonicalized_to_tsv() -> None:
     source = """<html><body><table><tr><th>PRN</th><th>e</th></tr><tr><td>1</td><td>0.01</td></tr></table></body></html>"""
-    table = parse_iac_html(IacDataset.GPS_ALMANAC, source, source_url=IAC_URLS[IacDataset.GPS_ALMANAC])
+    table = parse_iac_html(
+        IacDataset.BEIDOU_CONSTELLATION,
+        source,
+        source_url=IAC_URLS[IacDataset.BEIDOU_CONSTELLATION],
+    )
     assert table.headers == ("PRN", "e")
     assert table.rows == (("1", "0.01"),)
     assert table.canonical_tsv == "PRN\te\n1\t0.01\n"
     assert len(table.source_sha256) == 64
 
 
+def test_glonass_live_json_contract_maps_exact_iac_fields() -> None:
+    source = """[{"ns":"01","datetime":"01.09.26","Tomega":"3600.00","Tapp":"40544.00","e":"0.0","i":"64.8","Lomega":"180.0","W":"0.0","deltaT2":"0.0001","nl":"1","deltaT":"0.0","color":"#fff"}]"""
+    table = parse_iac_json(IacDataset.GLONASS_ALMANAC, source, source_url=IAC_DATA_URLS[IacDataset.GLONASS_ALMANAC])
+    assert table.headers == ("NS", "Дата", "TΩ", "Tоб", "e", "i", "LΩ", "ω", "δt2", "nl", "ΔT")
+    assert table.rows[0] == (
+        "01",
+        "01.09.26",
+        "3600.00",
+        "40544.00",
+        "0.0",
+        "64.8",
+        "180.0",
+        "0.0",
+        "0.0001",
+        "1",
+        "0.0",
+    )
+
+
+def test_gps_live_json_contract_maps_exact_iac_fields() -> None:
+    source = """[{"PRN":"1","datetime":"01.09.26","t":"100","e":"0.01","i":"0.95","DomegaDT":"-1e-9","A":"5153.6","Lomega":"1.2","w":"0.2","mm":"0.3","af0":"1e-4","af1":"1e-12","color":"#fff"}]"""
+    table = parse_iac_json(IacDataset.GPS_ALMANAC, source, source_url=IAC_DATA_URLS[IacDataset.GPS_ALMANAC])
+    assert table.headers == ("PRN", "Date", "t", "e", "i", "dΩ/dt", "A", "LΩ", "ω", "m", "af0", "af1")
+    assert table.rows[0][0] == "1"
+    assert table.rows[0][6] == "5153.6"
+
+
+def test_beidou_live_json_contract_skips_datetime_marker_and_prefixes_prn() -> None:
+    source = """["01.09.26",{"ID":"1","Health":"000","Eccentricity":0.001,"Time of Applicability(s)":100,"Orbital Inclination(rad)":0.96,"Rate of Right Ascen(r/s)":-1e-9,"SQRT(A) (m 1/2)":5282.6,"Right Ascen at Week(rad)":1.1,"Argument of Perigee(rad)":0.2,"Mean Anom(rad)":0.3,"Af0(s)":0.0001,"Af1(s/s)":1e-12,"week":1200}]"""
+    table = parse_iac_json(IacDataset.BEIDOU_ALMANAC, source, source_url=IAC_DATA_URLS[IacDataset.BEIDOU_ALMANAC])
+    assert table.headers == ("PRN", "H", "e", "t", "δi", "Ω", "A", "Ω0", "ω", "m", "af0", "af1", "week")
+    assert table.rows[0][0] == "C1"
+    assert table.rows[0][1] == "000"
+    assert table.rows[0][-1] == "1200"
+
+
+def test_json_contract_fails_closed_when_required_field_is_missing() -> None:
+    source = """[{"ns":"01"}]"""
+    try:
+        parse_iac_json(IacDataset.GLONASS_ALMANAC, source)
+    except ValueError as exc:
+        assert "missing fields" in str(exc)
+    else:
+        raise AssertionError("missing IAC fields must fail closed")
+
+
 def test_offline_text_accepts_tsv_and_semicolon_tables() -> None:
-    tsv = parse_iac_text(IacDataset.GLONASS_ALMANAC, "slot\tT\n1\t40544\n")
+    tsv = parse_iac_text(IacDataset.GLONASS_ALMANAC, "NS\tTоб\n1\t40544\n")
     semi = parse_iac_text(IacDataset.BEIDOU_ALMANAC, "PRN;A\nC01;27800\n")
     assert tsv.rows[0] == ("1", "40544")
     assert semi.rows[0] == ("C01", "27800")
