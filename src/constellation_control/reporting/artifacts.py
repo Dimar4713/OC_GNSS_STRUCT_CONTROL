@@ -189,6 +189,7 @@ def _engineering_report(manifest: ExperimentRunManifest, summary: Mapping[str, o
     for item in relatives:
         corridor = _mapping(item.get("phase_corridor"))
         periodic = _mapping(item.get("periodic_delta_u"))
+        kepler = _mapping(item.get("kepler_drift_consistency"))
         lines.extend(
             [
                 f"### {item.get('pair_id', 'pair')}",
@@ -221,6 +222,30 @@ def _engineering_report(manifest: ExperimentRunManifest, summary: Mapping[str, o
                 "",
             ]
         )
+        if kepler:
+            lines.extend(
+                [
+                    "#### Independent Kepler drift consistency",
+                    "",
+                    str(kepler.get("interpretation")),
+                    "",
+                    f"- Source elements: `{kepler.get('source_elements')}`",
+                    f"- Osculating a used: `{kepler.get('osculating_a_used')}`",
+                    f"- Scenario mu: `{kepler.get('mu_m3_s2')} m^3/s^2`",
+                    "",
+                    "| Quantity | Initial / reference value | Time-mean / measured value |",
+                    "| --- | ---: | ---: |",
+                    f"| Reference mean a, m | {kepler.get('reference_initial_a_mean_m')} | {kepler.get('reference_time_mean_a_mean_m')} |",
+                    f"| Deputy mean a, m | {kepler.get('deputy_initial_a_mean_m')} | {kepler.get('deputy_time_mean_a_mean_m')} |",
+                    f"| Kepler period difference, s | {kepler.get('initial_period_difference_s')} | {kepler.get('period_difference_at_time_mean_a_s')} |",
+                    f"| Kepler Delta n, deg/day | {kepler.get('initial_kepler_delta_n_deg_day')} | {kepler.get('time_mean_kepler_delta_n_deg_day')} |",
+                    f"| Measured harmonic Delta lambda, deg/day | - | {kepler.get('measured_harmonic_delta_lambda_deg_day')} |",
+                    f"| Measured harmonic Delta u, deg/day | - | {kepler.get('measured_harmonic_delta_u_deg_day')} |",
+                    f"| Delta lambda - Kepler residual, deg/day | - | {kepler.get('delta_lambda_minus_kepler_residual_deg_day')} |",
+                    f"| Delta u - Kepler residual, deg/day | - | {kepler.get('delta_u_minus_kepler_residual_deg_day')} |",
+                    "",
+                ]
+            )
 
     lines.extend(["## Resource / maneuver diagnostics", "", "See `09_maneuver_delta_v.png`, `10_propellant_reserve.png` and `resources.*`. Maneuver epochs are also marked on relative-state plots when present.", "", "## Secondary diagnostics", "", "Pair distance, navigation DOP and ground-track closure are retained as secondary evidence; they are not the primary phase-control coordinates.", ""])
     for metric in _list_of_mappings(summary.get("metrics")):
