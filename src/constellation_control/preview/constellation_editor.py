@@ -203,7 +203,12 @@ def _clone(source: ScenarioConfig, request: ConstellationEditRequest) -> Scenari
     return source.model_copy(update={"constellation": _constellation(satellites, source)})
 
 
-def _lineage(source: ScenarioConfig, edited: ScenarioConfig, scenario_id: str, transformation: str = "constellation_editor") -> ScenarioConfig:
+def _lineage(
+    source: ScenarioConfig,
+    edited: ScenarioConfig,
+    scenario_id: str,
+    transformation: Literal["constellation_editor", "gravity_model_change"] = "constellation_editor",
+) -> ScenarioConfig:
     twin = edited.digital_twin or DigitalTwinConfig()
     twin = twin.model_copy(update={"lineage": ScenarioLineage(
         parent_scenario_id=source.scenario_id,
@@ -275,7 +280,7 @@ def apply_gravity_model_edit(root: Path, request: GravityModelEditRequest) -> di
         "force_model": new_force.model_dump(mode="json"),
         "constellation": _constellation(satellites, source).model_dump(mode="json"),
     })
-    child = _lineage(source, edited, request.new_scenario_id, "gravity_model_change_same_mean_coordinates")
+    child = _lineage(source, edited, request.new_scenario_id, "gravity_model_change")
     target = _target(root, request.target_scenario_name)
     target.write_text(yaml.safe_dump(child.model_dump(mode="json"), sort_keys=False, allow_unicode=True), encoding="utf-8")
     return {
