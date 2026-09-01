@@ -52,7 +52,10 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     resources = json.loads((run_dir / "resources.json").read_text(encoding="utf-8"))
 
     assert manifest["force_model_mode"] == "screening"
+    assert manifest["algorithm_versions"]["phase_drift"] == "harmonic-lstsq-identifiable-basis-v2"
+    assert manifest["algorithm_versions"]["raan_drift"] == "harmonic-lstsq-identifiable-basis-v2"
     assert manifest["algorithm_versions"]["relative_mean_phase"] == "u-mean-lambda-minus-raan-v1"
+    assert manifest["algorithm_versions"]["relative_phase_periodic"] == "harmonic-lstsq-identifiable-basis-v2"
     assert manifest["algorithm_versions"]["phase_corridor_forecast"] == "linear-secular-rate-v1"
     assert ground_track
     assert resources
@@ -67,15 +70,24 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     assert corridor["half_width_rad"] == summary["constraints"]["phase_corridor_rad"]
     assert corridor["time_to_boundary_s"] is None or corridor["time_to_boundary_s"] >= 0.0
 
+    basis = first_relative["secular_harmonic_basis"]
+    assert basis["authority"] == "observation-span-identifiable-harmonic-basis-v1"
+    assert basis["observation_span_s"] == 172800.0
+    assert basis["minimum_observed_cycles"] == 1.0
+    assert basis["included_labels"] == ["orbital", "sidereal_day"]
+    assert basis["excluded_labels"] == ["lunar", "sidereal_year"]
+    assert "rather than regularized" in basis["policy"]
+    assert all(term["included"] for term in basis["terms"][:2])
+    assert not any(term["included"] for term in basis["terms"][2:])
+
     periodic = first_relative["periodic_delta_u"]
+    assert periodic["basis_selection"] == basis
     assert "root-sum-square of fitted component amplitudes" in periodic["rss_semantics"]
     assert "no single period" in periodic["rss_semantics"]
-    assert len(periodic["components"]) == 4
+    assert len(periodic["components"]) == 2
     assert [item["basis"] for item in periodic["components"]] == [
         "orbital",
         "sidereal_day",
-        "lunar",
-        "sidereal_year",
     ]
     for component in periodic["components"]:
         assert component["period_s"] > 0.0
