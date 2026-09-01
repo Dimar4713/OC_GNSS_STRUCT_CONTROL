@@ -215,7 +215,8 @@ public final class OrekitServiceMain {
         }
         try {
             byte[] body = readBody(exchange);
-            ApiModels.GlonassAlmanacMeanRequest request = mapper.readValue(body, ApiModels.GlonassAlmanacMeanRequest.class);
+            ApiModels.GlonassAlmanacToMeanRequest request = mapper.readValue(
+                    body, ApiModels.GlonassAlmanacToMeanRequest.class);
             writeJson(exchange, mapper, 200, engine.convert(request));
         } catch (RequestTooLargeException exception) {
             writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
