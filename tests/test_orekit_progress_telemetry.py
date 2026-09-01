@@ -48,8 +48,10 @@ def test_progress_callback_context_is_scoped_to_current_execution() -> None:
 
     with orekit_progress_callback(updates.append):
         inside = OrekitSidecarPropagator("http://orekit.invalid")
-        assert inside._progress_callback is updates.append
+        assert inside._progress_callback is not None
+        inside._progress_callback({"phase": "numerical_propagation"})
 
+    assert updates == [{"phase": "numerical_propagation"}]
     after = OrekitSidecarPropagator("http://orekit.invalid")
     assert after._progress_callback is None
 
