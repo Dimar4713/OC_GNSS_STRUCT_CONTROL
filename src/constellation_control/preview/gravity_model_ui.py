@@ -19,7 +19,7 @@ class GravityModelCreateRequest(BaseModel):
     gravity_order: int = Field(ge=0, le=32)
 
     @model_validator(mode="after")
-    def validate_degree_order(self) -> "GravityModelCreateRequest":
+    def validate_degree_order(self) -> GravityModelCreateRequest:
         if self.gravity_order > self.gravity_degree:
             raise ValueError("gravity_order must not exceed gravity_degree")
         if self.gravity_degree == 0 and self.gravity_order != 0:
