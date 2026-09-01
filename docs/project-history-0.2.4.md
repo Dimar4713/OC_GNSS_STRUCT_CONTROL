@@ -46,6 +46,7 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 | #151 | merged | Backward-compatible structural lineage integrity contract with `integrity_version: 1` for real 64-hex parent SHA-256 hashes. |
 | #152 | merged | **Windows package acceptance for Engineering Preview 0.2.4.** Versioning synchronized to 0.2.4; package stages the consolidated operator surface; packaged legacy `preview/app.py` is excluded; shared base shell is internalized as `base_preview_shell.py`; package lock includes workbook dependencies; CLI routes to `consolidated_release_app`; real clean-Windows packaged launch reaches `/health=0.2.4` and verifies pinned Orekit 13.1.7 data revision/SHA. |
 | #153 | merged | **GLONASS almanac Python→Java contract fix.** Real operator testing exposed HTTP 500 because the Python client sent `delta_i_rad`, `delta_t_s`, `delta_t_dot` while the Java sidecar contract is `delta_irad`, `delta_ts`, `delta_tdot`. The client now sends the exact sidecar field names and a regression test locks the request contract. Numerical GLONASS/Orekit/DSST authority semantics are unchanged. |
+| #156 | merged | **Constellation spacecraft editor.** Consolidated operator UI and backend now support safe spacecraft rename, move between planes, physical-parameter edit, explicit clone-as-new, and fail-closed remove. Rename is an identity migration that atomically updates `reference_id`, maneuvers, digital-twin operational states, groups, satellite-scoped perturbations/applied perturbations and plane membership. Every accepted edit creates a new immutable derived scenario with `constellation_editor` lineage; orbital-element changes remain on reviewed Orekit authority paths. |
 
 ## Current authority boundaries
 
@@ -63,6 +64,7 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 12. A runnable continuation scenario requires complete persisted propagation evidence reaching the exact scenario horizon.
 13. Historical runs without persisted `propagation_result.json` remain non-promotable without rerun.
 14. The distributable Windows Preview 0.2.4 package must route through `consolidated_release_app`, exclude the legacy public `preview/app.py`, and attest pinned Orekit revision/SHA at runtime.
+15. Structural constellation edits never mutate source YAML and never bypass reviewed orbital authority boundaries.
 
 ## Accepted Windows package evidence — PR #152
 
@@ -92,10 +94,26 @@ This document is the repository-side chronology for the 0.2.4 functional increme
 - PR #153 merge commit: `60ef46a2c60079b1e99aa79e2b1e8ea2ae448022`.
 - This artifact supersedes artifact `9773032400` for GLONASS almanac testing because it contains the corrected Python→Java request contract.
 
+## Accepted constellation-editor evidence — PR #156
+
+- PR #156 exact head: `38ae7ec9c011b80e9483fe30399109f2581af9f9`.
+- Exact-head required workflows all terminal success:
+  - `ci` run `33480595680` — GREEN;
+  - `preview-package-compat` run `33480595672` — GREEN;
+  - `preview-0.2-package` run `33480595651` — GREEN.
+- `quality` passed Ruff, mypy and tests, including new constellation-editor regression tests.
+- `windows-preview-024-smoke` real packaged clean-Windows acceptance — GREEN.
+- Windows artifact: `engineering-preview-python-0.2.4-win10`, artifact id `9789775636`.
+- Artifact digest: `sha256:02701982d4eadf72e57bd4fb1ec2c01cb40958302f134f1c6217dd9c190be3bf`.
+- Artifact retention expiry: 2026-09-15.
+- PR #156 merge commit: `0532d9b7deb6f4c524999b67cd4b6a23c1679780`.
+
 ## Next incomplete work
 
-1. Retest the real GLONASS authority flow with the operator-provided `glonass-labelled-authority-v1` fixture against the #153 replacement package.
-2. Continue remaining authority hardening separately: OMM authoritative conversion, GPS/GLONASS raw-source SHA attestation through sidecar, GPS week ambiguity handling, and exact returned target-epoch verification where applicable.
+1. Complete issue #154: GPS almanac bulk/select import must create correctly identified GPS spacecraft or update only explicitly mapped existing spacecraft; no silent `GLO-01` replacement.
+2. Extend the constellation editor with explicit group-membership editing and richer pre-save diff/impact preview.
+3. Retest the real GLONASS authority flow with the operator-provided `glonass-labelled-authority-v1` fixture against the current replacement package.
+4. Continue remaining authority hardening separately: OMM authoritative conversion, GPS/GLONASS raw-source SHA attestation through sidecar, GPS week ambiguity handling, and exact returned target-epoch verification where applicable.
 
 ## Maintenance rule
 
