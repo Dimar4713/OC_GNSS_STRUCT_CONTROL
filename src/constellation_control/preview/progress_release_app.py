@@ -23,6 +23,9 @@ _PROGRESS_CARD = r"""
   <h3>Ход расчёта / Calculation progress</h3>
   <progress id="runProgressBar" max="100" value="0" style="width:100%"></progress>
   <div id="runProgressText" class="status">Нет активного расчёта / No active calculation.</div>
+  <div class="oplinks">
+    <a id="keplerDriftReport" target="_blank" style="display:none">Проверка дрейфа Kepler ↔ Orekit / Kepler ↔ Orekit drift consistency</a>
+  </div>
 </div>
 """
 
@@ -46,6 +49,8 @@ async function pollRunProgress(){
   if(d.state==='completed'){
     activeRunJobId=null;runBtn.disabled=false;
     const x=d.result;operations=x.operations;artifactLinks=x.artifacts;renderOperations();
+    const drift=document.getElementById('keplerDriftReport');
+    if(x.artifacts&&x.artifacts.kepler_drift_consistency){drift.href=x.artifacts.kepler_drift_consistency;drift.style.display='inline-block';}else{drift.removeAttribute('href');drift.style.display='none';}
     durationInfo.textContent=`${tr('duration')}: ${x.duration.duration_s} s; ${tr('step')}: ${x.duration.output_step_s} s; ${tr('samples')}: ${x.duration.predicted_sample_count}. `+tr('unchanged');
     setStatus(tr('completed')+': '+x.run_dir,'ok');result.href=x.report_url;result.textContent=tr('report');return;
   }
@@ -72,6 +77,13 @@ def _result_payload(output_root: Path, execution: DurationRunResult) -> dict[str
         raise RuntimeError("unexpected run directory layout")
     scenario_id, run_id = relative.parts
     prefix = f"/api/results/{scenario_id}/{run_id}"
+    artifacts = {
+        "phase_plot": f"{prefix}/11_delta_u_mean.png",
+        "along_track_plot": f"{prefix}/12_along_track_mean_arc_proxy.png",
+        "interactive_phase": f"{prefix}/interactive_delta_u_mean.html",
+    }
+    if (run_dir / "kepler_drift_consistency.html").is_file():
+        artifacts["kepler_drift_consistency"] = f"{prefix}/kepler_drift_consistency.html"
     return {
         "run_dir": str(run_dir),
         "report_url": f"{prefix}/report.html",
@@ -82,11 +94,7 @@ def _result_payload(output_root: Path, execution: DurationRunResult) -> dict[str
             "output_step_s": execution.output_step_s,
             "predicted_sample_count": execution.predicted_sample_count,
         },
-        "artifacts": {
-            "phase_plot": f"{prefix}/11_delta_u_mean.png",
-            "along_track_plot": f"{prefix}/12_along_track_mean_arc_proxy.png",
-            "interactive_phase": f"{prefix}/interactive_delta_u_mean.html",
-        },
+        "artifacts": artifacts,
     }
 
 
