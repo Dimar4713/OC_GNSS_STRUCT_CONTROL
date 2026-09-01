@@ -5,7 +5,7 @@ from typing import Literal
 
 import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from constellation_control.application.run import load_scenario
 from constellation_control.domain.digital_twin import DigitalTwinConfig, PerturbationScope, ScenarioLineage
@@ -23,6 +23,21 @@ class ConstellationEditRequest(BaseModel):
     spacecraft: SpacecraftModel | None = None
     target_scenario_name: str
     new_scenario_id: str
+
+
+class GravityModelEditRequest(BaseModel):
+    source_scenario_name: str
+    gravity_degree: int = Field(ge=0, le=32)
+    gravity_order: int = Field(ge=0, le=32)
+    non_gravity_mode: Literal["preserve", "off"] = "preserve"
+    target_scenario_name: str
+    new_scenario_id: str
+
+    @model_validator(mode="after")
+    def validate_degree_order(self) -> GravityModelEditRequest:
+        if self.gravity_order > self.gravity_degree:
+            raise ValueError("gravity_order must not exceed gravity_degree")
+        return self
 
 
 def _target(root: Path, name: str) -> Path:
@@ -188,12 +203,12 @@ def _clone(source: ScenarioConfig, request: ConstellationEditRequest) -> Scenari
     return source.model_copy(update={"constellation": _constellation(satellites, source)})
 
 
-def _lineage(source: ScenarioConfig, edited: ScenarioConfig, scenario_id: str) -> ScenarioConfig:
+def _lineage(source: ScenarioConfig, edited: ScenarioConfig, scenario_id: str, transformation: str = "constellation_editor") -> ScenarioConfig:
     twin = edited.digital_twin or DigitalTwinConfig()
     twin = twin.model_copy(update={"lineage": ScenarioLineage(
         parent_scenario_id=source.scenario_id,
         parent_config_hash=source.config_hash(),
-        transformation="constellation_editor",
+        transformation=transformation,
         random_seed=None,
     )})
     return ScenarioConfig.model_validate(edited.model_dump(mode="json") | {
@@ -229,6 +244,56 @@ def apply_constellation_edit(root: Path, request: ConstellationEditRequest) -> d
     }
 
 
+def apply_gravity_model_edit(root: Path, request: GravityModelEditRequest) -> dict[str, object]:
+    source = load_scenario(root / request.source_scenario_name)
+    if request.new_scenario_id == source.scenario_id:
+        raise ValueError("new_scenario_id must differ from parent scenario_id")
+    if source.force_model.mode.value == "screening" and (request.gravity_degree, request.gravity_order) not in {(0, 0), (2, 0)}:
+        raise ValueError("SCREENING backend supports only Kepler 0x0 or J2 2x0; use DESIGN/VALIDATION for harmonics above degree 2")
+
+    force_update: dict[str, object] = {
+        "gravity_degree": request.gravity_degree,
+        "gravity_order": request.gravity_order,
+    }
+    if request.non_gravity_mode == "off":
+        force_update.update({"moon": False, "sun": False, "srp": False, "tides": False, "relativity": False})
+    new_force = source.force_model.model_copy(update=force_update)
+    new_fingerprint = new_force.fingerprint()
+    label = f"gravity-{request.gravity_degree}x{request.gravity_order}"
+    satellites = tuple(
+        sat.model_copy(update={
+            "mean_orbit": sat.mean_orbit.model_copy(update={
+                "definition": sat.mean_orbit.definition.model_copy(update={
+                    "theory": f"{sat.mean_orbit.definition.theory}|same-mean-coordinates:{label}",
+                    "force_model_fingerprint": new_fingerprint,
+                })
+            })
+        })
+        for sat in source.constellation.satellites
+    )
+    edited = ScenarioConfig.model_validate(source.model_dump(mode="json") | {
+        "force_model": new_force.model_dump(mode="json"),
+        "constellation": _constellation(satellites, source).model_dump(mode="json"),
+    })
+    child = _lineage(source, edited, request.new_scenario_id, "gravity_model_change_same_mean_coordinates")
+    target = _target(root, request.target_scenario_name)
+    target.write_text(yaml.safe_dump(child.model_dump(mode="json"), sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return {
+        "saved": True,
+        "scenario_name": target.name,
+        "scenario_id": child.scenario_id,
+        "parent_scenario_id": source.scenario_id,
+        "parent_config_hash": source.config_hash(),
+        "child_config_hash": child.config_hash(),
+        "gravity_model": new_force.gravity_model.value if new_force.gravity_model is not None else None,
+        "gravity_degree": new_force.gravity_degree,
+        "gravity_order": new_force.gravity_order,
+        "force_model_fingerprint": new_fingerprint,
+        "non_gravity_mode": request.non_gravity_mode,
+        "mean_coordinate_policy": "same mean coordinates rebound to the new force-model definition; not identical osculating-state preservation",
+    }
+
+
 CONSTELLATION_EDITOR_CARD = r"""
 <div class="card" id="constellationEditorCard">
 <h3>Состав орбитальной группировки / Constellation spacecraft editor</h3>
@@ -237,15 +302,27 @@ CONSTELLATION_EDITOR_CARD = r"""
 <div class="grid"><label>Dry mass, kg <input id="ceDry" type="number" step="any"></label><label>Fuel, kg <input id="ceFuel" type="number" step="any"></label><label>Isp, s <input id="ceIsp" type="number" step="any"></label><label>Area, m² <input id="ceArea" type="number" step="any"></label><label>Cr <input id="ceCr" type="number" step="any"></label></div>
 <div class="grid"><button onclick="ceApply('rename')">Переименовать</button><button onclick="ceApply('move')">Переместить</button><button onclick="ceApply('edit')">Сохранить параметры</button><button onclick="ceApply('clone')">Клонировать как новый КА</button><button onclick="ceApply('remove')">Удалить</button></div>
 <label>Новый scenario_id <input id="ceScenarioId" placeholder="derived-constellation-edit-01"></label><label>Новый YAML <input id="ceScenarioFile" placeholder="derived-constellation-edit-01.yaml"></label><pre id="cePreview"></pre><div id="ceStatus" class="status"></div>
+<hr>
+<h3>Модель гравитационного поля Земли / Earth gravity model</h3>
+<p class="hint">Явный диапазон от центрального поля Kepler 0×0 до EIGEN-6S 32×32. Для Custom: 0 ≤ order ≤ degree ≤ 32. В DESIGN/VALIDATION точные degree/order передаются Orekit. SCREENING допускает только 0×0 и 2×0, чтобы не имитировать неподдерживаемые гармоники.</p>
+<div class="grid">
+<label>Preset <select id="ceGravityPreset"><option value="0,0">Kepler 0×0</option><option value="2,0">J2 2×0</option><option value="4,4">EIGEN-6S 4×4</option><option value="8,8">EIGEN-6S 8×8</option><option value="16,16">EIGEN-6S 16×16</option><option value="24,24">EIGEN-6S 24×24</option><option value="32,32">EIGEN-6S 32×32</option><option value="custom">Custom N×M</option></select></label>
+<label>Degree N <input id="ceGravityDegree" type="number" min="0" max="32" step="1"></label><label>Order M <input id="ceGravityOrder" type="number" min="0" max="32" step="1"></label>
+<label>Прочие возмущения <select id="ceNonGravity"><option value="preserve">Сохранить текущие Moon/Sun/SRP</option><option value="off">Отключить — чистое центральное/ГПЗ</option></select></label>
+</div>
+<p class="hint"><b>Важно:</b> при создании варианта из существующего сценария сохраняются численные mean-координаты и переобвязываются к новому force-model fingerprint. Это удобно для controlled model sweep, но не означает сохранение идентичного оскулирующего состояния.</p>
+<label>Новый scenario_id для модели ГПЗ <input id="ceGravityScenarioId" placeholder="derived-gravity-32x32"></label><label>Новый YAML <input id="ceGravityScenarioFile" placeholder="derived-gravity-32x32.yaml"></label>
+<button onclick="ceApplyGravity()">Создать вариант модели ГПЗ</button><pre id="ceGravityPreview"></pre><div id="ceGravityStatus" class="status"></div>
 </div>
 """
 
 CONSTELLATION_EDITOR_SCRIPT = r"""
-function syncConstellationEditor(){if(!current)return;const a=((current.normalized||current).constellation||{}).satellites||[];ceSat.replaceChildren(...a.map(s=>{const o=document.createElement('option');o.value=s.satellite_id;o.textContent=s.satellite_id;return o;}));if(a.length){ceSat.value=a[0].satellite_id;ceLoadSat();}}
+function syncConstellationEditor(){if(!current)return;const a=((current.normalized||current).constellation||{}).satellites||[];ceSat.replaceChildren(...a.map(s=>{const o=document.createElement('option');o.value=s.satellite_id;o.textContent=s.satellite_id;return o;}));if(a.length){ceSat.value=a[0].satellite_id;ceLoadSat();}const f=(current.normalized||current).force_model||{};ceGravityDegree.value=f.gravity_degree??8;ceGravityOrder.value=f.gravity_order??8;ceNonGravity.value='preserve';const v=String(ceGravityDegree.value)+','+String(ceGravityOrder.value);ceGravityPreset.value=[...ceGravityPreset.options].some(o=>o.value===v)?v:'custom';}
 function ceLoadSat(){const a=((current.normalized||current).constellation||{}).satellites||[],s=a.find(x=>x.satellite_id===ceSat.value);if(!s)return;ceNewId.value=s.satellite_id;cePlane.value=s.plane_id;ceRole.value=s.role;ceReference.value=s.reference_id||'';const m=s.spacecraft||{};ceDry.value=m.dry_mass_kg??'';ceFuel.value=m.propellant_mass_kg??'';ceIsp.value=m.isp_s??'';ceArea.value=m.area_m2??'';ceCr.value=m.cr??'';cePreview.textContent=JSON.stringify(s,null,2);}
-ceSat.addEventListener('change',ceLoadSat);const cePriorLoadScenario=loadScenario;loadScenario=async function(){await cePriorLoadScenario();syncConstellationEditor();};
+ceSat.addEventListener('change',ceLoadSat);ceGravityPreset.addEventListener('change',()=>{if(ceGravityPreset.value==='custom')return;const [n,m]=ceGravityPreset.value.split(',').map(Number);ceGravityDegree.value=n;ceGravityOrder.value=m;if(n===0&&m===0)ceNonGravity.value='off';});const cePriorLoadScenario=loadScenario;loadScenario=async function(){await cePriorLoadScenario();syncConstellationEditor();};
 function ceNum(id){const v=document.getElementById(id).value.trim(),n=Number(v);if(v===''||!Number.isFinite(n))throw new Error(id+' must be numeric');return n;}
 async function ceApply(operation){const sid=ceScenarioId.value.trim(),file=ceScenarioFile.value.trim();if(!sid||!file){ceStatus.textContent='Укажите новый scenario_id и YAML';ceStatus.className='status danger';return;}const p={source_scenario_name:scenario.value,operation,satellite_id:ceSat.value,new_satellite_id:ceNewId.value.trim()||null,plane_id:cePlane.value.trim()||null,role:ceRole.value,reference_id:ceReference.value.trim(),target_scenario_name:file,new_scenario_id:sid};if(operation==='edit'||operation==='clone'){try{p.spacecraft={dry_mass_kg:ceNum('ceDry'),propellant_mass_kg:ceNum('ceFuel'),isp_s:ceNum('ceIsp'),area_m2:ceNum('ceArea'),cr:ceNum('ceCr')};}catch(e){ceStatus.textContent=String(e.message||e);ceStatus.className='status danger';return;}}const r=await fetch('/api/constellation-editor/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}),d=await r.json();if(!r.ok){ceStatus.textContent=d.detail||'Edit failed';ceStatus.className='status danger';return;}cePreview.textContent=JSON.stringify(d,null,2);const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();ceStatus.textContent='Создан: '+d.scenario_name;ceStatus.className='status ok';}
+async function ceApplyGravity(){const sid=ceGravityScenarioId.value.trim(),file=ceGravityScenarioFile.value.trim();const n=Number(ceGravityDegree.value),m=Number(ceGravityOrder.value);if(!sid||!file){ceGravityStatus.textContent='Укажите новый scenario_id и YAML';ceGravityStatus.className='status danger';return;}if(!Number.isInteger(n)||!Number.isInteger(m)||n<0||n>32||m<0||m>32||m>n){ceGravityStatus.textContent='Требуется 0 ≤ order ≤ degree ≤ 32';ceGravityStatus.className='status danger';return;}ceGravityStatus.textContent='Создание варианта '+n+'×'+m+'…';const p={source_scenario_name:scenario.value,gravity_degree:n,gravity_order:m,non_gravity_mode:ceNonGravity.value,target_scenario_name:file,new_scenario_id:sid};const r=await fetch('/api/constellation-editor/gravity-model',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}),d=await r.json();if(!r.ok){ceGravityStatus.textContent=d.detail||'Gravity model edit failed';ceGravityStatus.className='status danger';return;}ceGravityPreview.textContent=JSON.stringify(d,null,2);const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();ceGravityStatus.textContent='Создан '+d.gravity_degree+'×'+d.gravity_order+': '+d.scenario_name;ceGravityStatus.className='status ok';}
 """
 
 
@@ -254,5 +331,12 @@ def install_constellation_editor_routes(app: FastAPI, scenario_root: Path = Path
     def apply(request: ConstellationEditRequest) -> dict[str, object]:
         try:
             return apply_constellation_edit(scenario_root, request)
+        except (ValueError, TypeError, OSError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/api/constellation-editor/gravity-model")
+    def gravity_model(request: GravityModelEditRequest) -> dict[str, object]:
+        try:
+            return apply_gravity_model_edit(scenario_root, request)
         except (ValueError, TypeError, OSError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
