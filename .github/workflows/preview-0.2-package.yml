@@ -120,13 +120,15 @@ jobs:
               'orekit_data_revision': os.environ['OREKIT_DATA_REVISION'],
               'orekit_data_sha256': os.environ['OREKIT_DATA_SHA256'],
               'operator_surface': [
-                  'consolidated_release_app', 'scenario_editor', 'walker', 'osculating', 'norad_tle',
-                  'gps_almanac', 'glonass_almanac', 'perturbation_designer', 'spacecraft_workbook',
-                  'spacecraft_catalog', 'resource_state', 'completed_run_promotion'
+                  'gravity_release_app', 'consolidated_release_app', 'scenario_editor', 'gravity_model',
+                  'walker', 'osculating', 'norad_tle', 'gps_almanac', 'glonass_almanac',
+                  'perturbation_designer', 'spacecraft_workbook', 'spacecraft_catalog',
+                  'resource_state', 'completed_run_promotion'
               ],
               'authority_invariant': 'screening never authority; operational credibility requires Orekit numerical validation',
               'scenario_editor_invariant': 'validate full ScenarioConfig and save only as a new YAML; existing scenarios are never overwritten',
-              'launcher_invariant': 'CLI preview imports consolidated_release_app; packaged release_app uses result_paths and legacy preview/app.py is excluded',
+              'launcher_invariant': 'CLI preview imports gravity_release_app, which wraps consolidated_release_app; packaged release_app uses result_paths and legacy preview/app.py is excluded',
+              'gravity_model_invariant': 'operator may select Kepler 0x0, J2-class 2x0, or EIGEN-6S degree/order up to 32x32; order must not exceed degree',
               'venv_invariant': 'never copy .venv-preview between PCs; bootstrap creates it on the target PC from local Python 3.12',
               'files': files,
           }
@@ -142,7 +144,7 @@ jobs:
           test -s "$BUNDLE_NAME.zip.sha256"
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/consolidated_release_app.py" | grep 'PREVIEW_VERSION = "0.2.4"'
-          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/cli/main.py" | grep 'consolidated_release_app'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/cli/main.py" | grep 'gravity_release_app'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep 'preview.result_paths import safe_result_file as _safe_result_file'
           if unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep -q 'preview.app import'; then
             echo 'packaged release_app.py still depends on legacy preview.app' >&2
@@ -154,7 +156,7 @@ jobs:
             echo 'legacy preview/app.py must not ship' >&2
             exit 1
           fi
-          for module in result_paths walker_input osculating_input norad_input gnss_almanac_input glonass_almanac_input perturbation_ui workbook_upload spacecraft_catalog_ui resource_state_ui run_promotion_ui; do
+          for module in result_paths gravity_model_ui gravity_release_app walker_input osculating_input norad_input gnss_almanac_input glonass_almanac_input perturbation_ui workbook_upload spacecraft_catalog_ui resource_state_ui run_promotion_ui; do
             unzip -l "$BUNDLE_NAME.zip" | grep "src/constellation_control/preview/${module}.py"
           done
           manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
@@ -192,7 +194,7 @@ jobs:
           [void][scriptblock]::Create($launcher)
           python -m pip install -U pip
           pip install -e '.[dev]'
-          pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_preview_release_http.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_gps_almanac_derived_scenario.py tests/test_glonass_derived_scenario.py tests/test_lineage_hash_integrity.py
+          pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_preview_release_http.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_gps_almanac_derived_scenario.py tests/test_glonass_derived_scenario.py tests/test_lineage_hash_integrity.py tests/test_gravity_model_ui.py tests/test_gravity_model_launcher_contract.py tests/test_gravity_model_pr_gate.py tests/test_gravity_model_force_fingerprint_contract.py
       - uses: actions/download-artifact@v4
         with:
           name: engineering-preview-python-0.2.4-win10
@@ -231,11 +233,14 @@ jobs:
               Get-Content $previewErr -ErrorAction SilentlyContinue
               throw 'Packaged Engineering Preview 0.2.4 did not become ready'
             }
+            $home = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
+            if ($home.Content -notmatch 'gravityModelCard') { throw 'Gravity model card missing from packaged Preview UI' }
+            if ($home.Content -notmatch 'EIGEN-6S 32x32') { throw '32x32 gravity preset missing from packaged Preview UI' }
             $authority = Invoke-RestMethod -Uri 'http://127.0.0.1:8081/healthz' -TimeoutSec 2
             if ($authority.orekit_version -ne '13.1.7') { throw "Wrong Orekit version: $($authority.orekit_version)" }
             if ($authority.orekit_data_revision -ne $pinned) { throw "Wrong Orekit data revision: $($authority.orekit_data_revision)" }
             if ($authority.orekit_data_sha256 -ne $pinnedSha) { throw "Wrong Orekit data SHA: $($authority.orekit_data_sha256)" }
-            Write-Host "PACKAGED WINDOWS ACCEPTANCE READY: preview=0.2.4 orekit=$($authority.orekit_version) revision=$($authority.orekit_data_revision)"
+            Write-Host "PACKAGED WINDOWS ACCEPTANCE READY: preview=0.2.4 orekit=$($authority.orekit_version) revision=$($authority.orekit_data_revision) gravity=0x0..32x32"
           } finally {
             if (-not $preview.HasExited) { & taskkill.exe /PID $preview.Id /T /F | Out-Host }
             $owner = Get-NetTCPConnection -State Listen -LocalPort 8081 -ErrorAction SilentlyContinue | Select-Object -First 1
