@@ -15,7 +15,7 @@ from constellation_control.preview.gravity_release_app import (
 from constellation_control.preview.operations import preview_operations_payload
 from constellation_control.preview.progress_jobs import PreviewRunJobManager
 
-_JOB_MANAGER: PreviewRunJobManager[dict[str, object]] = PreviewRunJobManager()
+_JOB_MANAGER = PreviewRunJobManager()
 
 _PROGRESS_CARD = r"""
 <div class="card" id="runProgressCard">
