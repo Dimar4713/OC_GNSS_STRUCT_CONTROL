@@ -55,6 +55,7 @@ def test_failure_retains_last_known_progress_and_error() -> None:
             time_s=4104000.0,
             point_index=4561,
             point_total=35041,
+            epoch="2027-02-17T12:00:00Z",
         )
         raise RuntimeError("unable to compute DSST mean parameters after 201 iterations")
 
@@ -66,11 +67,15 @@ def test_failure_retains_last_known_progress_and_error() -> None:
     )
     terminal = _wait_terminal(manager, started.job_id)[-1]
     assert terminal.state == "failed"
-    assert terminal.phase == "failed"
+    assert terminal.phase == "osculating_to_mean"
     assert terminal.percent == 42.0
     assert terminal.satellite_id == "GLO-17"
+    assert terminal.satellite_index == 17
+    assert terminal.satellite_total == 30
     assert terminal.time_s == 4104000.0
+    assert terminal.epoch == "2027-02-17T12:00:00Z"
     assert terminal.point_index == 4561
+    assert terminal.point_total == 35041
     assert "201 iterations" in (terminal.error or "")
 
 
