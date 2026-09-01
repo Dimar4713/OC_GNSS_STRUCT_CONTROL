@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from math import pi
 
 from constellation_control.adapters.iac_gnss_tables import IacDataset, IacTable
@@ -48,7 +48,7 @@ class IacGlonassAlmanacRecord:
 
     @property
     def ascending_node_epoch_utc(self) -> datetime:
-        return self.ascending_node_epoch_dmv.astimezone(timezone.utc)
+        return self.ascending_node_epoch_dmv.astimezone(UTC)
 
 
 @dataclass(frozen=True)
