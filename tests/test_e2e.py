@@ -54,9 +54,11 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     assert manifest["force_model_mode"] == "screening"
     assert manifest["algorithm_versions"]["relative_mean_phase"] == "u-mean-lambda-minus-raan-v1"
     assert manifest["algorithm_versions"]["phase_corridor_forecast"] == "linear-secular-rate-v1"
+    assert manifest["algorithm_versions"]["kepler_relative_drift_consistency"] == "mean-a-central-field-v1"
     assert ground_track
     assert resources
     assert summary["relative_operations"]
+    assert summary["kepler_drift_consistency"]
 
     first_relative = summary["relative_operations"][0]
     assert first_relative["phase_coordinate"] == "u_mean=lambda-Omega"
@@ -66,6 +68,28 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
     corridor = first_relative["phase_corridor"]
     assert corridor["half_width_rad"] == summary["constraints"]["phase_corridor_rad"]
     assert corridor["time_to_boundary_s"] is None or corridor["time_to_boundary_s"] >= 0.0
+
+    kepler = first_relative["kepler_drift_consistency"]
+    assert kepler["authority"] == "independent-central-field-consistency-diagnostic-v1"
+    assert kepler["osculating_a_used"] is False
+    assert "force-model-consistent mean semi-major-axis" in kepler["source_elements"]
+    assert "central-field baseline" in kepler["interpretation"]
+    assert kepler["mu_m3_s2"] > 0.0
+    assert kepler["reference_initial_a_mean_m"] > 0.0
+    assert kepler["deputy_initial_a_mean_m"] > 0.0
+    assert kepler["reference_time_mean_a_mean_m"] > 0.0
+    assert kepler["deputy_time_mean_a_mean_m"] > 0.0
+    assert kepler["reference_initial_kepler_period_s"] > 0.0
+    assert kepler["deputy_initial_kepler_period_s"] > 0.0
+    assert (
+        kepler["delta_lambda_minus_kepler_residual_rad_s"]
+        == kepler["measured_harmonic_delta_lambda_rad_s"] - kepler["time_mean_kepler_delta_n_rad_s"]
+    )
+    assert (
+        kepler["delta_u_minus_kepler_residual_rad_s"]
+        == kepler["measured_harmonic_delta_u_rad_s"] - kepler["time_mean_kepler_delta_n_rad_s"]
+    )
+    assert summary["kepler_drift_consistency"][0]["pair_id"] == first_relative["pair_id"]
 
     periodic = first_relative["periodic_delta_u"]
     assert "root-sum-square of fitted component amplitudes" in periodic["rss_semantics"]
@@ -93,12 +117,30 @@ def test_end_to_end_small_scenario(tmp_path: Path) -> None:
         "phase_corridor_upper_deg",
         "phase_corridor_lower_deg",
         "along_track_mean_arc_proxy_m",
+        "reference_a_mean_m",
+        "deputy_a_mean_m",
+        "reference_kepler_period_s",
+        "deputy_kepler_period_s",
+        "kepler_period_difference_s",
+        "reference_kepler_mean_motion_rad_s",
+        "deputy_kepler_mean_motion_rad_s",
+        "kepler_delta_n_rad_s",
+        "kepler_delta_n_deg_day",
+        "measured_harmonic_delta_lambda_rad_s",
+        "measured_harmonic_delta_lambda_deg_day",
+        "measured_harmonic_delta_u_rad_s",
+        "measured_harmonic_delta_u_deg_day",
+        "delta_lambda_minus_kepler_residual_rad_s",
+        "delta_lambda_minus_kepler_residual_deg_day",
+        "delta_u_minus_kepler_residual_rad_s",
+        "delta_u_minus_kepler_residual_deg_day",
     }.issubset(timeseries.columns)
 
     assert report.index("## Operational relative diagnostics") < report.index("## Secondary diagnostics")
     assert "Amplitude means center-to-peak" in report
     assert "Peak-to-peak is exactly 2 x amplitude" in report
     assert "multi-frequency aggregate, no single period" in report
+    assert "Kepler Delta n is a central-field baseline" in report
     assert "Pair distance, navigation DOP and ground-track closure are retained as secondary evidence" in report
 
     assert summary["mean_element_rule"] == (
