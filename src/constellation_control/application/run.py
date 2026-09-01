@@ -17,6 +17,7 @@ from constellation_control.analysis.drift import (
     default_harmonic_frequencies,
     harmonic_regression,
     linear_rate,
+    select_identifiable_harmonic_basis,
 )
 from constellation_control.analysis.fuel import propellant_used_kg
 from constellation_control.analysis.navigation_geometry import evaluate_navigation_geometry, inertial_to_ecef_m
@@ -331,7 +332,13 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         dep_classical = [mean_to_classical(item) for item in dep_series]
         initial_ref = ref_classical[0]
         orbital_period = 2.0 * pi / mean_motion(initial_ref.a_m, scenario.force_model.mu_m3_s2)
-        frequencies = default_harmonic_frequencies(orbital_period)
+        candidate_frequencies = default_harmonic_frequencies(orbital_period)
+        harmonic_basis = select_identifiable_harmonic_basis(
+            times,
+            candidate_frequencies,
+            DEFAULT_HARMONIC_LABELS,
+        )
+        frequencies = harmonic_basis.included_frequencies_rad_s
         phase_fit = harmonic_regression(times, phase, frequencies)
         delta_raan = np.unwrap(
             np.asarray(
@@ -400,7 +407,11 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                 "peak_to_peak_rad": component.peak_to_peak_rad,
                 "peak_to_peak_deg": float(np.degrees(component.peak_to_peak_rad)),
             }
-            for label, component in zip(DEFAULT_HARMONIC_LABELS, delta_u_fit.components, strict=True)
+            for label, component in zip(
+                harmonic_basis.included_labels,
+                delta_u_fit.components,
+                strict=True,
+            )
         ]
         relative_operations.append(
             {
@@ -412,8 +423,14 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
                 "along_track_semantics": "near-circular mean arc proxy a_ref*Delta_u; not Cartesian separation",
                 "phase_corridor_semantics": "symmetric +/- constraints.phase_corridor_rad around Delta_u=0",
                 "phase_corridor": corridor.__dict__,
+                "secular_harmonic_basis": harmonic_basis.as_dict(),
                 "periodic_delta_u": {
-                    "basis": "orbital + sidereal_day + lunar + sidereal_year",
+                    "basis": (
+                        " + ".join(harmonic_basis.included_labels)
+                        if harmonic_basis.included_labels
+                        else "none: observation span supports linear secular fit only"
+                    ),
+                    "basis_selection": harmonic_basis.as_dict(),
                     "components": periodic_components,
                     "rss_component_amplitude_rad": delta_u_fit.periodic_amplitude_rad,
                     "rss_component_amplitude_deg": float(np.degrees(delta_u_fit.periodic_amplitude_rad)),
@@ -483,10 +500,10 @@ def run_scenario(scenario_path: Path, output_root: Path) -> Path:
         epoch=scenario.epoch,
         random_seed=scenario.seed,
         algorithm_versions={
-            "phase_drift": "harmonic-lstsq-v1",
-            "raan_drift": "harmonic-lstsq-v1",
+            "phase_drift": "harmonic-lstsq-identifiable-basis-v2",
+            "raan_drift": "harmonic-lstsq-identifiable-basis-v2",
             "relative_mean_phase": "u-mean-lambda-minus-raan-v1",
-            "relative_phase_periodic": "harmonic-lstsq-default-basis-v1",
+            "relative_phase_periodic": "harmonic-lstsq-identifiable-basis-v2",
             "along_track_proxy": "mean-arc-a-delta-u-v1",
             "phase_corridor_forecast": "linear-secular-rate-v1",
             "roe": "damico-v1",
