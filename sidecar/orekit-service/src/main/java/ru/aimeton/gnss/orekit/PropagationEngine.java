@@ -44,6 +44,22 @@ final class PropagationEngine {
     private static final double GRAVITY_MU_RELATIVE_TOLERANCE = 1.0e-8;
     private static final double INITIAL_MANEUVER_TOLERANCE_S = 1.0e-12;
     private static final double STANDARD_GRAVITY_M_S2 = 9.80665;
+    private static final ProgressObserver NO_PROGRESS = event -> {};
+
+    @FunctionalInterface
+    interface ProgressObserver {
+        void onProgress(ProgressEvent event);
+    }
+
+    record ProgressEvent(
+            String phase,
+            String satelliteId,
+            int satelliteIndex,
+            int satelliteTotal,
+            int pointIndex,
+            int pointTotal,
+            double timeS,
+            String epoch) {}
 
     private final OrekitRuntime runtime;
 
@@ -52,6 +68,10 @@ final class PropagationEngine {
     }
 
     PropagationResult propagate(PropagationRequest request) {
+        return propagate(request, NO_PROGRESS);
+    }
+
+    PropagationResult propagate(PropagationRequest request, ProgressObserver observer) {
         validateRequest(request);
         List<Double> times = outputTimes(request.durationS(), request.outputStepS());
         Map<String, List<MeanOrbit>> mean = new LinkedHashMap<>();
@@ -61,10 +81,15 @@ final class PropagationEngine {
                 .getNormalizedProvider(request.forceModel().gravityDegree(), request.forceModel().gravityOrder());
         validateGravityMu(request.forceModel(), gravityIdentity.getMu());
 
-        for (SatelliteSpec satellite : request.satellites()) {
+        int satelliteTotal = request.satellites().size();
+        for (int satelliteOffset = 0; satelliteOffset < satelliteTotal; satelliteOffset++) {
+            SatelliteSpec satellite = request.satellites().get(satelliteOffset);
+            int satelliteIndex = satelliteOffset + 1;
             SatelliteHistory history = switch (request.forceModel().mode()) {
-                case "design" -> propagateDesign(request, satellite, times);
-                case "validation" -> propagateValidation(request, satellite, times);
+                case "design" -> propagateDesign(
+                        request, satellite, times, satelliteIndex, satelliteTotal, observer);
+                case "validation" -> propagateValidation(
+                        request, satellite, times, satelliteIndex, satelliteTotal, observer);
                 default -> throw new IllegalArgumentException(
                         "Orekit sidecar accepts only design or validation mode, got: " + request.forceModel().mode());
             };
@@ -104,7 +129,12 @@ final class PropagationEngine {
     }
 
     private SatelliteHistory propagateDesign(
-            PropagationRequest request, SatelliteSpec satellite, List<Double> times) {
+            PropagationRequest request,
+            SatelliteSpec satellite,
+            List<Double> times,
+            int satelliteIndex,
+            int satelliteTotal,
+            ProgressObserver observer) {
         Frame frame = runtime.propagationFrame(request.frame());
         AbsoluteDate epoch = runtime.date(request.epoch(), request.timeScale());
         AttitudeProvider attitude = new LofOffset(frame, LOFType.QSW);
@@ -129,8 +159,30 @@ final class PropagationEngine {
 
         List<MeanOrbit> mean = new ArrayList<>(times.size());
         List<OsculatingState> cartesian = new ArrayList<>(times.size());
-        for (double time : times) {
-            SpacecraftState meanState = propagator.propagate(epoch.shiftedBy(time));
+        int pointTotal = times.size();
+        for (int pointOffset = 0; pointOffset < pointTotal; pointOffset++) {
+            double time = times.get(pointOffset);
+            int pointIndex = pointOffset + 1;
+            AbsoluteDate target = epoch.shiftedBy(time);
+            observer.onProgress(new ProgressEvent(
+                    "dsst_propagation",
+                    satellite.satelliteId(),
+                    satelliteIndex,
+                    satelliteTotal,
+                    pointIndex,
+                    pointTotal,
+                    time,
+                    target.toString()));
+            SpacecraftState meanState = propagator.propagate(target);
+            observer.onProgress(new ProgressEvent(
+                    "mean_to_osculating",
+                    satellite.satelliteId(),
+                    satelliteIndex,
+                    satelliteTotal,
+                    pointIndex,
+                    pointTotal,
+                    time,
+                    target.toString()));
             SpacecraftState osculating = DSSTPropagator.computeOsculatingState(meanState, attitude, forces);
             mean.add(toApiMean(meanState.getOrbit(), request.forceModelFingerprint(), "orekit-dsst-13.1.7-design"));
             cartesian.add(toApiCartesian(time, osculating));
@@ -139,7 +191,12 @@ final class PropagationEngine {
     }
 
     private SatelliteHistory propagateValidation(
-            PropagationRequest request, SatelliteSpec satellite, List<Double> times) {
+            PropagationRequest request,
+            SatelliteSpec satellite,
+            List<Double> times,
+            int satelliteIndex,
+            int satelliteTotal,
+            ProgressObserver observer) {
         Frame frame = runtime.propagationFrame(request.frame());
         AbsoluteDate epoch = runtime.date(request.epoch(), request.timeScale());
         AttitudeProvider attitude = new LofOffset(frame, LOFType.QSW);
@@ -158,8 +215,30 @@ final class PropagationEngine {
 
         List<MeanOrbit> mean = new ArrayList<>(times.size());
         List<OsculatingState> cartesian = new ArrayList<>(times.size());
-        for (double time : times) {
-            SpacecraftState osculating = propagator.propagate(epoch.shiftedBy(time));
+        int pointTotal = times.size();
+        for (int pointOffset = 0; pointOffset < pointTotal; pointOffset++) {
+            double time = times.get(pointOffset);
+            int pointIndex = pointOffset + 1;
+            AbsoluteDate target = epoch.shiftedBy(time);
+            observer.onProgress(new ProgressEvent(
+                    "numerical_propagation",
+                    satellite.satelliteId(),
+                    satelliteIndex,
+                    satelliteTotal,
+                    pointIndex,
+                    pointTotal,
+                    time,
+                    target.toString()));
+            SpacecraftState osculating = propagator.propagate(target);
+            observer.onProgress(new ProgressEvent(
+                    "osculating_to_mean",
+                    satellite.satelliteId(),
+                    satelliteIndex,
+                    satelliteTotal,
+                    pointIndex,
+                    pointTotal,
+                    time,
+                    target.toString()));
             SpacecraftState meanState = DSSTPropagator.computeMeanState(osculating, attitude, meanForces);
             mean.add(toApiMean(meanState.getOrbit(), request.forceModelFingerprint(),
                     "orekit-dsst-13.1.7-from-numerical"));
