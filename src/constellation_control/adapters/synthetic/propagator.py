@@ -14,6 +14,12 @@ class SyntheticMeanPropagator:
     def propagate(self, request: PropagationRequest) -> PropagationResult:
         if request.force_model.mode.value != "screening":
             raise ValueError("SyntheticMeanPropagator is restricted to screening mode")
+        gravity_shape = (request.force_model.gravity_degree, request.force_model.gravity_order)
+        if gravity_shape not in {(0, 0), (2, 0)}:
+            raise ValueError(
+                "SyntheticMeanPropagator supports only Kepler 0x0 or first-order J2 2x0; "
+                "use Orekit DESIGN/VALIDATION for higher gravity harmonics"
+            )
         count = int(np.floor(request.duration_s / request.output_step_s)) + 1
         times = np.linspace(0.0, request.output_step_s * (count - 1), count)
         if times[-1] < request.duration_s:
@@ -48,8 +54,9 @@ class SyntheticMeanPropagator:
             mean_orbits[sat.satellite_id] = tuple(sat_mean)
             cartesian_states[sat.satellite_id] = tuple(sat_cart)
 
+        backend = "synthetic-kepler-screening" if gravity_shape == (0, 0) else "synthetic-j2-screening"
         return PropagationResult(
-            backend="synthetic-j2-screening",
+            backend=backend,
             backend_version=__version__,
             force_model_fingerprint=request.force_model.fingerprint(),
             times_s=tuple(float(value) for value in times),
