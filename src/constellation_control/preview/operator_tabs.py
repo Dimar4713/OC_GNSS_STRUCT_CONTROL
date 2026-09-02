@@ -85,6 +85,15 @@ function splitWorkflowCard(){
   }
   card.replaceWith(design,robustness);
 }
+function operatorFallbackTarget(card){
+  const text=String(card.textContent||'').toLowerCase();
+  if(/galileo|iac|almanac|альманах|norad|tle|walker|osculating|оскул|workbook|xls|импорт|import/.test(text))return 'operatorTabInputs';
+  if(/robustness|робаст/.test(text))return 'operatorTabRobustness';
+  if(/design|optimal operations|проектир/.test(text))return 'operatorTabDesign';
+  if(/promotion|promot|result|результ|drift consistency/.test(text))return 'operatorTabResults';
+  if(/normalized|нормализ|эксперт|expert/.test(text))return 'operatorTabExpert';
+  return 'operatorTabScenarios';
+}
 function arrangeOperatorTabs(){
   const section=document.querySelector('main section');if(!section)return;
   splitWorkflowCard();
@@ -102,7 +111,8 @@ function arrangeOperatorTabs(){
   ['designWorkflowCard','optimalOperationsCard'].forEach(id=>operatorMoveCard(id,'operatorTabDesign'));
   ['robustnessWorkflowCard'].forEach(id=>operatorMoveCard(id,'operatorTabRobustness'));
   ['runPromotionCard','driftConsistencyCard'].forEach(id=>operatorMoveCard(id,'operatorTabResults'));
-  ['scenarioEditorCard'].forEach(()=>{});
+  const leftovers=Array.from(section.children).filter(x=>x.classList&&x.classList.contains('card')&&x.id!=='activeRunConfigurationCard');
+  for(const card of leftovers){const pane=operatorById(operatorFallbackTarget(card));if(pane)pane.appendChild(card);}
   const active=localStorage.getItem('operator-tab')||'scenarios';showOperatorTab(active);
 }
 function showOperatorTab(name){
