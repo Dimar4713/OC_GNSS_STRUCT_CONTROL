@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 from constellation_control.application.run import load_scenario
 from constellation_control.domain.digital_twin import DigitalTwinConfig, ScenarioLineage
 from constellation_control.domain.models import ScenarioConfig
+from constellation_control.preview.base_preview_shell import preview_catalog
 
 
 class GravityModelCreateRequest(BaseModel):
@@ -49,6 +50,7 @@ def gravity_model_label(degree: int, order: int) -> str:
 
 
 def create_gravity_derived_scenario(root: Path, request: GravityModelCreateRequest) -> dict[str, object]:
+    root = root.resolve()
     source = load_scenario(root / request.source_scenario_name)
     if request.new_scenario_id == source.scenario_id:
         raise ValueError("new_scenario_id must differ from parent scenario_id")
@@ -77,16 +79,25 @@ def create_gravity_derived_scenario(root: Path, request: GravityModelCreateReque
         }
     )
     target.write_text(yaml.safe_dump(child.model_dump(mode="json"), sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+    # Fail closed on the exact persisted representation, not only the in-memory model.
+    persisted = load_scenario(target)
+    catalog = preview_catalog(root)
+    runnable = catalog.get("scenarios", [])
+    if target.name not in runnable:
+        raise ValueError("derived scenario was saved but is not discoverable as a runnable ScenarioConfig")
+
     return {
         "saved": True,
         "scenario_name": target.name,
-        "scenario_id": child.scenario_id,
+        "scenario_id": persisted.scenario_id,
         "parent_scenario_id": source.scenario_id,
         "gravity_degree": request.gravity_degree,
         "gravity_order": request.gravity_order,
         "gravity_label": gravity_model_label(request.gravity_degree, request.gravity_order),
-        "force_model_fingerprint": child.force_model.fingerprint(),
-        "child_config_hash": child.config_hash(),
+        "force_model_fingerprint": persisted.force_model.fingerprint(),
+        "child_config_hash": persisted.config_hash(),
+        "catalog": catalog,
     }
 
 
@@ -122,11 +133,13 @@ GRAVITY_MODEL_CARD = r"""
 GRAVITY_MODEL_SCRIPT = r"""
 function applyGravityPreset(){const v=gravityPreset.value;if(v==='kepler'){gravityDegree.value=0;gravityOrder.value=0;}else if(v==='j2'){gravityDegree.value=2;gravityOrder.value=0;}else if(v!=='custom'){gravityDegree.value=Number(v);gravityOrder.value=Number(v);}}
 function syncGravityModel(){if(!current)return;const f=(current.normalized||current).force_model||{};gravityDegree.value=f.gravity_degree;gravityOrder.value=f.gravity_order;gravityCurrent.textContent='Current: EIGEN-6S '+f.gravity_degree+'x'+f.gravity_order+'; fingerprint='+((current.force_model_fingerprint)||'');}
-async function createGravityScenario(){const n=Number(gravityDegree.value),m=Number(gravityOrder.value);if(!Number.isInteger(n)||!Number.isInteger(m)||n<0||m<0||n>32||m>32||m>n){gravityStatus.textContent='Требуется 0 <= order <= degree <= 32';gravityStatus.className='status danger';return;}const p={source_scenario_name:scenario.value,target_scenario_name:gravityScenarioFile.value.trim(),new_scenario_id:gravityScenarioId.value.trim(),gravity_degree:n,gravity_order:m};if(!p.target_scenario_name||!p.new_scenario_id){gravityStatus.textContent='Укажите новый scenario_id и YAML';gravityStatus.className='status danger';return;}gravityStatus.textContent='Создание…';const r=await fetch('/api/gravity-model/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){gravityStatus.textContent=d.detail||'Create failed';gravityStatus.className='status danger';return;}const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();gravityStatus.textContent='Создан: '+d.scenario_name+'; '+d.gravity_label;gravityStatus.className='status ok';}
+async function createGravityScenario(){const n=Number(gravityDegree.value),m=Number(gravityOrder.value);if(!Number.isInteger(n)||!Number.isInteger(m)||n<0||m<0||n>32||m>32||m>n){gravityStatus.textContent='Требуется 0 <= order <= degree <= 32';gravityStatus.className='status danger';return;}const p={source_scenario_name:scenario.value,target_scenario_name:gravityScenarioFile.value.trim(),new_scenario_id:gravityScenarioId.value.trim(),gravity_degree:n,gravity_order:m};if(!p.target_scenario_name||!p.new_scenario_id){gravityStatus.textContent='Укажите новый scenario_id и YAML';gravityStatus.className='status danger';return;}gravityStatus.textContent='Создание…';const r=await fetch('/api/gravity-model/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){gravityStatus.textContent=d.detail||'Create failed';gravityStatus.className='status danger';return;}catalog=d.catalog;scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));renderOther();scenario.value=d.scenario_name;await loadScenario();gravityStatus.textContent='Создан: '+d.scenario_name+'; '+d.gravity_label;gravityStatus.className='status ok';}
 """
 
 
 def install_gravity_model_routes(app: FastAPI, scenario_root: Path) -> None:
+    scenario_root = scenario_root.resolve()
+
     @app.post("/api/gravity-model/create")
     def create(request: GravityModelCreateRequest) -> dict[str, object]:
         try:
