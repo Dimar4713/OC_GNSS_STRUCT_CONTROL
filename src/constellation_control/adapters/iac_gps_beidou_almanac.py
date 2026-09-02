@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from math import pi
 
 from constellation_control.adapters.iac_gnss_tables import IacDataset, IacTable
@@ -24,7 +24,7 @@ class IacGpsAlmanacRecord:
 
     @property
     def epoch_utc(self) -> datetime:
-        midnight = datetime(self.base_date_utc.year, self.base_date_utc.month, self.base_date_utc.day, tzinfo=timezone.utc)
+        midnight = datetime(self.base_date_utc.year, self.base_date_utc.month, self.base_date_utc.day, tzinfo=UTC)
         return midnight + timedelta(seconds=self.time_from_base_s)
 
     @property
