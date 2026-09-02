@@ -3,15 +3,20 @@ package ru.aimeton.gnss.orekit;
 import java.util.Collection;
 import java.util.Locale;
 
+import org.hipparchus.geometry.euclidean.threed.Vector3D;
 import org.hipparchus.util.FastMath;
 import org.hipparchus.util.MathUtils;
 import org.orekit.attitudes.AttitudeProvider;
 import org.orekit.orbits.EquinoctialOrbit;
 import org.orekit.orbits.Orbit;
 import org.orekit.orbits.PositionAngleType;
+import org.orekit.propagation.SpacecraftState;
 import org.orekit.propagation.conversion.osc2mean.DSSTTheory;
+import org.orekit.propagation.conversion.osc2mean.FixedPointConverter;
 import org.orekit.propagation.conversion.osc2mean.MeanTheory;
+import org.orekit.propagation.semianalytical.dsst.DSSTPropagator;
 import org.orekit.propagation.semianalytical.dsst.forces.DSSTForceModel;
+import org.orekit.utils.TimeStampedPVCoordinates;
 
 /** Diagnostic-only replay of Orekit 13.1.7 FixedPointConverter residuals after an official conversion failure. */
 final class FixedPointResidualProbe {
@@ -19,6 +24,7 @@ final class FixedPointResidualProbe {
     private static final double THRESHOLD = 1.0e-13;
     private static final int MAX_ITERATIONS = 200;
     private static final double DAMPING = 1.0;
+    private static final double[] DIAGNOSTIC_DAMPINGS = {1.0, 0.9, 0.7, 0.5};
 
     private FixedPointResidualProbe() {}
 
@@ -77,7 +83,7 @@ final class FixedPointResidualProbe {
                         thresholdA, thresholdE, thresholdH, thresholdLv);
             }
             if (!finite) {
-                return;
+                break;
             }
 
             sma += DAMPING * deltaA;
@@ -89,6 +95,45 @@ final class FixedPointResidualProbe {
             mean = new EquinoctialOrbit(sma, ex, ey, hx, hy, lv,
                     PositionAngleType.TRUE, equinoctial.getFrame(), equinoctial.getDate(), equinoctial.getMu());
         }
+
+        logSensitivity(satelliteId, timeS, osculating, attitudeProvider, forceModels, mass);
+    }
+
+    private static void logSensitivity(
+            String satelliteId,
+            double timeS,
+            Orbit osculating,
+            AttitudeProvider attitudeProvider,
+            Collection<DSSTForceModel> forceModels,
+            double mass) {
+        SpacecraftState osculatingState = new SpacecraftState(osculating).withMass(mass);
+        TimeStampedPVCoordinates inputPv = osculatingState.getPVCoordinates();
+        for (double damping : DIAGNOSTIC_DAMPINGS) {
+            FixedPointConverter converter = new FixedPointConverter(THRESHOLD, MAX_ITERATIONS, damping);
+            try {
+                SpacecraftState mean = DSSTPropagator.computeMeanState(
+                        osculatingState, attitudeProvider, forceModels, converter);
+                SpacecraftState roundTrip = DSSTPropagator.computeOsculatingState(mean, attitudeProvider, forceModels);
+                TimeStampedPVCoordinates roundTripPv = roundTrip.getPVCoordinates();
+                Vector3D deltaR = inputPv.getPosition().subtract(roundTripPv.getPosition());
+                Vector3D deltaV = inputPv.getVelocity().subtract(roundTripPv.getVelocity());
+                System.err.printf(Locale.ROOT,
+                        "DSST_CONVERTER_SENSITIVITY satellite_id=%s time_s=%.1f damping=%.3f threshold=%.3g max_iterations=%d "
+                                + "status=SUCCESS iterations=%d roundtrip_dr_m=%.17g roundtrip_dv_m_s=%.17g%n",
+                        satelliteId, timeS, damping, THRESHOLD, MAX_ITERATIONS,
+                        converter.getIterationsNb(), deltaR.getNorm(), deltaV.getNorm());
+            } catch (RuntimeException exception) {
+                System.err.printf(Locale.ROOT,
+                        "DSST_CONVERTER_SENSITIVITY satellite_id=%s time_s=%.1f damping=%.3f threshold=%.3g max_iterations=%d "
+                                + "status=FAILURE iterations=%d exception=%s message=%s%n",
+                        satelliteId, timeS, damping, THRESHOLD, MAX_ITERATIONS,
+                        converter.getIterationsNb(), exception.getClass().getSimpleName(), sanitize(exception.getMessage()));
+            }
+        }
+    }
+
+    private static String sanitize(String text) {
+        return text == null ? "" : text.replace('\n', ' ').replace('\r', ' ');
     }
 
     private static void log(
