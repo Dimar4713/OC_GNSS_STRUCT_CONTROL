@@ -17,7 +17,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        duration_s: [14076030, 14076060, 31536000]
+        include:
+          - duration_s: 14076030
+            expectation: success
+          - duration_s: 14076060
+            expectation: boundary_failure
+          - duration_s: 31536000
+            expectation: boundary_failure
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -77,10 +83,11 @@ jobs:
             sleep 1
           done
           grep -q '13.1.7' "$RUNNER_TEMP/orekit-health.json"
-      - name: Run isolated horizon probe
+      - name: Run and assert isolated horizon probe
         shell: bash
         env:
           DURATION_S: ${{ matrix.duration_s }}
+          EXPECTATION: ${{ matrix.expectation }}
         run: |
           set +e
           set -o pipefail
@@ -90,8 +97,21 @@ jobs:
             --duration "$DURATION_S" 2>&1 | tee "$RUNNER_TEMP/diag-$DURATION_S.log"
           rc=${PIPESTATUS[0]}
           set -e
-          echo "duration_s=$DURATION_S exit_code=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          echo "duration_s=$DURATION_S expectation=$EXPECTATION exit_code=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
           grep -E 'RESULT (success|failure)|LAST_PROGRESS' "$RUNNER_TEMP/diag-$DURATION_S.log" | tail -n 3 | tee -a "$GITHUB_STEP_SUMMARY" || true
+
+          if test "$EXPECTATION" = "success"; then
+            test "$rc" -eq 0
+            grep -F 'RESULT success' "$RUNNER_TEMP/diag-$DURATION_S.log"
+          else
+            test "$rc" -ne 0
+            grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-$DURATION_S.log"
+            grep -F 'satellite_id=GLO-01' "$RUNNER_TEMP/diag-$DURATION_S.log"
+            grep -F 'point_index=469203/' "$RUNNER_TEMP/diag-$DURATION_S.log"
+            grep -F 'time_s=1.407606E7' "$RUNNER_TEMP/diag-$DURATION_S.log"
+            grep -F 'epoch=2020-06-11T22:01:00.000Z' "$RUNNER_TEMP/diag-$DURATION_S.log"
+          fi
       - name: Upload isolated evidence
         if: always()
         uses: actions/upload-artifact@v4
