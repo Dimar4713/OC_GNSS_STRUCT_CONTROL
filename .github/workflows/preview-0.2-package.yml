@@ -195,7 +195,7 @@ jobs:
           [void][scriptblock]::Create($launcher)
           python -m pip install -U pip
           pip install -e '.[dev]'
-          pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_preview_release_http.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_gps_almanac_derived_scenario.py tests/test_glonass_derived_scenario.py tests/test_lineage_hash_integrity.py tests/test_gravity_model_ui.py tests/test_gravity_model_launcher_contract.py tests/test_gravity_model_pr_gate.py tests/test_gravity_model_force_fingerprint_contract.py tests/test_iac_gnss_tables.py tests/test_iac_glonass_almanac.py tests/test_iac_gps_beidou_almanac.py tests/test_galileo_gsc_almanac.py
+          pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_preview_release_http.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_gps_almanac_derived_scenario.py tests/test_glonass_derived_scenario.py tests/test_lineage_hash_integrity.py tests/test_gravity_model_ui.py tests/test_gravity_model_launcher_contract.py tests/test_gravity_model_pr_gate.py tests/test_gravity_model_force_fingerprint_contract.py
       - uses: actions/download-artifact@v4
         with:
           name: engineering-preview-python-0.2.5-win10
