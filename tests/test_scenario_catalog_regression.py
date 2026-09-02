@@ -14,7 +14,7 @@ def _copy_scenarios(target: Path) -> None:
         shutil.copy2(source, target / source.name)
 
 
-def test_gravity_derived_scenario_is_immediately_discoverable(tmp_path: Path) -> None:
+def test_gravity_derived_scenario_round_trip_and_force_model_guard(tmp_path: Path) -> None:
     scenario_root = tmp_path / "scenarios"
     output_root = tmp_path / "runs"
     _copy_scenarios(scenario_root)
@@ -29,7 +29,23 @@ def test_gravity_derived_scenario_is_immediately_discoverable(tmp_path: Path) ->
         "robustness_campaign_smoke.yaml",
     }
 
-    created = client.post(
+    same_force = client.post(
+        "/api/gravity-model/create",
+        json={
+            "source_scenario_name": "orekit_validation_smoke.yaml",
+            "target_scenario_name": "orekit-validation-copy.yaml",
+            "new_scenario_id": "orekit-validation-copy",
+            "gravity_degree": 8,
+            "gravity_order": 8,
+        },
+    )
+    assert same_force.status_code == 200, same_force.text
+    payload = same_force.json()
+    assert payload["scenario_name"] == "orekit-validation-copy.yaml"
+    assert "orekit-validation-copy.yaml" in payload["catalog"]["scenarios"]
+    assert len(payload["catalog"]["scenarios"]) == 7
+
+    changed_force = client.post(
         "/api/gravity-model/create",
         json={
             "source_scenario_name": "orekit_validation_smoke.yaml",
@@ -39,14 +55,15 @@ def test_gravity_derived_scenario_is_immediately_discoverable(tmp_path: Path) ->
             "gravity_order": 32,
         },
     )
-    assert created.status_code == 200, created.text
-    payload = created.json()
-    assert payload["scenario_name"] == "orekit-validation-32x32.yaml"
-    assert "orekit-validation-32x32.yaml" in payload["catalog"]["scenarios"]
-    assert len(payload["catalog"]["scenarios"]) == 7
+    assert changed_force.status_code == 422
+    detail = changed_force.json()["detail"]
+    assert "Mean elements must be re-derived" in detail
+    assert "no YAML was written" in detail
+    assert not (scenario_root / "orekit-validation-32x32.yaml").exists()
 
     refreshed = client.get("/api/scenarios")
     assert refreshed.status_code == 200
     after = refreshed.json()
-    assert "orekit-validation-32x32.yaml" in after["scenarios"]
+    assert "orekit-validation-copy.yaml" in after["scenarios"]
+    assert "orekit-validation-32x32.yaml" not in after["scenarios"]
     assert len(after["scenarios"]) == 7
