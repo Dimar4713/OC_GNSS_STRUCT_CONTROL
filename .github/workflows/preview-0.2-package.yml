@@ -237,8 +237,8 @@ jobs:
             $homeResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
             if ($homeResponse.Content -notmatch 'gravityModelCard') { throw 'Gravity model card missing from packaged Preview UI' }
             if ($homeResponse.Content -notmatch 'EIGEN-6S 32x32') { throw '32x32 gravity preset missing from packaged Preview UI' }
-            if ($homeResponse.Content -notmatch 'Galileo — официальный GSC Almanac') { throw 'Galileo GSC card missing from packaged Preview UI' }
-            if ($homeResponse.Content -notmatch 'IAC GNSS') { throw 'IAC GNSS intake card missing from packaged Preview UI' }
+            if ($homeResponse.Content -notmatch 'galileoGscCard') { throw 'Galileo GSC card missing from packaged Preview UI' }
+            if ($homeResponse.Content -notmatch 'iacGnssCard') { throw 'IAC GNSS intake card missing from packaged Preview UI' }
             $authority = Invoke-RestMethod -Uri 'http://127.0.0.1:8081/healthz' -TimeoutSec 2
             if ($authority.orekit_version -ne '13.1.7') { throw "Wrong Orekit version: $($authority.orekit_version)" }
             if ($authority.orekit_data_revision -ne $pinned) { throw "Wrong Orekit data revision: $($authority.orekit_data_revision)" }
