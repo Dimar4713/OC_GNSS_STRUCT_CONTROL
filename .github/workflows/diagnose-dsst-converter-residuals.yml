@@ -1,0 +1,79 @@
+name: diagnose-dsst-converter-residuals
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-dsst-converter-residuals.yml'
+      - 'sidecar/orekit-service/src/main/java/ru/aimeton/gnss/orekit/FixedPointResidualProbe.java'
+      - 'sidecar/orekit-service/src/test/java/ru/aimeton/gnss/orekit/FixedPointResidualProbeIntegrationTest.java'
+      - 'sidecar/orekit-service/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  residual-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: sidecar/orekit-service/pom.xml
+      - name: Load pinned Orekit data identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "OREKIT_DATA_REVISION=$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-revision.txt)" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_SHA256=$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-sha256.txt)" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_MIRROR_REVISION=$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-mirror-revision.txt)" >> "$GITHUB_ENV"
+      - name: Fetch and verify pinned Orekit data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$OREKIT_DATA_PATH"
+          git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
+          if git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
+            git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
+          else
+            rm -rf "$OREKIT_DATA_PATH"
+            mirror_dir="$RUNNER_TEMP/orekit-data-mirror"
+            git init "$mirror_dir"
+            git -C "$mirror_dir" remote add origin https://github.com/fndtnl/orekit-data-snapshot.git
+            git -C "$mirror_dir" fetch --depth 1 origin "$OREKIT_DATA_MIRROR_REVISION"
+            git -C "$mirror_dir" checkout --detach FETCH_HEAD
+            mkdir -p "$OREKIT_DATA_PATH"
+            cp -a "$mirror_dir/orekit/orekit-data/." "$OREKIT_DATA_PATH/"
+          fi
+          python scripts/fingerprint_orekit_data.py "$OREKIT_DATA_PATH" | tee "$RUNNER_TEMP/orekit-data-sha.txt"
+          test "$(cat "$RUNNER_TEMP/orekit-data-sha.txt")" = "$OREKIT_DATA_SHA256"
+      - name: Run confirmed failing-state converter probes
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -f sidecar/orekit-service/pom.xml \
+            -Dtest=FixedPointResidualProbeIntegrationTest test 2>&1 \
+            | tee "$RUNNER_TEMP/dsst-converter-residuals.log"
+      - name: Summarize converter evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## DSST converter residual evidence'
+            echo '```text'
+            grep -E 'DSST_FIXED_POINT_DIAG|DSST_CONVERTER_SENSITIVITY' "$RUNNER_TEMP/dsst-converter-residuals.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload converter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsst-converter-residual-evidence
+          retention-days: 14
+          path: ${{ runner.temp }}/dsst-converter-residuals.log
