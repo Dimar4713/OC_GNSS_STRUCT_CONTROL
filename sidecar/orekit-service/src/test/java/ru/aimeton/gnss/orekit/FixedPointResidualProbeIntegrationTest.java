@@ -1,11 +1,14 @@
 package ru.aimeton.gnss.orekit;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
 
 import org.hipparchus.ode.nonstiff.DormandPrince853Integrator;
+import org.hipparchus.util.MathUtils;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.orekit.attitudes.AttitudeProvider;
@@ -29,6 +32,7 @@ final class FixedPointResidualProbeIntegrationTest {
     private static final double MU = 398600441800000.0;
     private static final double STEP_S = 30.0;
     private static final double INITIAL_MASS_KG = 550.0;
+    private static final double DSST_LV_THRESHOLD = Math.PI * 1.0e-13;
     private static OrekitRuntime runtime;
 
     @BeforeAll
@@ -116,5 +120,36 @@ final class FixedPointResidualProbeIntegrationTest {
                 attitude,
                 meanForces,
                 failingOsculating.getMass());
+
+        EquinoctialOrbit failingEquinoctial = new EquinoctialOrbit(failingOsculating.getOrbit());
+        double originalLv = failingEquinoctial.getLv();
+        double lvUlp = Math.ulp(originalLv);
+        assertTrue(
+                lvUlp > DSST_LV_THRESHOLD,
+                () -> "confirmed failure requires lv ULP above DSST threshold: lv=" + originalLv
+                        + " ulp=" + lvUlp + " threshold=" + DSST_LV_THRESHOLD);
+
+        double normalizedLv = MathUtils.normalizeAngle(originalLv, 0.0);
+        EquinoctialOrbit normalizedOrbit = new EquinoctialOrbit(
+                failingEquinoctial.getA(),
+                failingEquinoctial.getEquinoctialEx(),
+                failingEquinoctial.getEquinoctialEy(),
+                failingEquinoctial.getHx(),
+                failingEquinoctial.getHy(),
+                normalizedLv,
+                PositionAngleType.TRUE,
+                failingEquinoctial.getFrame(),
+                failingEquinoctial.getDate(),
+                failingEquinoctial.getMu());
+        SpacecraftState normalizedState = new SpacecraftState(normalizedOrbit, failingOsculating.getAttitude())
+                .withMass(failingOsculating.getMass());
+
+        assertTrue(
+                Math.ulp(normalizedLv) < DSST_LV_THRESHOLD,
+                () -> "normalized lv must restore double resolution margin: lv=" + normalizedLv
+                        + " ulp=" + Math.ulp(normalizedLv) + " threshold=" + DSST_LV_THRESHOLD);
+        assertDoesNotThrow(
+                () -> DSSTPropagator.computeMeanState(normalizedState, attitude, meanForces),
+                "angle-normalized but physically equivalent state should converge below the longitude ULP floor");
     }
 }
