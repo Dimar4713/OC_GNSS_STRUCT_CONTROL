@@ -89,12 +89,38 @@ final class PropagationProgressRegistry {
                 previous.pointTotal(),
                 previous.timeS(),
                 previous.epoch(),
-                error,
+                failureDetail(previous, error),
                 System.currentTimeMillis()));
     }
 
     Snapshot get(String telemetryId) {
         return snapshots.get(telemetryId);
+    }
+
+    static String failureDetail(Snapshot previous, String error) {
+        StringBuilder detail = new StringBuilder(error == null || error.isBlank() ? "propagation failed" : error);
+        if (previous == null) {
+            return detail.toString();
+        }
+        detail.append(" | phase=").append(previous.phase());
+        if (previous.satelliteId() != null) {
+            detail.append(" satellite_id=").append(previous.satelliteId());
+        }
+        if (previous.satelliteIndex() != null && previous.satelliteTotal() != null) {
+            detail.append(" satellite_index=").append(previous.satelliteIndex())
+                    .append('/').append(previous.satelliteTotal());
+        }
+        if (previous.pointIndex() != null && previous.pointTotal() != null) {
+            detail.append(" point_index=").append(previous.pointIndex())
+                    .append('/').append(previous.pointTotal());
+        }
+        if (previous.timeS() != null) {
+            detail.append(" time_s=").append(previous.timeS());
+        }
+        if (previous.epoch() != null) {
+            detail.append(" epoch=").append(previous.epoch());
+        }
+        return detail.toString();
     }
 
     private void prune() {
