@@ -224,9 +224,9 @@ jobs:
               Get-Content $previewErr -ErrorAction SilentlyContinue
               throw 'Packaged Engineering Preview 0.2.6 did not become ready'
             }
-            $home = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
+            $homeResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
             foreach ($needle in @('Active Run Configuration','operatorTabs','gravityModelCard','EIGEN-6S 32x32','iacGnssCard','galileoGscCard')) {
-              if ($home.Content -notmatch [regex]::Escape($needle)) { throw "Missing packaged UI marker: $needle" }
+              if ($homeResponse.Content -notmatch [regex]::Escape($needle)) { throw "Missing packaged UI marker: $needle" }
             }
             $authority = Invoke-RestMethod -Uri 'http://127.0.0.1:8081/healthz' -TimeoutSec 2
             if ($authority.orekit_version -ne '13.1.7') { throw "Wrong Orekit version: $($authority.orekit_version)" }
