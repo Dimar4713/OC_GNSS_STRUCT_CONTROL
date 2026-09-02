@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -84,7 +83,10 @@ def create_gravity_derived_scenario(root: Path, request: GravityModelCreateReque
     # Fail closed on the exact persisted representation, not only the in-memory model.
     persisted = load_scenario(target)
     catalog = preview_catalog(root)
-    runnable = cast(list[str], catalog.get("scenarios", []))
+    runnable_value = catalog.get("scenarios", [])
+    if not isinstance(runnable_value, list) or not all(isinstance(item, str) for item in runnable_value):
+        raise ValueError("scenario catalog returned an invalid runnable scenario list")
+    runnable = [item for item in runnable_value if isinstance(item, str)]
     if target.name not in runnable:
         raise ValueError("derived scenario was saved but is not discoverable as a runnable ScenarioConfig")
 
