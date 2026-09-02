@@ -8,11 +8,11 @@ permissions:
   contents: read
 
 jobs:
-  build-preview-024-bundle:
+  build-preview-025-bundle:
     runs-on: ubuntu-latest
     env:
       OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
-      BUNDLE_NAME: engineering-preview-python-0.2.4-win10
+      BUNDLE_NAME: engineering-preview-python-0.2.5-win10
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -72,7 +72,7 @@ jobs:
           test "$actual_sha" = "$OREKIT_DATA_SHA256"
       - name: Build authoritative Orekit sidecar
         run: mvn -B -f sidecar/orekit-service/pom.xml test package
-      - name: Stage Windows Engineering Preview 0.2.4
+      - name: Stage Windows Engineering Preview 0.2.5
         shell: bash
         run: |
           set -euo pipefail
@@ -111,7 +111,7 @@ jobs:
               files.append({'path': rel, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'size': path.stat().st_size})
           manifest = {
               'product': 'OC GNSS STRUCT CONTROL',
-              'release': 'Engineering Preview Python 0.2.4',
+              'release': 'Engineering Preview Python 0.2.5',
               'target': 'Windows 10/11 engineering evaluation',
               'commit': os.environ['PREVIEW_SOURCE_SHA'],
               'python': '3.12',
@@ -122,6 +122,7 @@ jobs:
               'operator_surface': [
                   'gravity_release_app', 'consolidated_release_app', 'scenario_editor', 'gravity_model',
                   'walker', 'osculating', 'norad_tle', 'gps_almanac', 'glonass_almanac',
+                  'iac_gnss_intake', 'galileo_gsc_almanac',
                   'perturbation_designer', 'spacecraft_workbook', 'spacecraft_catalog',
                   'resource_state', 'completed_run_promotion'
               ],
@@ -136,45 +137,45 @@ jobs:
           PY
           (cd "$RUNNER_TEMP" && zip -q -r "$GITHUB_WORKSPACE/$BUNDLE_NAME.zip" "$BUNDLE_NAME")
           sha256sum "$BUNDLE_NAME.zip" | tee "$BUNDLE_NAME.zip.sha256"
-      - name: Verify Preview 0.2.4 bundle contract
+      - name: Verify Preview 0.2.5 bundle contract
         shell: bash
         run: |
           set -euo pipefail
           test -s "$BUNDLE_NAME.zip"
           test -s "$BUNDLE_NAME.zip.sha256"
           unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
-          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/consolidated_release_app.py" | grep 'PREVIEW_VERSION = "0.2.4"'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/consolidated_release_app.py" | grep 'PREVIEW_VERSION = "0.2.5"'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/cli/main.py" | grep 'gravity_release_app'
           unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep 'preview.result_paths import safe_result_file as _safe_result_file'
           if unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/release_app.py" | grep -q 'preview.app import'; then
             echo 'packaged release_app.py still depends on legacy preview.app' >&2
             exit 1
           fi
-          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/start-preview.ps1" | grep 'Engineering Preview Python 0.2.4'
-          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/pyproject.toml" | grep 'version = "0.2.4"'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview/start-preview.ps1" | grep 'Engineering Preview Python 0.2.5'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/pyproject.toml" | grep 'version = "0.2.5"'
           if unzip -l "$BUNDLE_NAME.zip" | grep -q "$BUNDLE_NAME/src/constellation_control/preview/app.py"; then
             echo 'legacy preview/app.py must not ship' >&2
             exit 1
           fi
-          for module in result_paths gravity_model_ui gravity_release_app walker_input osculating_input norad_input gnss_almanac_input glonass_almanac_input perturbation_ui workbook_upload spacecraft_catalog_ui resource_state_ui run_promotion_ui; do
+          for module in result_paths gravity_model_ui gravity_release_app walker_input osculating_input norad_input gnss_almanac_input glonass_almanac_input iac_gnss_intake galileo_gsc_input perturbation_ui workbook_upload spacecraft_catalog_ui resource_state_ui run_promotion_ui; do
             unzip -l "$BUNDLE_NAME.zip" | grep "src/constellation_control/preview/${module}.py"
           done
           manifest_release="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["release"])')"
           manifest_sha="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
-          test "$manifest_release" = 'Engineering Preview Python 0.2.4'
+          test "$manifest_release" = 'Engineering Preview Python 0.2.5'
           test "$manifest_sha" = "$PREVIEW_SOURCE_SHA"
-      - name: Upload Engineering Preview 0.2.4
+      - name: Upload Engineering Preview 0.2.5
         uses: actions/upload-artifact@v4
         with:
-          name: engineering-preview-python-0.2.4-win10
+          name: engineering-preview-python-0.2.5-win10
           retention-days: 14
           if-no-files-found: error
           path: |
-            engineering-preview-python-0.2.4-win10.zip
-            engineering-preview-python-0.2.4-win10.zip.sha256
+            engineering-preview-python-0.2.5-win10.zip
+            engineering-preview-python-0.2.5-win10.zip.sha256
 
-  windows-preview-024-smoke:
-    needs: build-preview-024-bundle
+  windows-preview-025-smoke:
+    needs: build-preview-025-bundle
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -194,28 +195,28 @@ jobs:
           [void][scriptblock]::Create($launcher)
           python -m pip install -U pip
           pip install -e '.[dev]'
-          pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_preview_release_http.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_gps_almanac_derived_scenario.py tests/test_glonass_derived_scenario.py tests/test_lineage_hash_integrity.py tests/test_gravity_model_ui.py tests/test_gravity_model_launcher_contract.py tests/test_gravity_model_pr_gate.py tests/test_gravity_model_force_fingerprint_contract.py
+          pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_preview_release_http.py tests/test_preview_closed_loop_http.py tests/test_preview_workflow_http.py tests/test_gps_almanac_derived_scenario.py tests/test_glonass_derived_scenario.py tests/test_lineage_hash_integrity.py tests/test_gravity_model_ui.py tests/test_gravity_model_launcher_contract.py tests/test_gravity_model_pr_gate.py tests/test_gravity_model_force_fingerprint_contract.py tests/test_iac_gnss_tables.py tests/test_iac_glonass_almanac.py tests/test_iac_gps_beidou_almanac.py tests/test_galileo_gsc_almanac.py
       - uses: actions/download-artifact@v4
         with:
-          name: engineering-preview-python-0.2.4-win10
+          name: engineering-preview-python-0.2.5-win10
           path: package-artifact
       - name: Run real packaged clean-Windows acceptance
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $bundle = Resolve-Path '.\package-artifact\engineering-preview-python-0.2.4-win10.zip'
-          $extract = Join-Path $env:RUNNER_TEMP 'preview-024-e2e'
+          $bundle = Resolve-Path '.\package-artifact\engineering-preview-python-0.2.5-win10.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'preview-025-e2e'
           if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
           Expand-Archive -LiteralPath $bundle -DestinationPath $extract
-          $root = Join-Path $extract 'engineering-preview-python-0.2.4-win10'
+          $root = Join-Path $extract 'engineering-preview-python-0.2.5-win10'
           if (Test-Path (Join-Path $root 'src\constellation_control\preview\app.py')) { throw 'legacy preview/app.py shipped unexpectedly' }
           $releaseApp = Get-Content -LiteralPath (Join-Path $root 'src\constellation_control\preview\release_app.py') -Raw
           if ($releaseApp -match 'preview\.app import') { throw 'packaged release_app still imports legacy preview.app' }
           $pinned = (Get-Content -LiteralPath (Join-Path $root 'sidecar\orekit-service\orekit-data-revision.txt') -Raw).Trim()
           $pinnedSha = (Get-Content -LiteralPath (Join-Path $root 'sidecar\orekit-service\orekit-data-sha256.txt') -Raw).Trim()
           $env:OREKIT_DATA_PATH = Join-Path $root 'preview\runtime\orekit-data'
-          $previewOut = Join-Path $env:RUNNER_TEMP 'preview-024.out.log'
-          $previewErr = Join-Path $env:RUNNER_TEMP 'preview-024.err.log'
+          $previewOut = Join-Path $env:RUNNER_TEMP 'preview-025.out.log'
+          $previewErr = Join-Path $env:RUNNER_TEMP 'preview-025.err.log'
           $cmd = '"' + (Join-Path $root 'start-preview.bat') + '" -Python python -NoBrowser -Port 8876'
           $preview = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d','/c',$cmd) -WorkingDirectory $root -RedirectStandardOutput $previewOut -RedirectStandardError $previewErr -PassThru
           try {
@@ -223,7 +224,7 @@ jobs:
             for ($i = 0; $i -lt 360; $i++) {
               try {
                 $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8876/health' -TimeoutSec 1
-                if ($health.preview -eq '0.2.4') { $ready = $true; break }
+                if ($health.preview -eq '0.2.5') { $ready = $true; break }
               } catch { }
               if ($preview.HasExited) { break }
               Start-Sleep -Milliseconds 500
@@ -231,16 +232,18 @@ jobs:
             if (-not $ready) {
               Get-Content $previewOut -ErrorAction SilentlyContinue
               Get-Content $previewErr -ErrorAction SilentlyContinue
-              throw 'Packaged Engineering Preview 0.2.4 did not become ready'
+              throw 'Packaged Engineering Preview 0.2.5 did not become ready'
             }
             $homeResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
             if ($homeResponse.Content -notmatch 'gravityModelCard') { throw 'Gravity model card missing from packaged Preview UI' }
             if ($homeResponse.Content -notmatch 'EIGEN-6S 32x32') { throw '32x32 gravity preset missing from packaged Preview UI' }
+            if ($homeResponse.Content -notmatch 'Galileo — официальный GSC Almanac') { throw 'Galileo GSC card missing from packaged Preview UI' }
+            if ($homeResponse.Content -notmatch 'IAC GNSS') { throw 'IAC GNSS intake card missing from packaged Preview UI' }
             $authority = Invoke-RestMethod -Uri 'http://127.0.0.1:8081/healthz' -TimeoutSec 2
             if ($authority.orekit_version -ne '13.1.7') { throw "Wrong Orekit version: $($authority.orekit_version)" }
             if ($authority.orekit_data_revision -ne $pinned) { throw "Wrong Orekit data revision: $($authority.orekit_data_revision)" }
             if ($authority.orekit_data_sha256 -ne $pinnedSha) { throw "Wrong Orekit data SHA: $($authority.orekit_data_sha256)" }
-            Write-Host "PACKAGED WINDOWS ACCEPTANCE READY: preview=0.2.4 orekit=$($authority.orekit_version) revision=$($authority.orekit_data_revision) gravity=0x0..32x32"
+            Write-Host "PACKAGED WINDOWS ACCEPTANCE READY: preview=0.2.5 orekit=$($authority.orekit_version) revision=$($authority.orekit_data_revision) gravity=0x0..32x32 GNSS=GLONASS/GPS/BeiDou/Galileo"
           } finally {
             if (-not $preview.HasExited) { & taskkill.exe /PID $preview.Id /T /F | Out-Host }
             $owner = Get-NetTCPConnection -State Listen -LocalPort 8081 -ErrorAction SilentlyContinue | Select-Object -First 1
