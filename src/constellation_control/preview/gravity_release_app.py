@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -19,12 +20,15 @@ from constellation_control.preview.operator_tabs import (
     OPERATOR_TABS_SCRIPT,
     OPERATOR_TABS_STYLE,
 )
-
-PREVIEW_VERSION = "0.2.6"
+from constellation_control.version import __version__ as PREVIEW_VERSION
 
 
 def render_preview_page_for_test() -> str:
-    page = render_consolidated_page().replace("Engineering Preview 0.2.5", f"Engineering Preview {PREVIEW_VERSION}")
+    page = re.sub(
+        r"Engineering Preview \d+\.\d+\.\d+",
+        f"Engineering Preview {PREVIEW_VERSION}",
+        render_consolidated_page(),
+    )
     page = page.replace("</head>", f"{OPERATOR_TABS_STYLE}</head>", 1)
     page = page.replace("<section>", f"<section>{OPERATOR_TABS_CARD}", 1)
     page = page.replace("</section></main>", f"{GRAVITY_MODEL_CARD}</section></main>", 1)
