@@ -45,12 +45,22 @@ jobs:
           test -f .github/workflows/preview-release-package.yml
           grep -F 'from constellation_control.version import __version__ as PREVIEW_VERSION' src/constellation_control/preview/gravity_release_app.py
           grep -F "version = {attr = \"constellation_control.version.__version__\"}" pyproject.toml
-          if grep -ERn 'engineering-preview-python-[0-9]+\.[0-9]+\.[0-9]+-win10|PREVIEW_VERSION[[:space:]]*=[[:space:]]*["'"'][0-9]+\.[0-9]+\.[0-9]+' .github/workflows/preview-release-package.yml; then
-            echo 'release workflow must derive version and artifact identity from canonical version source' >&2
-            exit 1
-          fi
-          if grep -Eq 'BUNDLE_NAME: engineering-preview-python-0\.1\.[0-9]+-win10|name: engineering-preview-python-0\.1\.[0-9]+-win10|Upload Engineering Preview 0\.1\.' .github/workflows/preview-package.yml; then
-            echo 'obsolete 0.1.x artifact publication must remain retired' >&2
-            exit 1
-          fi
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          release_workflow = Path('.github/workflows/preview-release-package.yml').read_text(encoding='utf-8')
+          compat_workflow = Path('.github/workflows/preview-package.yml').read_text(encoding='utf-8')
+
+          forbidden_release_patterns = (
+              r'engineering-preview-python-\d+\.\d+\.\d+-win10',
+              r'PREVIEW_VERSION\s*=\s*["\']\d+\.\d+\.\d+',
+          )
+          for pattern in forbidden_release_patterns:
+              if re.search(pattern, release_workflow):
+                  raise SystemExit('release workflow must derive version and artifact identity from canonical version source')
+
+          if re.search(r'engineering-preview-python-0\.1\.\d+-win10|Upload Engineering Preview 0\.1\.', compat_workflow):
+              raise SystemExit('obsolete 0.1.x artifact publication must remain retired')
+          PY
           echo 'Required compatibility check retained; release identity is derived from canonical version source.'
