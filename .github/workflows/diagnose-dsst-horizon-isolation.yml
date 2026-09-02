@@ -1,0 +1,156 @@
+name: diagnose-dsst-horizon-isolation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-dsst-horizon-isolation.yml'
+      - 'scripts/reproduce_long_validation.py'
+      - 'scenarios/regression/glo_source_linearization_validation_engineer.yaml'
+      - 'sidecar/orekit-service/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-horizon:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: glo01-before-boundary
+            duration_s: 14076030
+            satellite: GLO-01
+            expectation: success
+          - case: glo01-boundary
+            duration_s: 14076060
+            satellite: GLO-01
+            expectation: glo01_failure
+          - case: full-before-glo01-boundary
+            duration_s: 14076030
+            satellite: ALL
+            expectation: dependent_failure
+          - case: full-year
+            duration_s: 31536000
+            satellite: ALL
+            expectation: glo01_failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: sidecar/orekit-service/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Load pinned Orekit data identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "OREKIT_DATA_REVISION=$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-revision.txt)" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_SHA256=$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-sha256.txt)" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_MIRROR_REVISION=$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-mirror-revision.txt)" >> "$GITHUB_ENV"
+      - name: Fetch and verify pinned Orekit data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$OREKIT_DATA_PATH"
+          git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
+          if git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
+            git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
+          else
+            rm -rf "$OREKIT_DATA_PATH"
+            mirror_dir="$RUNNER_TEMP/orekit-data-mirror"
+            git init "$mirror_dir"
+            git -C "$mirror_dir" remote add origin https://github.com/fndtnl/orekit-data-snapshot.git
+            git -C "$mirror_dir" fetch --depth 1 origin "$OREKIT_DATA_MIRROR_REVISION"
+            git -C "$mirror_dir" checkout --detach FETCH_HEAD
+            mkdir -p "$OREKIT_DATA_PATH"
+            cp -a "$mirror_dir/orekit/orekit-data/." "$OREKIT_DATA_PATH/"
+          fi
+          test "$(python scripts/fingerprint_orekit_data.py "$OREKIT_DATA_PATH")" = "$OREKIT_DATA_SHA256"
+      - name: Build authority and app
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn -B -f sidecar/orekit-service/pom.xml test package
+          python -m pip install -U pip
+          pip install -e '.[dev]'
+      - name: Start fresh Orekit authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -jar sidecar/orekit-service/target/orekit-service-0.1.0-SNAPSHOT.jar > "$RUNNER_TEMP/orekit-sidecar.log" 2>&1 &
+          for i in $(seq 1 120); do
+            if curl --noproxy '*' -fsS http://127.0.0.1:8081/healthz > "$RUNNER_TEMP/orekit-health.json"; then break; fi
+            sleep 1
+          done
+          grep -q '13.1.7' "$RUNNER_TEMP/orekit-health.json"
+      - name: Run and assert isolated horizon probe
+        shell: bash
+        env:
+          CASE_NAME: ${{ matrix.case }}
+          DURATION_S: ${{ matrix.duration_s }}
+          SATELLITE: ${{ matrix.satellite }}
+          EXPECTATION: ${{ matrix.expectation }}
+        run: |
+          set +e
+          set -o pipefail
+          satellite_args=()
+          if test "$SATELLITE" != "ALL"; then
+            satellite_args=(--satellite "$SATELLITE")
+          fi
+          python scripts/reproduce_long_validation.py \
+            --source scenarios/regression/glo_source_linearization_validation_engineer.yaml \
+            --work "$RUNNER_TEMP/diag-$CASE_NAME" \
+            --duration "$DURATION_S" \
+            "${satellite_args[@]}" 2>&1 | tee "$RUNNER_TEMP/diag-$CASE_NAME.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+
+          echo "case=$CASE_NAME duration_s=$DURATION_S satellite=$SATELLITE expectation=$EXPECTATION exit_code=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -E 'RESULT (success|failure)|LAST_PROGRESS' "$RUNNER_TEMP/diag-$CASE_NAME.log" | tail -n 3 | tee -a "$GITHUB_STEP_SUMMARY" || true
+
+          case "$EXPECTATION" in
+            success)
+              test "$rc" -eq 0
+              grep -F 'RESULT success' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              ;;
+            glo01_failure)
+              test "$rc" -ne 0
+              grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'satellite_id=GLO-01' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'point_index=469203/' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'time_s=1.407606E7' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'epoch=2020-06-11T22:01:00.000Z' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              ;;
+            dependent_failure)
+              test "$rc" -ne 0
+              grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'satellite_id=GLO-LIN-DEP' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'point_index=442199/' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'time_s=1.326594E7' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              grep -F 'epoch=2020-06-02T12:59:00.000Z' "$RUNNER_TEMP/diag-$CASE_NAME.log"
+              ;;
+            *)
+              echo "unknown expectation: $EXPECTATION" >&2
+              exit 2
+              ;;
+          esac
+      - name: Upload isolated evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsst-${{ matrix.case }}
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/diag-${{ matrix.case }}.log
+            ${{ runner.temp }}/orekit-sidecar.log
+            ${{ runner.temp }}/orekit-health.json
