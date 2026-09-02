@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "constellation-control"
-version = "0.2.6"
+dynamic = ["version"]
 description = "Reproducible research platform for stable orbital constellation design and control"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -44,6 +44,9 @@ dev = [
 
 [project.scripts]
 constellation-control = "constellation_control.cli.main:app"
+
+[tool.setuptools.dynamic]
+version = {attr = "constellation_control.version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
