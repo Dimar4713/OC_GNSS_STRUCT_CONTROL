@@ -7,9 +7,8 @@ on:
 permissions:
   contents: read
 
-# Compatibility workflow retained so any existing required check names keep
-# resolving. It intentionally does NOT publish a second Preview artifact.
-# The canonical Windows release artifact is built by preview-0.2.6-package.yml.
+# Compatibility workflow retained so existing required check names keep resolving.
+# It does not publish an artifact. The canonical release workflow is preview-release-package.yml.
 
 jobs:
   windows-preview-smoke:
@@ -25,15 +24,14 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -e '.[dev]'
-      - name: Preserve required Windows check name for Preview 0.2.6
+      - name: Preserve required Windows compatibility check
         shell: powershell
         run: |
-          $launcher = [System.IO.File]::ReadAllText((Resolve-Path preview\start-preview.ps1), [System.Text.Encoding]::UTF8)
-          [void][scriptblock]::Create($launcher)
-          $pyproject = [System.IO.File]::ReadAllText((Resolve-Path pyproject.toml), [System.Text.Encoding]::UTF8)
-          $releaseApp = [System.IO.File]::ReadAllText((Resolve-Path src\constellation_control\preview\gravity_release_app.py), [System.Text.Encoding]::UTF8)
-          if ($pyproject -notmatch 'version\s*=\s*"0\.2\.6"') { throw 'pyproject is not Preview 0.2.6' }
-          if ($releaseApp -notmatch 'PREVIEW_VERSION\s*=\s*"0\.2\.6"') { throw 'Preview runtime is not 0.2.6' }
+          $text = [System.IO.File]::ReadAllText((Resolve-Path preview\start-preview.ps1), [System.Text.Encoding]::UTF8)
+          [void][scriptblock]::Create($text)
+          $canonical = python -c "from constellation_control.version import __version__; print(__version__)"
+          $installed = python -c "import importlib.metadata; print(importlib.metadata.version('constellation-control'))"
+          if ($installed.Trim() -ne $canonical.Trim()) { throw 'Installed package version diverges from canonical version source' }
           pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
 
   build-preview-bundle:
@@ -44,11 +42,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -F 'BUNDLE_NAME: engineering-preview-python-0.2.6-win10' .github/workflows/preview-0.2.6-package.yml
-          grep -F 'name: engineering-preview-python-0.2.6-win10' .github/workflows/preview-0.2.6-package.yml
-          grep -F 'legacy preview/app.py must not ship' .github/workflows/preview-0.2.6-package.yml
+          test -f .github/workflows/preview-release-package.yml
+          grep -F 'from constellation_control.version import __version__ as PREVIEW_VERSION' src/constellation_control/preview/gravity_release_app.py
+          grep -F "version = {attr = \"constellation_control.version.__version__\"}" pyproject.toml
+          if grep -ERn 'engineering-preview-python-[0-9]+\.[0-9]+\.[0-9]+-win10|PREVIEW_VERSION[[:space:]]*=[[:space:]]*["'"'][0-9]+\.[0-9]+\.[0-9]+' .github/workflows/preview-release-package.yml; then
+            echo 'release workflow must derive version and artifact identity from canonical version source' >&2
+            exit 1
+          fi
           if grep -Eq 'BUNDLE_NAME: engineering-preview-python-0\.1\.[0-9]+-win10|name: engineering-preview-python-0\.1\.[0-9]+-win10|Upload Engineering Preview 0\.1\.' .github/workflows/preview-package.yml; then
             echo 'obsolete 0.1.x artifact publication must remain retired' >&2
             exit 1
           fi
-          echo 'Required compatibility check retained; canonical 0.2.6 artifact publication delegated to preview-0.2.6-package.yml.'
+          echo 'Required compatibility check retained; release identity is derived from canonical version source.'
