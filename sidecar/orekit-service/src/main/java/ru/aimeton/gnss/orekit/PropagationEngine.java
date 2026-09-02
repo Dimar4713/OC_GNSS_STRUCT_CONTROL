@@ -239,7 +239,8 @@ final class PropagationEngine {
                     pointTotal,
                     time,
                     target.toString()));
-            SpacecraftState meanState = DSSTPropagator.computeMeanState(osculating, attitude, meanForces);
+            SpacecraftState meanState = PrecisionAwareMeanStateConverter.computeMeanState(
+                    osculating, attitude, meanForces);
             mean.add(toApiMean(meanState.getOrbit(), request.forceModelFingerprint(),
                     "orekit-dsst-13.1.7-from-numerical"));
             cartesian.add(toApiCartesian(time, osculating));
