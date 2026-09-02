@@ -14,14 +14,25 @@ from constellation_control.preview.gravity_model_ui import (
     GRAVITY_MODEL_SCRIPT,
     install_gravity_model_routes,
 )
+from constellation_control.preview.operator_tabs import (
+    OPERATOR_TABS_CARD,
+    OPERATOR_TABS_SCRIPT,
+    OPERATOR_TABS_STYLE,
+)
 
 
 def render_preview_page_for_test() -> str:
     page = render_consolidated_page()
+    page = page.replace("</head>", f"{OPERATOR_TABS_STYLE}</head>", 1)
+    page = page.replace("<section>", f"<section>{OPERATOR_TABS_CARD}", 1)
     page = page.replace("</section></main>", f"{GRAVITY_MODEL_CARD}</section></main>", 1)
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
-        f"{GRAVITY_MODEL_SCRIPT}\nconst gravityBootstrap=bootstrap;bootstrap=async function(){{await gravityBootstrap();if(typeof syncGravityModel==='function')syncGravityModel();}};bootstrap().catch(e=>setStatus(String(e),'danger'));",
+        f"{GRAVITY_MODEL_SCRIPT}\n"
+        "const gravityBootstrap=bootstrap;"
+        "bootstrap=async function(){await gravityBootstrap();if(typeof syncGravityModel==='function')syncGravityModel();};\n"
+        f"{OPERATOR_TABS_SCRIPT}\n"
+        "bootstrap().catch(e=>setStatus(String(e),'danger'));",
         1,
     )
     return page
