@@ -28,9 +28,12 @@ jobs:
       - name: Preserve required Windows check name for Preview 0.2.6
         shell: powershell
         run: |
-          $text = [System.IO.File]::ReadAllText((Resolve-Path preview\start-preview.ps1), [System.Text.Encoding]::UTF8)
-          [void][scriptblock]::Create($text)
-          if ($text -notmatch 'Engineering Preview Python 0\.2\.6') { throw 'Canonical launcher is not Preview 0.2.6' }
+          $launcher = [System.IO.File]::ReadAllText((Resolve-Path preview\start-preview.ps1), [System.Text.Encoding]::UTF8)
+          [void][scriptblock]::Create($launcher)
+          $pyproject = [System.IO.File]::ReadAllText((Resolve-Path pyproject.toml), [System.Text.Encoding]::UTF8)
+          $releaseApp = [System.IO.File]::ReadAllText((Resolve-Path src\constellation_control\preview\gravity_release_app.py), [System.Text.Encoding]::UTF8)
+          if ($pyproject -notmatch 'version\s*=\s*"0\.2\.6"') { throw 'pyproject is not Preview 0.2.6' }
+          if ($releaseApp -notmatch 'PREVIEW_VERSION\s*=\s*"0\.2\.6"') { throw 'Preview runtime is not 0.2.6' }
           pytest -q tests/test_preview_consolidated_release.py tests/test_preview_windows_bootstrap_contract.py tests/test_orekit_http.py tests/test_orekit_adapter_contract.py
 
   build-preview-bundle:
