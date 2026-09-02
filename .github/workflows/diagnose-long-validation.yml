@@ -92,12 +92,25 @@ jobs:
         run: |
           set -o pipefail
           python scripts/reproduce_long_validation.py --source scenarios/regression/glo_source_linearization_validation_engineer.yaml --work "$RUNNER_TEMP/diag-100d" --duration 8640000 2>&1 | tee "$RUNNER_TEMP/diag-100d.log"
-      - name: Stage 3 — one year
+      - name: Stage 3 — one year reproduces known non-convergence
         shell: bash
         run: |
+          set +e
           set -o pipefail
           python scripts/reproduce_long_validation.py --source scenarios/regression/glo_source_linearization_validation_engineer.yaml --work "$RUNNER_TEMP/diag-1y" --duration 31536000 2>&1 | tee "$RUNNER_TEMP/diag-1y.log"
-      - name: Dump authority log on failure
+          rc=${PIPESTATUS[0]}
+          set -e
+          if test "$rc" -eq 0; then
+            echo 'Expected one-year DSST mean reconstruction failure was not reproduced' >&2
+            exit 1
+          fi
+          grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-1y.log"
+          grep -F 'satellite_id=GLO-01' "$RUNNER_TEMP/diag-1y.log"
+          grep -F 'point_index=469203/1051201' "$RUNNER_TEMP/diag-1y.log"
+          grep -F 'time_s=1.407606E7' "$RUNNER_TEMP/diag-1y.log"
+          grep -F 'epoch=2020-06-11T22:01:00.000Z' "$RUNNER_TEMP/diag-1y.log"
+          echo 'Confirmed staged reproducer: 1d PASS, 100d PASS, 1y expected DSST non-convergence reproduced.'
+      - name: Dump authority log on unexpected failure
         if: failure()
         shell: bash
         run: |
