@@ -1,0 +1,260 @@
+name: preview-release-package
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'preview/**'
+      - 'sidecar/**'
+      - 'scenarios/**'
+      - 'scripts/**'
+      - 'pyproject.toml'
+      - '.github/workflows/preview-release-package.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-preview-bundle:
+    runs-on: ubuntu-latest
+    outputs:
+      preview_version: ${{ steps.release.outputs.preview_version }}
+      bundle_name: ${{ steps.release.outputs.bundle_name }}
+    env:
+      OREKIT_DATA_PATH: ${{ github.workspace }}/.orekit-data
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: sidecar/orekit-service/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve canonical release identity
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python - <<'PY'
+          from pathlib import Path
+          import runpy
+          value = runpy.run_path(Path('src/constellation_control/version.py'))['__version__']
+          print(value)
+          PY
+          )"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          bundle="engineering-preview-python-${version}-win10"
+          echo "preview_version=$version" >> "$GITHUB_OUTPUT"
+          echo "bundle_name=$bundle" >> "$GITHUB_OUTPUT"
+          echo "PREVIEW_VERSION=$version" >> "$GITHUB_ENV"
+          echo "BUNDLE_NAME=$bundle" >> "$GITHUB_ENV"
+          echo "PREVIEW_RELEASE=Engineering Preview Python $version" >> "$GITHUB_ENV"
+      - name: Load reviewed Orekit data authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-revision.txt)"
+          physical_sha="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-sha256.txt)"
+          mirror_revision="$(tr -d '[:space:]' < sidecar/orekit-service/orekit-data-mirror-revision.txt)"
+          [[ "$pinned" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$physical_sha" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$mirror_revision" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "OREKIT_DATA_REVISION=$pinned" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_SHA256=$physical_sha" >> "$GITHUB_ENV"
+          echo "OREKIT_DATA_MIRROR_REVISION=$mirror_revision" >> "$GITHUB_ENV"
+          echo "PREVIEW_SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
+      - name: Fetch reviewed Orekit data with verified fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$OREKIT_DATA_PATH"
+          git -C "$OREKIT_DATA_PATH" remote add origin https://gitlab.orekit.org/orekit/orekit-data.git
+          fetched=false
+          for attempt in 1 2 3 4; do
+            if timeout 30s git -C "$OREKIT_DATA_PATH" fetch --depth 1 origin "$OREKIT_DATA_REVISION"; then
+              fetched=true
+              break
+            fi
+            sleep "$((attempt * 2))"
+          done
+          if test "$fetched" = true; then
+            git -C "$OREKIT_DATA_PATH" checkout --detach FETCH_HEAD
+            test "$(git -C "$OREKIT_DATA_PATH" rev-parse HEAD)" = "$OREKIT_DATA_REVISION"
+          else
+            rm -rf "$OREKIT_DATA_PATH"
+            mirror_dir="$RUNNER_TEMP/orekit-data-mirror"
+            git init "$mirror_dir"
+            git -C "$mirror_dir" remote add origin https://github.com/fndtnl/orekit-data-snapshot.git
+            git -C "$mirror_dir" fetch --depth 1 origin "$OREKIT_DATA_MIRROR_REVISION"
+            git -C "$mirror_dir" checkout --detach FETCH_HEAD
+            test "$(git -C "$mirror_dir" rev-parse HEAD)" = "$OREKIT_DATA_MIRROR_REVISION"
+            mkdir -p "$OREKIT_DATA_PATH"
+            cp -a "$mirror_dir/orekit/orekit-data/." "$OREKIT_DATA_PATH/"
+          fi
+          actual_sha="$(python scripts/fingerprint_orekit_data.py "$OREKIT_DATA_PATH")"
+          test "$actual_sha" = "$OREKIT_DATA_SHA256"
+      - name: Build authoritative Orekit sidecar
+        run: mvn -B -f sidecar/orekit-service/pom.xml test package
+      - name: Stage Windows Engineering Preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/$BUNDLE_NAME"
+          rm -rf "$root"
+          mkdir -p "$root/preview/runtime/orekit-data" "$root/sidecar/orekit-service" "$root/scripts" "$root/preview/results"
+          cp start-preview.bat pyproject.toml README.md "$root/"
+          cp -a src scenarios "$root/"
+          ROOT="$root" python - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['ROOT'])
+          release_app = root / 'src/constellation_control/preview/release_app.py'
+          text = release_app.read_text(encoding='utf-8')
+          old = 'from constellation_control.preview.app import _safe_result_file'
+          new = 'from constellation_control.preview.result_paths import safe_result_file as _safe_result_file'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one legacy result-path import in release_app.py')
+          release_app.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          rm -f "$root/src/constellation_control/preview/app.py"
+          cp preview/start-preview-bootstrap.ps1 preview/start-preview.ps1 preview/requirements-preview.lock preview/README.md preview/USER_GUIDE_RU_EN.md preview/EXPERT_FEEDBACK.md preview/ENGINEERING_PREVIEW_0.2_RU_EN.md "$root/preview/"
+          cp scripts/fingerprint_orekit_data.py "$root/scripts/"
+          cp sidecar/orekit-service/orekit-data-revision.txt sidecar/orekit-service/orekit-data-sha256.txt sidecar/orekit-service/orekit-data-mirror-revision.txt "$root/sidecar/orekit-service/"
+          cp sidecar/orekit-service/target/orekit-service-0.1.0-SNAPSHOT.jar "$root/preview/runtime/orekit-service.jar"
+          (cd "$OREKIT_DATA_PATH" && tar --exclude=.git -cf - .) | (cd "$root/preview/runtime/orekit-data" && tar -xf -)
+          touch "$root/preview/results/.gitkeep"
+          ROOT="$root" python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['ROOT'])
+          files = []
+          for path in sorted(p for p in root.rglob('*') if p.is_file()):
+              rel = path.relative_to(root).as_posix()
+              files.append({'path': rel, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'size': path.stat().st_size})
+          manifest = {
+              'product': 'OC GNSS STRUCT CONTROL',
+              'release': os.environ['PREVIEW_RELEASE'],
+              'version': os.environ['PREVIEW_VERSION'],
+              'target': 'Windows 10/11 engineering evaluation',
+              'commit': os.environ['PREVIEW_SOURCE_SHA'],
+              'python': '3.12',
+              'java_high_fidelity_requirement': '17+',
+              'orekit': '13.1.7',
+              'orekit_data_revision': os.environ['OREKIT_DATA_REVISION'],
+              'orekit_data_sha256': os.environ['OREKIT_DATA_SHA256'],
+              'operator_surface': [
+                  'gravity_release_app', 'operator_tabs', 'consolidated_release_app', 'scenario_editor',
+                  'gravity_model', 'walker', 'osculating', 'norad_tle', 'gps_almanac', 'glonass_almanac',
+                  'iac_gnss_intake', 'galileo_gsc_almanac', 'perturbation_designer', 'spacecraft_workbook',
+                  'spacecraft_catalog', 'resource_state', 'completed_run_promotion'
+              ],
+              'authority_invariant': 'screening never authority; operational credibility requires Orekit numerical validation',
+              'scenario_editor_invariant': 'validate full ScenarioConfig and save only as a new YAML; existing scenarios are never overwritten',
+              'active_run_invariant': 'operator tabs do not implicitly change selected run inputs; active run configuration remains explicit',
+              'gravity_model_invariant': 'operator may select Kepler 0x0, J2-class 2x0, or EIGEN-6S degree/order up to 32x32; order must not exceed degree',
+              'venv_invariant': 'never copy .venv-preview between PCs; bootstrap creates it on the target PC from local Python 3.12',
+              'files': files,
+          }
+          (root / 'preview-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          (cd "$RUNNER_TEMP" && zip -q -r "$GITHUB_WORKSPACE/$BUNDLE_NAME.zip" "$BUNDLE_NAME")
+          sha256sum "$BUNDLE_NAME.zip" | tee "$BUNDLE_NAME.zip.sha256"
+      - name: Verify Preview bundle contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$BUNDLE_NAME.zip"
+          test -s "$BUNDLE_NAME.zip.sha256"
+          unzip -l "$BUNDLE_NAME.zip" | grep 'preview/runtime/orekit-service.jar'
+          bundled_version="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/version.py" | python -c "import sys; ns={}; exec(sys.stdin.read(), ns); print(ns['__version__'])")"
+          test "$bundled_version" = "$PREVIEW_VERSION"
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/operator_tabs.py" | grep 'Active Run Configuration'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/operator_tabs.py" | grep 'data-tab="design"'
+          unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/src/constellation_control/preview/operator_tabs.py" | grep 'data-tab="robustness"'
+          if unzip -l "$BUNDLE_NAME.zip" | grep -q "$BUNDLE_NAME/src/constellation_control/preview/app.py"; then
+            echo 'legacy preview/app.py must not ship' >&2
+            exit 1
+          fi
+          manifest_version="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+          manifest_sha="$(unzip -p "$BUNDLE_NAME.zip" "$BUNDLE_NAME/preview-manifest.json" | python -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          test "$manifest_version" = "$PREVIEW_VERSION"
+          test "$manifest_sha" = "$PREVIEW_SOURCE_SHA"
+      - name: Upload Engineering Preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release.outputs.bundle_name }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ steps.release.outputs.bundle_name }}.zip
+            ${{ steps.release.outputs.bundle_name }}.zip.sha256
+
+  windows-preview-smoke:
+    needs: build-preview-bundle
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate source contracts
+        shell: powershell
+        run: |
+          python -m pip install -U pip
+          pip install -e '.[dev]'
+          pytest -q tests/test_operator_tabs.py tests/test_scenario_catalog_regression.py tests/test_gravity_model_ui.py tests/test_preview_windows_bootstrap_contract.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-preview-bundle.outputs.bundle_name }}
+          path: package-artifact
+      - name: Run packaged clean-Windows acceptance
+        shell: powershell
+        env:
+          PREVIEW_VERSION: ${{ needs.build-preview-bundle.outputs.preview_version }}
+          BUNDLE_NAME: ${{ needs.build-preview-bundle.outputs.bundle_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Resolve-Path ".\package-artifact\$env:BUNDLE_NAME.zip"
+          $extract = Join-Path $env:RUNNER_TEMP 'preview-release-e2e'
+          if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+          Expand-Archive -LiteralPath $bundle -DestinationPath $extract
+          $root = Join-Path $extract $env:BUNDLE_NAME
+          $env:OREKIT_DATA_PATH = Join-Path $root 'preview\runtime\orekit-data'
+          $previewOut = Join-Path $env:RUNNER_TEMP 'preview-release.out.log'
+          $previewErr = Join-Path $env:RUNNER_TEMP 'preview-release.err.log'
+          $cmd = '"' + (Join-Path $root 'start-preview.bat') + '" -Python python -NoBrowser -Port 8876'
+          $preview = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/d','/c',$cmd) -WorkingDirectory $root -RedirectStandardOutput $previewOut -RedirectStandardError $previewErr -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 360; $i++) {
+              try {
+                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8876/health' -TimeoutSec 1
+                if ($health.preview -eq $env:PREVIEW_VERSION) { $ready = $true; break }
+              } catch { }
+              if ($preview.HasExited) { break }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ready) {
+              Get-Content $previewOut -ErrorAction SilentlyContinue
+              Get-Content $previewErr -ErrorAction SilentlyContinue
+              throw 'Packaged Engineering Preview did not become ready with canonical version'
+            }
+            $homeResponse = Invoke-WebRequest -Uri 'http://127.0.0.1:8876/' -UseBasicParsing -TimeoutSec 2
+            foreach ($needle in @('Active Run Configuration','operatorTabs','gravityModelCard','EIGEN-6S 32x32','iacGnssCard','galileoGscCard')) {
+              if ($homeResponse.Content -notmatch [regex]::Escape($needle)) { throw "Missing packaged UI marker: $needle" }
+            }
+            $authority = Invoke-RestMethod -Uri 'http://127.0.0.1:8081/healthz' -TimeoutSec 2
+            if ($authority.orekit_version -ne '13.1.7') { throw "Wrong Orekit version: $($authority.orekit_version)" }
+          } finally {
+            if (-not $preview.HasExited) { Stop-Process -Id $preview.Id -Force }
+          }
