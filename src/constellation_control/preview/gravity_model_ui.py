@@ -169,20 +169,20 @@ def _rederive_mean_elements(source: ScenarioConfig, target_force_model) -> tuple
         if sat.mean_orbit.definition.force_model_fingerprint != source_fingerprint
     )
     if mismatched_source:
-        ids = ", ".join(mismatched_source[:5]) + ("..." if len(mismatched_source) > 5 else "")
+        ids_preview = ", ".join(mismatched_source[:5]) + ("..." if len(mismatched_source) > 5 else "")
         raise GravityWorkflowError(
             "source_mean_fingerprint_mismatch",
-            f"Средние элементы исходного сценария уже не согласованы с его моделью сил ({ids}). Смена ГПЗ заблокирована до восстановления исходной authority.",
-            f"source scenario mean elements already disagree with its own force model ({ids}); gravity change is blocked until source authority is restored",
+            f"Средние элементы исходного сценария уже не согласованы с его моделью сил ({ids_preview}). Смена ГПЗ заблокирована до восстановления исходной authority.",
+            f"source scenario mean elements already disagree with its own force model ({ids_preview}); gravity change is blocked until source authority is restored",
             mismatched_source,
         )
     if not source.orekit_sidecar_url:
-        ids = tuple(sat.satellite_id for sat in source.constellation.satellites)
+        all_satellite_ids = tuple(sat.satellite_id for sat in source.constellation.satellites)
         raise GravityWorkflowError(
             "orekit_required_for_rederive",
             "Для смены модели ГПЗ требуется Orekit authority: программа должна восстановить оскулирующее состояние из старых DSST mean и заново получить mean для новой модели сил.",
             "Orekit authority is required to change the gravity model: the application must reconstruct the epoch osculating state from the old DSST mean elements and derive new mean elements for the requested force model.",
-            ids,
+            all_satellite_ids,
         )
     unsupported = tuple(
         sat.satellite_id
@@ -190,11 +190,11 @@ def _rederive_mean_elements(source: ScenarioConfig, target_force_model) -> tuple
         if not sat.mean_orbit.definition.theory.startswith("orekit-dsst-")
     )
     if unsupported:
-        ids = ", ".join(unsupported[:5]) + ("..." if len(unsupported) > 5 else "")
+        ids_preview = ", ".join(unsupported[:5]) + ("..." if len(unsupported) > 5 else "")
         raise GravityWorkflowError(
             "non_dsst_mean_rederive_unsupported",
-            f"Автоматический пересчёт ГПЗ безопасен только для DSST mean elements. Для {ids} требуется authoritative оскулирующий/TLE/GNSS источник.",
-            f"automatic gravity-model re-derivation is safe only for DSST mean elements; {ids} requires an authoritative osculating/TLE/GNSS source",
+            f"Автоматический пересчёт ГПЗ безопасен только для DSST mean elements. Для {ids_preview} требуется authoritative оскулирующий/TLE/GNSS источник.",
+            f"automatic gravity-model re-derivation is safe only for DSST mean elements; {ids_preview} requires an authoritative osculating/TLE/GNSS source",
             unsupported,
         )
 
