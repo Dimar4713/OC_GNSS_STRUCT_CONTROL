@@ -96,7 +96,7 @@ function Clear-StaleOrekitListener([int]$LocalPort) {
   Fail "Порт 127.0.0.1:$LocalPort не освободился после остановки старого sidecar" "Port 127.0.0.1:$LocalPort did not become free after stopping the stale sidecar"
 }
 
-Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.2.4"
+Write-Host "OC GNSS STRUCT CONTROL - Engineering Preview Python 0.2.5"
 Write-Host "Корень / Root: $Root"
 
 $PythonArgs = @()
