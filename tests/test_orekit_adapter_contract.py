@@ -113,11 +113,28 @@ def _result_payload(request: PropagationRequest, *, include_data_hash: bool = Tr
     }
 
 
+def test_adapter_has_no_arbitrary_default_propagation_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = _request()
+    captured: dict[str, Any] = {}
+
+    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
+        captured["timeout"] = timeout
+        return _FakeResponse(_result_payload(request))
+
+    monkeypatch.setattr(
+        "constellation_control.adapters.orekit.adapter.open_orekit_url",
+        fake_open_orekit_url,
+    )
+    OrekitSidecarPropagator("http://orekit.invalid").propagate(request)
+
+    assert captured["timeout"] is None
+
+
 def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
     request = _request()
     captured: dict[str, Any] = {}
 
-    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
         captured["timeout"] = timeout
         captured["body"] = json.loads(http_request.data.decode())
         return _FakeResponse(_result_payload(request))
@@ -138,7 +155,7 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
 def test_adapter_rejects_result_without_orekit_data_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
     request = _request()
 
-    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
         del http_request, timeout
         return _FakeResponse(_result_payload(request, include_data_hash=False))
 
@@ -154,7 +171,7 @@ def test_adapter_exposes_sidecar_http_error_body(monkeypatch: pytest.MonkeyPatch
     request = _request()
     response = io.BytesIO(b'{"error":"invalid_propagation_request","detail":"gravity mismatch"}')
 
-    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
         del http_request, timeout
         raise HTTPError(
             "http://orekit.invalid/v1/propagate",
