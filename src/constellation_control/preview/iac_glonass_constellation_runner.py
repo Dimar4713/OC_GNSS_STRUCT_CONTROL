@@ -5,7 +5,7 @@ from typing import Literal
 
 import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from constellation_control.adapters.iac_glonass_almanac import normalize_iac_glonass_almanac
 from constellation_control.adapters.iac_glonass_authority_bridge import (
@@ -29,8 +29,17 @@ class IacGlonassConstellationRequest(BaseModel):
     glo_to_utc_s: float
     gps_to_glo_s: float
     glo_time_offset_s: float
+    supplement_confirmed: bool
     target_scenario_name: str
     new_scenario_id: str
+
+    @model_validator(mode="after")
+    def validate_supplement(self) -> IacGlonassConstellationRequest:
+        if self.health < 0:
+            raise ValueError("health must be non-negative")
+        if not self.supplement_confirmed:
+            raise ValueError("supplementary GLONASS time/health authority must be explicitly confirmed")
+        return self
 
 
 def _table(request: IacGlonassConstellationRequest):
@@ -196,32 +205,32 @@ IAC_GLONASS_CONSTELLATION_CARD = r"""
   <label>Новый scenario_id <input id="iacGloConstScenarioId" type="text" value="iac-glonass-current"></label>
   <label>Новый YAML <input id="iacGloConstScenarioFile" type="text" value="iac-glonass-current.yaml"></label>
   <button onclick="buildIacGlonassConstellation()">Собрать все КА ИАЦ / Build full GLONASS constellation</button>
-  <pre id="iacGloConstResult"></pre><div id="iacGloConstStatus" class="status"></div>
+  <pre id="iacGloConstResult"></pre><div id="iacGloConstStatusBox" class="status"></div>
 </div>
 """
 
 IAC_GLONASS_CONSTELLATION_SCRIPT = r"""
 function syncIacGloConstTemplate(){if(!current)return;const sats=((current.normalized||current).constellation||{}).satellites||[];iacGloConstTemplate.replaceChildren(...sats.map(s=>{const o=document.createElement('option');o.value=s.satellite_id;o.textContent=s.satellite_id;return o;}));}
-function iacGloConstStatus(t,k=''){iacGloConstStatus.textContent=t;iacGloConstStatus.className='status '+k;}
+function setIacGloConstStatus(t,k=''){const el=document.getElementById('iacGloConstStatusBox');el.textContent=t;el.className='status '+k;}
 async function buildIacGlonassConstellation(){
- if(!iacGloConstConfirm.checked){iacGloConstStatus('Подтвердите supplementary time/health authority значения','danger');return;}
+ if(!iacGloConstConfirm.checked){setIacGloConstStatus('Подтвердите supplementary time/health authority значения','danger');return;}
  let filename=null,content_text=null;const mode=iacGloConstMode.value;
  if(mode==='offline'){
    let f=iacGloConstFile.files&&iacGloConstFile.files[0];
    if(!f&&typeof iacGnssFile!=='undefined')f=iacGnssFile.files&&iacGnssFile.files[0];
-   if(!f){iacGloConstStatus('Выберите offline IAC GLONASS файл','danger');return;}
+   if(!f){setIacGloConstStatus('Выберите offline IAC GLONASS файл','danger');return;}
    filename=f.name;content_text=await f.text();
  }
- const p={source_mode:mode,filename,content_text,source_scenario_name:scenario.value,template_satellite_id:iacGloConstTemplate.value,health:Number(iacGloConstHealth.value),glo_to_utc_s:Number(iacGloConstUtc.value),gps_to_glo_s:Number(iacGloConstGpsGlo.value),glo_time_offset_s:Number(iacGloConstOffset.value),new_scenario_id:iacGloConstScenarioId.value.trim(),target_scenario_name:iacGloConstScenarioFile.value.trim()};
- if(!p.template_satellite_id||!p.new_scenario_id||!p.target_scenario_name){iacGloConstStatus('Выберите template satellite и задайте новый scenario_id/YAML','danger');return;}
- iacGloConstStatus('ИАЦ → Orekit: пакетная конверсия всей группировки…');
- const r=await fetch('/api/iac-glonass-constellation/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){iacGloConstStatus(d.detail||'GLONASS constellation build failed','danger');return;}
- iacGloConstResult.textContent=JSON.stringify(d,null,2);const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();iacGloConstStatus('RUNNABLE: '+d.scenario_name+'; satellites='+d.satellite_count+'; sha256='+d.source_sha256,'ok');
+ const p={source_mode:mode,filename,content_text,source_scenario_name:scenario.value,template_satellite_id:iacGloConstTemplate.value,health:Number(iacGloConstHealth.value),glo_to_utc_s:Number(iacGloConstUtc.value),gps_to_glo_s:Number(iacGloConstGpsGlo.value),glo_time_offset_s:Number(iacGloConstOffset.value),supplement_confirmed:true,new_scenario_id:iacGloConstScenarioId.value.trim(),target_scenario_name:iacGloConstScenarioFile.value.trim()};
+ if(!p.template_satellite_id||!p.new_scenario_id||!p.target_scenario_name){setIacGloConstStatus('Выберите template satellite и задайте новый scenario_id/YAML','danger');return;}
+ setIacGloConstStatus('ИАЦ → Orekit: пакетная конверсия всей группировки…');
+ const r=await fetch('/api/iac-glonass-constellation/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});const d=await r.json();if(!r.ok){setIacGloConstStatus(d.detail||'GLONASS constellation build failed','danger');return;}
+ iacGloConstResult.textContent=JSON.stringify(d,null,2);const c=await fetch('/api/scenarios');catalog=await c.json();scenario.replaceChildren(...catalog.scenarios.map(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;return o;}));scenario.value=d.scenario_name;await loadScenario();setIacGloConstStatus('RUNNABLE: '+d.scenario_name+'; satellites='+d.satellite_count+'; sha256='+d.source_sha256,'ok');
 }
 function installIacGloIntakeBridge(){
  const card=document.getElementById('iacGnssCard');if(!card||document.getElementById('iacGloPromoteAll'))return;
  const b=document.createElement('button');b.id='iacGloPromoteAll';b.textContent='→ Собрать GLONASS-сценарий из альманаха / Build GLONASS scenario';
- b.onclick=()=>{if(iacGnssDataset.value!=='glonass-almanac'){iacStatus('Выберите GLONASS — альманах','danger');return;}iacGloConstMode.value=(iacGnssFile.files&&iacGnssFile.files[0])?'offline':'online';document.getElementById('iacGlonassConstellationCard').scrollIntoView({behavior:'smooth',block:'start'});iacGloConstStatus('Источник ИАЦ выбран. Подтвердите time/health authority и запустите сборку.');};
+ b.onclick=()=>{if(iacGnssDataset.value!=='glonass-almanac'){iacStatus('Выберите GLONASS — альманах','danger');return;}iacGloConstMode.value=iacGnssStatus.textContent.includes('OFFLINE')?'offline':'online';document.getElementById('iacGlonassConstellationCard').scrollIntoView({behavior:'smooth',block:'start'});setIacGloConstStatus('Источник ИАЦ выбран. Подтвердите time/health authority и запустите сборку.');};
  card.appendChild(b);
 }
 """
