@@ -18,22 +18,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - case: glo01-before-boundary
+          - case: glo01-before-former-boundary
             duration_s: 14076030
             satellite: GLO-01
-            expectation: success
-          - case: glo01-boundary
+          - case: glo01-former-boundary
             duration_s: 14076060
             satellite: GLO-01
-            expectation: glo01_failure
-          - case: full-before-glo01-boundary
+          - case: full-before-former-boundary
             duration_s: 14076030
             satellite: ALL
-            expectation: dependent_failure
           - case: full-year
             duration_s: 31536000
             satellite: ALL
-            expectation: glo01_failure
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -99,9 +95,7 @@ jobs:
           CASE_NAME: ${{ matrix.case }}
           DURATION_S: ${{ matrix.duration_s }}
           SATELLITE: ${{ matrix.satellite }}
-          EXPECTATION: ${{ matrix.expectation }}
         run: |
-          set +e
           set -o pipefail
           satellite_args=()
           if test "$SATELLITE" != "ALL"; then
@@ -112,38 +106,13 @@ jobs:
             --work "$RUNNER_TEMP/diag-$CASE_NAME" \
             --duration "$DURATION_S" \
             "${satellite_args[@]}" 2>&1 | tee "$RUNNER_TEMP/diag-$CASE_NAME.log"
-          rc=${PIPESTATUS[0]}
-          set -e
 
-          echo "case=$CASE_NAME duration_s=$DURATION_S satellite=$SATELLITE expectation=$EXPECTATION exit_code=$rc" | tee -a "$GITHUB_STEP_SUMMARY"
-          grep -E 'RESULT (success|failure)|LAST_PROGRESS' "$RUNNER_TEMP/diag-$CASE_NAME.log" | tail -n 3 | tee -a "$GITHUB_STEP_SUMMARY" || true
-
-          case "$EXPECTATION" in
-            success)
-              test "$rc" -eq 0
-              grep -F 'RESULT success' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              ;;
-            glo01_failure)
-              test "$rc" -ne 0
-              grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'satellite_id=GLO-01' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'point_index=469203/' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'time_s=1.407606E7' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'epoch=2020-06-11T22:01:00.000Z' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              ;;
-            dependent_failure)
-              test "$rc" -ne 0
-              grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'satellite_id=GLO-LIN-DEP' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'point_index=442199/' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'time_s=1.326594E7' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              grep -F 'epoch=2020-06-02T12:59:00.000Z' "$RUNNER_TEMP/diag-$CASE_NAME.log"
-              ;;
-            *)
-              echo "unknown expectation: $EXPECTATION" >&2
-              exit 2
-              ;;
-          esac
+          echo "case=$CASE_NAME duration_s=$DURATION_S satellite=$SATELLITE expectation=success" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -F 'RESULT success' "$RUNNER_TEMP/diag-$CASE_NAME.log" | tail -n 1 | tee -a "$GITHUB_STEP_SUMMARY"
+          if grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-$CASE_NAME.log"; then
+            echo 'Former DSST precision-floor failure reappeared' >&2
+            exit 1
+          fi
       - name: Upload isolated evidence
         if: always()
         uses: actions/upload-artifact@v4
