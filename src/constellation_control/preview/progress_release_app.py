@@ -61,11 +61,18 @@ async function pollRunProgress(){
 }
 runScenario=async function(){
   const n=scenario.value;if(!n||activeRunJobId)return;
-  const p=durationPreset.value;const custom=p==='custom'?Number(customDuration.value):null;
-  runBtn.disabled=true;setStatus(tr('running'));
-  const r=await fetch('/api/run-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_name:n,duration_preset:p,custom_duration_s:custom})});const d=await r.json();
-  if(!r.ok){runBtn.disabled=false;setStatus(d.detail||tr('runFail'),'danger');return;}
-  activeRunJobId=d.job_id;renderRunProgress(d);pollRunProgress();
+  runBtn.disabled=true;
+  try{
+    if(typeof current==='undefined'||!current||current.scenario_name!==n){await loadScenario();}
+    if(typeof current==='undefined'||!current||current.scenario_name!==n){throw new Error('Selected ScenarioConfig was not loaded');}
+    if(typeof activeRunRefresh==='function')activeRunRefresh();
+    const p=durationPreset.value;const custom=p==='custom'?Number(customDuration.value):null;
+    setStatus(tr('running'));
+    const r=await fetch('/api/run-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario_name:n,duration_preset:p,custom_duration_s:custom})});const d=await r.json();
+    if(!r.ok){setStatus(d.detail||tr('runFail'),'danger');return;}
+    activeRunJobId=d.job_id;renderRunProgress(d);pollRunProgress();
+  }catch(e){setStatus(String(e),'danger');}
+  finally{if(!activeRunJobId)runBtn.disabled=false;}
 };
 """
 
