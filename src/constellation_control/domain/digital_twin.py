@@ -74,7 +74,7 @@ class SpacecraftOperationalState(BaseModel):
     correction_system: CorrectionSystem | None = None
 
     @model_validator(mode="after")
-    def validate_mass_state(self) -> SpacecraftOperationalState:
+    def validate_mass_state(self) -> "SpacecraftOperationalState":
         if self.propellant_capacity_kg is not None and self.current_propellant_mass_kg > self.propellant_capacity_kg:
             raise ValueError("current_propellant_mass_kg must not exceed propellant_capacity_kg")
         expected_mass = self.dry_mass_kg + self.current_propellant_mass_kg
@@ -97,7 +97,7 @@ class SpacecraftGroup(BaseModel):
     satellite_ids: tuple[str, ...]
 
     @model_validator(mode="after")
-    def validate_group(self) -> SpacecraftGroup:
+    def validate_group(self) -> "SpacecraftGroup":
         if not self.satellite_ids:
             raise ValueError("spacecraft group must contain at least one satellite")
         if len(self.satellite_ids) != len(set(self.satellite_ids)):
@@ -119,7 +119,7 @@ class PerturbationRule(BaseModel):
     unit: str
 
     @model_validator(mode="after")
-    def validate_distribution_parameters(self) -> PerturbationRule:
+    def validate_distribution_parameters(self) -> "PerturbationRule":
         if len(self.target_ids) != len(set(self.target_ids)):
             raise ValueError("perturbation target_ids must be unique")
         if self.scope == PerturbationScope.CONSTELLATION and self.target_ids:
@@ -153,7 +153,7 @@ class AppliedPerturbation(BaseModel):
     unit: str
 
     @model_validator(mode="after")
-    def validate_unit(self) -> AppliedPerturbation:
+    def validate_unit(self) -> "AppliedPerturbation":
         expected_unit = _PERTURBATION_UNITS[self.parameter]
         if self.unit != expected_unit:
             raise ValueError(f"parameter {self.parameter.value} requires unit {expected_unit}, got {self.unit}")
@@ -174,12 +174,19 @@ class ScenarioLineage(BaseModel):
         "norad_tle_import",
         "gps_almanac_import",
         "glonass_almanac_import",
+        "mixed_gnss_almanac_import",
         "propagated_state",
         "constellation_editor",
         "gravity_model_change",
     ]
     random_seed: int | None = None
-    source_type: Literal["norad_tle", "gps_yuma", "gps_sem", "glonass_authority_v1"] | None = None
+    source_type: Literal[
+        "norad_tle",
+        "gps_yuma",
+        "gps_sem",
+        "glonass_authority_v1",
+        "mixed_gnss_almanac",
+    ] | None = None
     source_name: str | None = None
     source_sha256: str | None = None
     source_record_id: str | None = None
@@ -196,7 +203,7 @@ class ScenarioLineage(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def validate_integrity_and_source_provenance(self) -> ScenarioLineage:
+    def validate_integrity_and_source_provenance(self) -> "ScenarioLineage":
         if self.integrity_version == 1 and not _is_sha256_hex(self.parent_config_hash):
             raise ValueError("integrity_version=1 requires parent_config_hash to be a 64-character SHA-256 hex digest")
         fields = (self.source_type, self.source_name, self.source_sha256, self.source_record_id, self.authority)
@@ -218,7 +225,7 @@ class DigitalTwinConfig(BaseModel):
     lineage: ScenarioLineage | None = None
 
     @model_validator(mode="after")
-    def validate_local_uniqueness(self) -> DigitalTwinConfig:
+    def validate_local_uniqueness(self) -> "DigitalTwinConfig":
         state_ids = [state.satellite_id for state in self.spacecraft_states]
         if len(state_ids) != len(set(state_ids)):
             raise ValueError("spacecraft state satellite_id values must be unique")
