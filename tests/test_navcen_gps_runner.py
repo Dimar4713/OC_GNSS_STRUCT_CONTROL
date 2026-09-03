@@ -9,7 +9,6 @@ from constellation_control.application.run import load_scenario
 from constellation_control.preview.gravity_release_app import create_preview_app, render_preview_page_for_test
 from constellation_control.preview.navcen_gps_runner import (
     NAVCEN_GPS_ALMANAC_URLS,
-    NavcenGpsAuthorityRequest,
     fetch_navcen_gps_almanac,
 )
 
