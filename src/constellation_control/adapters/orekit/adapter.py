@@ -33,6 +33,11 @@ class OrekitSidecarPropagator:
     and Orekit-data fingerprint are all validated before a result enters
     application code.
 
+    Authoritative propagation has no arbitrary total wall-clock deadline by
+    default. Long validation/design runs can legitimately exceed 30 minutes.
+    Short progress-poll requests remain bounded independently, and callers that
+    require a finite propagation deadline may still pass ``timeout_s`` explicitly.
+
     When a progress callback is supplied explicitly or by the local ContextVar,
     propagation receives an explicit telemetry id and a separate polling thread
     reads authoritative point/phase snapshots from the sidecar. Progress
@@ -43,7 +48,7 @@ class OrekitSidecarPropagator:
     def __init__(
         self,
         base_url: str,
-        timeout_s: float = 1800.0,
+        timeout_s: float | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> None:
         root = base_url.rstrip("/")
@@ -85,9 +90,10 @@ class OrekitSidecarPropagator:
             raise RuntimeError(f"Orekit sidecar connection failed: {error.reason}") from error
         except TimeoutError as error:
             self._emit_final_progress(telemetry_id)
+            if self._timeout_s is None:
+                raise RuntimeError("Orekit sidecar transport timed out unexpectedly") from error
             raise RuntimeError(
-                f"Orekit sidecar propagation exceeded {self._timeout_s:.0f} s; "
-                "the calculation may be too large for the synchronous Preview transport"
+                f"Orekit sidecar propagation exceeded configured deadline {self._timeout_s:.0f} s"
             ) from error
         finally:
             if stop_polling is not None:
@@ -136,7 +142,7 @@ class OrekitSidecarPropagator:
     def _read_progress(self, telemetry_id: str) -> dict[str, object] | None:
         request = Request(f"{self._progress_root}/{telemetry_id}", method="GET")
         try:
-            with open_orekit_url(request, min(self._timeout_s, 5.0)) as response:
+            with open_orekit_url(request, 5.0) as response:
                 payload = json.loads(response.read().decode())
         except HTTPError as error:
             if error.code == 404:
