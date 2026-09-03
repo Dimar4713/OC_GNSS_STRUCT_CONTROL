@@ -102,7 +102,17 @@ jobs:
             echo 'DSST mean reconstruction precision-floor failure reappeared' >&2
             exit 1
           fi
-          echo 'Confirmed staged validation: 1d PASS, 100d PASS, 1y PASS.'
+      - name: Stage 4 — exact Preview 1y operator profile (365.25 d, 900 s)
+        shell: bash
+        run: |
+          set -o pipefail
+          python scripts/reproduce_long_validation.py --source scenarios/regression/glo_source_linearization_validation_engineer.yaml --work "$RUNNER_TEMP/diag-operator-1y" --duration 31557600 --output-step 900 2>&1 | tee "$RUNNER_TEMP/diag-operator-1y.log"
+          grep -F 'RESULT success duration_s=3.15576e+07 output_step_s=900.0' "$RUNNER_TEMP/diag-operator-1y.log"
+          if grep -F 'unable to compute DSST mean parameters after 201 iterations' "$RUNNER_TEMP/diag-operator-1y.log"; then
+            echo 'Exact Preview one-year profile still hits DSST mean reconstruction failure' >&2
+            exit 1
+          fi
+          echo 'Confirmed staged validation: 1d PASS, 100d PASS, 365d PASS, exact 365.25d/900s operator profile PASS.'
       - name: Dump authority log on unexpected failure
         if: failure()
         shell: bash
@@ -119,5 +129,6 @@ jobs:
             ${{ runner.temp }}/diag-1d.log
             ${{ runner.temp }}/diag-100d.log
             ${{ runner.temp }}/diag-1y.log
+            ${{ runner.temp }}/diag-operator-1y.log
             ${{ runner.temp }}/orekit-sidecar.log
             ${{ runner.temp }}/orekit-health.json
