@@ -17,6 +17,14 @@ def test_progress_ui_replaces_blocking_run_with_job_polling() -> None:
     assert "${Number(d.percent||0).toFixed(1)} %" in page
 
 
+def test_run_synchronizes_selected_scenario_before_job_start() -> None:
+    page = render_preview_page_for_test()
+    assert "current.scenario_name!==n){await loadScenario();}" in page
+    assert "current.scenario_name!==n){throw new Error('Selected ScenarioConfig was not loaded');}" in page
+    assert "if(typeof activeRunRefresh==='function')activeRunRefresh();" in page
+    assert page.index("await loadScenario()") < page.index("fetch('/api/run-jobs'")
+
+
 def test_orekit_progress_payload_is_forwarded_as_job_update_keywords() -> None:
     source = getsource(progress_release_app.create_preview_app)
     assert "orekit_progress_callback(lambda payload: update(**payload))" in source
