@@ -142,7 +142,7 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
                     epoch=scenario.epoch.isoformat(),
                     message="starting authoritative propagation",
                 )
-                with orekit_progress_callback(update):
+                with orekit_progress_callback(lambda payload: update(**payload)):
                     execution = run_scenario_with_duration(
                         scenario_path,
                         output_root,

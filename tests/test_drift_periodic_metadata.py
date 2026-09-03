@@ -113,6 +113,33 @@ def test_application_basis_short_arc_reduces_to_direct_linear_secular_rate() -> 
     assert fit.secular_drift_rad_s == pytest.approx(expected_direct_rate, rel=1e-12, abs=1e-18)
 
 
+def test_seven_point_180_second_preview_arc_uses_linear_only_fit() -> None:
+    """Regression for the operator-reported 180 s / 30 s Preview run.
+
+    A seven-sample engineering smoke arc cannot identify any of the default GNSS
+    physical harmonics. Application-facing basis selection must therefore reduce
+    the fit to intercept + secular slope instead of forwarding four harmonics to
+    the low-level least-squares routine and failing on coefficient count.
+    """
+
+    times = np.arange(0.0, 181.0, 30.0)
+    orbital_period_s = 43_077.757
+    candidate_frequencies = default_harmonic_frequencies(orbital_period_s)
+    expected_rate_rad_s = 2.5e-9
+    angle = 0.42 + expected_rate_rad_s * times
+
+    selection = select_identifiable_harmonic_basis(times, candidate_frequencies)
+    fit = harmonic_regression(times, angle, selection.included_frequencies_rad_s)
+
+    assert times.size == 7
+    assert selection.observation_span_s == pytest.approx(180.0)
+    assert selection.included_frequencies_rad_s == ()
+    assert selection.included_labels == ()
+    assert fit.components == ()
+    assert fit.periodic_amplitude_rad == 0.0
+    assert fit.secular_drift_rad_s == pytest.approx(expected_rate_rad_s, rel=1e-10, abs=1e-15)
+
+
 def test_basis_selection_admits_harmonics_only_after_complete_cycles() -> None:
     orbital_period_s = 12.0 * 3600.0
     frequencies = default_harmonic_frequencies(orbital_period_s)
