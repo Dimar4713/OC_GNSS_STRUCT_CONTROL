@@ -35,10 +35,11 @@ class OrekitSidecarPropagator:
     application code.
 
     Authoritative propagation has no arbitrary total wall-clock deadline by
-    default. When progress telemetry is available, a liveness watchdog instead
-    requires real movement in the authoritative work coordinates. Repeated copies
-    of one snapshot do not count as progress. A separate startup grace period
-    detects a sidecar that accepted the request but never starts reporting work.
+    default. Every authoritative run receives a telemetry id and a liveness
+    watchdog requires real movement in the physical work coordinates. Repeated
+    copies of one snapshot do not count as progress. A separate startup grace
+    period detects a sidecar that accepted the request but never starts reporting
+    work. UI callbacks are optional and only control display, not watchdog safety.
 
     Callers may still pass an explicit finite transport timeout when their
     workflow genuinely requires one. Short progress-poll requests remain bounded
@@ -65,11 +66,11 @@ class OrekitSidecarPropagator:
         request_payload = request.model_dump(mode="json")
         request_payload["force_model_fingerprint"] = request.force_model.fingerprint()
         body = json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
-        headers = {"Content-Type": "application/json"}
-        telemetry_id: str | None = None
-        if self._progress_callback is not None:
-            telemetry_id = uuid4().hex
-            headers["X-OC-GNSS-Progress-Id"] = telemetry_id
+        telemetry_id = uuid4().hex
+        headers = {
+            "Content-Type": "application/json",
+            "X-OC-GNSS-Progress-Id": telemetry_id,
+        }
 
         http_request = Request(self._url, data=body, headers=headers, method="POST")
         payload = self._request_with_liveness_watchdog(http_request, telemetry_id)
@@ -95,10 +96,7 @@ class OrekitSidecarPropagator:
             )
         return result
 
-    def _request_with_liveness_watchdog(self, http_request: Request, telemetry_id: str | None) -> str:
-        if telemetry_id is None:
-            return self._read_propagation_response(http_request)
-
+    def _request_with_liveness_watchdog(self, http_request: Request, telemetry_id: str) -> str:
         completed = Event()
         outcome: dict[str, object] = {}
 
