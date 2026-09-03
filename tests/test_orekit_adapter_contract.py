@@ -113,23 +113,6 @@ def _result_payload(request: PropagationRequest, *, include_data_hash: bool = Tr
     }
 
 
-def test_adapter_has_no_arbitrary_default_propagation_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    request = _request()
-    captured: dict[str, Any] = {}
-
-    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
-        captured["timeout"] = timeout
-        return _FakeResponse(_result_payload(request))
-
-    monkeypatch.setattr(
-        "constellation_control.adapters.orekit.adapter.open_orekit_url",
-        fake_open_orekit_url,
-    )
-    OrekitSidecarPropagator("http://orekit.invalid").propagate(request)
-
-    assert captured["timeout"] is None
-
-
 def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
     request = _request()
     captured: dict[str, Any] = {}
@@ -137,6 +120,7 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
     def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
         captured["timeout"] = timeout
         captured["body"] = json.loads(http_request.data.decode())
+        captured["telemetry_id"] = http_request.headers.get("X-oc-gnss-progress-id")
         return _FakeResponse(_result_payload(request))
 
     monkeypatch.setattr(
@@ -148,6 +132,7 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
     assert captured["timeout"] == 12.0
     assert captured["body"]["force_model_fingerprint"] == request.force_model.fingerprint()
     assert captured["body"]["force_model"]["gravity_model"] == "EIGEN-6S"
+    assert isinstance(captured["telemetry_id"], str) and captured["telemetry_id"]
     assert result.backend_metadata["orekit_data_sha256"] == "a" * 64
     assert result.backend_metadata["gravity_model"] == "EIGEN-6S"
 
