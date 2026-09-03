@@ -1,3 +1,4 @@
+from inspect import getsource
 from pathlib import Path
 
 from constellation_control.application.run_duration import DurationRunResult
@@ -14,6 +15,11 @@ def test_progress_ui_replaces_blocking_run_with_job_polling() -> None:
     assert "runScenario=async function()" in page
     assert "point ${d.point_index}/${d.point_total}" in page
     assert "${Number(d.percent||0).toFixed(1)} %" in page
+
+
+def test_orekit_progress_payload_is_forwarded_as_job_update_keywords() -> None:
+    source = getsource(progress_release_app.create_preview_app)
+    assert "orekit_progress_callback(lambda payload: update(**payload))" in source
 
 
 def test_progress_ui_exposes_independent_kepler_drift_report_link() -> None:
