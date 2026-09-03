@@ -5,14 +5,13 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from math import pi, radians, sqrt
-from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
+from constellation_control.adapters.reviewed_http_fetch import fetch_reviewed_url
 
 GSC_ALMANAC_INDEX_URL = "https://www.gsc-europa.eu/gsc-products/almanac"
-GSC_FILE_PREFIX = "https://www.gsc-europa.eu/sites/default/files/sites/all/files/"
+GSC_FILE_PREFIX = "https://www.gsc-europa.eu/sites/default/files/"
 GALILEO_NOMINAL_SEMI_MAJOR_AXIS_M = 29_600_000.0
 GALILEO_REFERENCE_INCLINATION_RAD = radians(56.0)
 
@@ -127,7 +126,7 @@ def _integer(value: str, label: str) -> int:
 
 
 def _candidate_sort_key(url: str) -> tuple[int, str]:
-    name = url.rsplit("/", 1)[-1]
+    name = urlparse(url).path.rsplit("/", 1)[-1]
     daily = re.search(r"GalileoGSCAlmanac_(\d{14})_.*\.xml$", name, re.IGNORECASE)
     if daily:
         return 2, daily.group(1)
@@ -148,11 +147,15 @@ def discover_latest_gsc_almanac_url(index_html: str) -> str:
             continue
         if not absolute.startswith(GSC_FILE_PREFIX):
             continue
+        if not parsed.path.lower().endswith(".xml"):
+            continue
         if _candidate_sort_key(absolute)[0] == 0:
             continue
         candidates.append(absolute)
     if not candidates:
-        raise ValueError("GSC almanac index contains no supported Galileo XML link")
+        raise ValueError(
+            "GSC almanac index contains no supported Galileo XML link under the official /sites/default/files/ tree"
+        )
     return max(candidates, key=_candidate_sort_key)
 
 
@@ -226,21 +229,31 @@ def parse_galileo_gsc_almanac(
 
 
 def _fetch_text(url: str, timeout_s: float) -> str:
-    request = Request(url, headers={"User-Agent": "OC-GNSS-STRUCT-CONTROL/0.2.5"})
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc != "www.gsc-europa.eu":
+        raise ValueError(f"Galileo GSC URL is outside the reviewed host allowlist: {url}")
+    if url != GSC_ALMANAC_INDEX_URL and not url.startswith(GSC_FILE_PREFIX):
+        raise ValueError(f"Galileo GSC file URL is outside the reviewed file tree: {url}")
     try:
-        with urlopen(request, timeout=timeout_s) as response:  # noqa: S310 - URL is fixed/reviewed GSC allowlist
-            charset = response.headers.get_content_charset() or "utf-8"
-            raw = response.read()
-    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        response = fetch_reviewed_url(url, timeout_s=timeout_s)
+    except OSError as exc:
         raise ValueError(f"Galileo GSC online source unavailable: {url}: {exc}") from exc
+    raw = response.raw
+    if not raw:
+        raise ValueError(f"Galileo GSC response is empty: {url} (transport={response.transport})")
+    content_type = response.content_type.lower()
     try:
-        return raw.decode(charset)
-    except (LookupError, UnicodeDecodeError) as exc:
-        raise ValueError(f"Galileo GSC response cannot be decoded as {charset}") from exc
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8-sig")
+    if url != GSC_ALMANAC_INDEX_URL and ("html" in content_type or "<html" in text[:256].lower()):
+        raise ValueError(f"Galileo GSC XML URL returned HTML (transport={response.transport}): {url}")
+    return text
 
 
 def fetch_latest_galileo_gsc_almanac(*, timeout_s: float = 20.0) -> GalileoGscAlmanac:
     index_html = _fetch_text(GSC_ALMANAC_INDEX_URL, timeout_s)
     xml_url = discover_latest_gsc_almanac_url(index_html)
     xml_text = _fetch_text(xml_url, timeout_s)
-    return parse_galileo_gsc_almanac(xml_url.rsplit("/", 1)[-1], xml_text, source_url=xml_url)
+    filename = urlparse(xml_url).path.rsplit("/", 1)[-1]
+    return parse_galileo_gsc_almanac(filename, xml_text, source_url=xml_url)
