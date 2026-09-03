@@ -45,6 +45,9 @@ def test_gravity_derived_scenario_round_trip_and_force_model_guard(tmp_path: Pat
     assert "orekit-validation-copy.yaml" in payload["catalog"]["scenarios"]
     assert len(payload["catalog"]["scenarios"]) == 7
 
+    # The unit-test process deliberately has no Orekit sidecar running. Changing
+    # the force model must therefore fail closed with a bilingual structured
+    # diagnostic, rather than copying stale mean elements or writing a bad YAML.
     changed_force = client.post(
         "/api/gravity-model/create",
         json={
@@ -57,8 +60,11 @@ def test_gravity_derived_scenario_round_trip_and_force_model_guard(tmp_path: Pat
     )
     assert changed_force.status_code == 422
     detail = changed_force.json()["detail"]
-    assert "Mean elements must be re-derived" in detail
-    assert "no YAML was written" in detail
+    assert detail["code"] == "gravity_rederive_failed"
+    assert "Orekit" in detail["ru"]
+    assert "средние элементы" in detail["ru"]
+    assert "Orekit" in detail["en"]
+    assert "mean elements" in detail["en"]
     assert not (scenario_root / "orekit-validation-32x32.yaml").exists()
 
     refreshed = client.get("/api/scenarios")

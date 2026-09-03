@@ -174,12 +174,19 @@ class ScenarioLineage(BaseModel):
         "norad_tle_import",
         "gps_almanac_import",
         "glonass_almanac_import",
+        "mixed_gnss_almanac_import",
         "propagated_state",
         "constellation_editor",
         "gravity_model_change",
     ]
     random_seed: int | None = None
-    source_type: Literal["norad_tle", "gps_yuma", "gps_sem", "glonass_authority_v1"] | None = None
+    source_type: Literal[
+        "norad_tle",
+        "gps_yuma",
+        "gps_sem",
+        "glonass_authority_v1",
+        "mixed_gnss_almanac",
+    ] | None = None
     source_name: str | None = None
     source_sha256: str | None = None
     source_record_id: str | None = None
