@@ -6,7 +6,7 @@ from urllib.request import OpenerDirector, ProxyHandler, Request, build_opener, 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
-def open_orekit_url(request: Request | str, timeout_s: float):
+def open_orekit_url(request: Request | str, timeout_s: float | None):
     """Open an Orekit HTTP endpoint, never proxying loopback traffic."""
     raw_url = request.full_url if isinstance(request, Request) else request
     host = (urlparse(raw_url).hostname or "").lower()
