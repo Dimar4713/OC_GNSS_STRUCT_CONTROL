@@ -106,7 +106,7 @@ public final class OrekitServiceMain {
                 result = engine.propagate(request, event -> progressRegistry.update(telemetryId, event));
                 progressRegistry.complete(telemetryId);
             }
-            writeJson(exchange, mapper, 200, result);
+            writeStreamingJson(exchange, mapper, 200, result);
         } catch (RequestTooLargeException exception) {
             failProgress(progressRegistry, telemetryId, "request_too_large");
             writeJson(exchange, mapper, 413, Map.of("error", "request_too_large"));
@@ -253,6 +253,19 @@ public final class OrekitServiceMain {
         exchange.sendResponseHeaders(status, bytes.length);
         try (var output = exchange.getResponseBody()) {
             output.write(bytes);
+        } finally {
+            exchange.close();
+        }
+    }
+
+    private static void writeStreamingJson(HttpExchange exchange, ObjectMapper mapper, int status, Object body)
+            throws IOException {
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(status, 0);
+        try (var output = exchange.getResponseBody()) {
+            mapper.writeValue(output, body);
+            output.flush();
         } finally {
             exchange.close();
         }
