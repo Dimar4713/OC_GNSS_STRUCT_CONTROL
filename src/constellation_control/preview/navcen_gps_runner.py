@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from typing import Literal
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -12,6 +10,7 @@ from pydantic import BaseModel
 
 from constellation_control.adapters.gnss_almanac import GnssAlmanacFormat, preview_gnss_almanac
 from constellation_control.adapters.orekit.mean_conversion import OrekitGpsAlmanacMeanConversionClient
+from constellation_control.adapters.reviewed_http_fetch import fetch_reviewed_url
 from constellation_control.application.run import load_scenario
 from constellation_control.domain.digital_twin import DigitalTwinConfig, ScenarioLineage
 from constellation_control.domain.models import ScenarioConfig
@@ -34,23 +33,23 @@ class NavcenGpsCreateRequest(NavcenGpsAuthorityRequest):
     new_scenario_id: str
 
 
-def fetch_navcen_gps_almanac(source_format: Literal["yuma", "sem"], *, timeout_s: float = 20.0) -> tuple[str, str, str]:
+def fetch_navcen_gps_almanac(
+    source_format: Literal["yuma", "sem"], *, timeout_s: float = 20.0
+) -> tuple[str, str, str]:
     url = NAVCEN_GPS_ALMANAC_URLS[source_format]
-    request = Request(url, headers={"User-Agent": "OC-GNSS-STRUCT-CONTROL/0.2.6"})
-    try:
-        with urlopen(request, timeout=timeout_s) as response:
-            raw = response.read()
-            content_type = response.headers.get("Content-Type", "")
-    except (HTTPError, URLError, TimeoutError, OSError) as exc:
-        raise OSError(f"NAVCEN GPS almanac fetch failed: {exc}") from exc
+    response = fetch_reviewed_url(url, timeout_s=timeout_s)
+    raw = response.raw
     if not raw:
-        raise ValueError("NAVCEN GPS almanac response is empty")
+        raise ValueError(f"NAVCEN GPS almanac response is empty (transport={response.transport})")
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("ascii")
-    if "html" in content_type.lower() or "<html" in text[:256].lower():
-        raise ValueError("NAVCEN GPS almanac endpoint returned HTML instead of an almanac")
+    if "html" in response.content_type.lower() or "<html" in text[:256].lower() or "<!doctype html" in text[:256].lower():
+        raise ValueError(
+            "NAVCEN GPS almanac endpoint returned HTML instead of an almanac "
+            f"(transport={response.transport})"
+        )
     sha256 = hashlib.sha256(raw).hexdigest()
     return url, text, sha256
 
@@ -199,7 +198,7 @@ def create_navcen_gps_runner_scenario(root: Path, request: NavcenGpsCreateReques
 NAVCEN_GPS_RUNNER_CARD = r"""
 <div class="card" id="navcenGpsRunnerCard">
   <h3>NAVCEN GPS YUMA/SEM → runnable scenario</h3>
-  <p class="hint">Прямой online authority source USCG NAVCEN: current YUMA/SEM → штатный Orekit GPS almanac parser/GNSS propagator → DSST mean → новый ScenarioConfig. HTML/error responses блокируются; исходный файл фиксируется SHA-256.</p>
+  <p class="hint">Прямой online authority source USCG NAVCEN: current YUMA/SEM → штатный Orekit GPS almanac parser/GNSS propagator → DSST mean → новый ScenarioConfig. HTML/error responses блокируются; исходный файл фиксируется SHA-256. При сетевой ошибке Python-клиента автоматически пробуется системный curl/curl.exe.</p>
   <div class="grid">
     <label>Формат / Format <select id="navcenGpsFormat"><option value="yuma">Current YUMA</option><option value="sem">Current SEM</option></select></label>
     <label>PRN <input id="navcenGpsPrn" type="number" min="1" max="63" value="1"></label>
