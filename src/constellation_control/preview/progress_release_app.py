@@ -63,8 +63,8 @@ runScenario=async function(){
   const n=scenario.value;if(!n||activeRunJobId)return;
   runBtn.disabled=true;
   try{
-    if(!window.current||current.scenario_name!==n){await loadScenario();}
-    if(!window.current||current.scenario_name!==n){throw new Error('Selected ScenarioConfig was not loaded');}
+    if(typeof current==='undefined'||!current||current.scenario_name!==n){await loadScenario();}
+    if(typeof current==='undefined'||!current||current.scenario_name!==n){throw new Error('Selected ScenarioConfig was not loaded');}
     if(typeof activeRunRefresh==='function')activeRunRefresh();
     const p=durationPreset.value;const custom=p==='custom'?Number(customDuration.value):null;
     setStatus(tr('running'));
