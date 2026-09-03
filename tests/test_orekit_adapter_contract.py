@@ -117,9 +117,13 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
     request = _request()
     captured: dict[str, Any] = {}
 
-    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
+        if http_request.data is None:
+            captured["progress_timeout"] = timeout
+            return _FakeResponse({"status": "completed", "fraction": 1.0})
         captured["timeout"] = timeout
         captured["body"] = json.loads(http_request.data.decode())
+        captured["telemetry_id"] = http_request.headers.get("X-oc-gnss-progress-id")
         return _FakeResponse(_result_payload(request))
 
     monkeypatch.setattr(
@@ -129,8 +133,10 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
     result = OrekitSidecarPropagator("http://orekit.invalid", timeout_s=12.0).propagate(request)
 
     assert captured["timeout"] == 12.0
+    assert captured["progress_timeout"] == 5.0
     assert captured["body"]["force_model_fingerprint"] == request.force_model.fingerprint()
     assert captured["body"]["force_model"]["gravity_model"] == "EIGEN-6S"
+    assert isinstance(captured["telemetry_id"], str) and captured["telemetry_id"]
     assert result.backend_metadata["orekit_data_sha256"] == "a" * 64
     assert result.backend_metadata["gravity_model"] == "EIGEN-6S"
 
@@ -138,8 +144,10 @@ def test_adapter_sends_exact_force_model_fingerprint(monkeypatch: pytest.MonkeyP
 def test_adapter_rejects_result_without_orekit_data_fingerprint(monkeypatch: pytest.MonkeyPatch) -> None:
     request = _request()
 
-    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
-        del http_request, timeout
+    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
+        if http_request.data is None:
+            return _FakeResponse({"status": "completed", "fraction": 1.0})
+        del timeout
         return _FakeResponse(_result_payload(request, include_data_hash=False))
 
     monkeypatch.setattr(
@@ -154,7 +162,7 @@ def test_adapter_exposes_sidecar_http_error_body(monkeypatch: pytest.MonkeyPatch
     request = _request()
     response = io.BytesIO(b'{"error":"invalid_propagation_request","detail":"gravity mismatch"}')
 
-    def fake_open_orekit_url(http_request: Any, timeout: float) -> _FakeResponse:
+    def fake_open_orekit_url(http_request: Any, timeout: float | None) -> _FakeResponse:
         del http_request, timeout
         raise HTTPError(
             "http://orekit.invalid/v1/propagate",
