@@ -5,6 +5,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from constellation_control.adapters.gnss_almanac import GnssAlmanacFormat, preview_gnss_almanac
+from constellation_control.adapters.reviewed_http_fetch import ReviewedHttpResponse
 from constellation_control.application.run import load_scenario
 from constellation_control.preview.gravity_release_app import create_preview_app, render_preview_page_for_test
 from constellation_control.preview.navcen_gps_runner import (
@@ -29,21 +30,6 @@ week:                       383
 """
 
 
-class _Response:
-    def __init__(self, body: bytes, content_type: str = "text/plain") -> None:
-        self._body = body
-        self.headers = {"Content-Type": content_type}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def read(self) -> bytes:
-        return self._body
-
-
 def test_navcen_urls_are_direct_current_almanac_files() -> None:
     assert NAVCEN_GPS_ALMANAC_URLS["yuma"].endswith("/current_yuma.alm")
     assert NAVCEN_GPS_ALMANAC_URLS["sem"].endswith("/current_sem.al3")
@@ -52,8 +38,12 @@ def test_navcen_urls_are_direct_current_almanac_files() -> None:
 
 def test_navcen_fetch_preserves_raw_sha_and_rejects_html(monkeypatch) -> None:
     monkeypatch.setattr(
-        "constellation_control.preview.navcen_gps_runner.urlopen",
-        lambda request, timeout: _Response(YUMA.encode("utf-8")),
+        "constellation_control.preview.navcen_gps_runner.fetch_reviewed_url",
+        lambda url, timeout_s: ReviewedHttpResponse(
+            raw=YUMA.encode("utf-8"),
+            content_type="text/plain",
+            transport="urllib",
+        ),
     )
     url, text, sha256 = fetch_navcen_gps_almanac("yuma")
     assert url == NAVCEN_GPS_ALMANAC_URLS["yuma"]
@@ -61,13 +51,18 @@ def test_navcen_fetch_preserves_raw_sha_and_rejects_html(monkeypatch) -> None:
     assert len(sha256) == 64
 
     monkeypatch.setattr(
-        "constellation_control.preview.navcen_gps_runner.urlopen",
-        lambda request, timeout: _Response(b"<html>blocked</html>", "text/html"),
+        "constellation_control.preview.navcen_gps_runner.fetch_reviewed_url",
+        lambda url, timeout_s: ReviewedHttpResponse(
+            raw=b"<html>blocked</html>",
+            content_type="text/html",
+            transport="curl",
+        ),
     )
     try:
         fetch_navcen_gps_almanac("yuma")
     except ValueError as exc:
         assert "HTML" in str(exc)
+        assert "curl" in str(exc)
     else:
         raise AssertionError("HTML response must fail closed")
 
