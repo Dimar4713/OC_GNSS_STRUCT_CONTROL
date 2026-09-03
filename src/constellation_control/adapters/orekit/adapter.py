@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Event, Thread
+from time import monotonic
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from uuid import uuid4
@@ -30,19 +31,18 @@ class OrekitSidecarPropagator:
 
     The sidecar exposes POST /v1/propagate. High-fidelity execution fails closed:
     backend identity, force-model fingerprint, gravity authority, Orekit version
-    and Orekit-data fingerprint are all validated before a result enters
+    and orekit-data fingerprint are all validated before a result enters
     application code.
 
     Authoritative propagation has no arbitrary total wall-clock deadline by
-    default. Long validation/design runs can legitimately exceed 30 minutes.
-    Short progress-poll requests remain bounded independently, and callers that
-    require a finite propagation deadline may still pass ``timeout_s`` explicitly.
+    default. When progress telemetry is available, a liveness watchdog instead
+    requires real movement in the authoritative work coordinates. Repeated copies
+    of one snapshot do not count as progress. A separate startup grace period
+    detects a sidecar that accepted the request but never starts reporting work.
 
-    When a progress callback is supplied explicitly or by the local ContextVar,
-    propagation receives an explicit telemetry id and a separate polling thread
-    reads authoritative point/phase snapshots from the sidecar. Progress
-    percentage is derived only from entered physical work units; elapsed
-    wall-clock time never changes it.
+    Callers may still pass an explicit finite transport timeout when their
+    workflow genuinely requires one. Short progress-poll requests remain bounded
+    independently.
     """
 
     def __init__(
@@ -50,12 +50,16 @@ class OrekitSidecarPropagator:
         base_url: str,
         timeout_s: float | None = None,
         progress_callback: ProgressCallback | None = None,
+        progress_stall_timeout_s: float = 600.0,
+        progress_startup_grace_s: float = 60.0,
     ) -> None:
         root = base_url.rstrip("/")
         self._url = root + "/v1/propagate"
         self._progress_root = root + "/v1/progress"
         self._timeout_s = timeout_s
         self._progress_callback = progress_callback if progress_callback is not None else _PROGRESS_CALLBACK.get()
+        self._progress_stall_timeout_s = progress_stall_timeout_s
+        self._progress_startup_grace_s = progress_startup_grace_s
 
     def propagate(self, request: PropagationRequest) -> PropagationResult:
         request_payload = request.model_dump(mode="json")
@@ -63,44 +67,12 @@ class OrekitSidecarPropagator:
         body = json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
         headers = {"Content-Type": "application/json"}
         telemetry_id: str | None = None
-        stop_polling: Event | None = None
-        polling_thread: Thread | None = None
         if self._progress_callback is not None:
             telemetry_id = uuid4().hex
             headers["X-OC-GNSS-Progress-Id"] = telemetry_id
-            stop_polling = Event()
-            polling_thread = Thread(
-                target=self._poll_progress,
-                args=(telemetry_id, stop_polling),
-                name=f"orekit-progress-{telemetry_id[:8]}",
-                daemon=True,
-            )
-            polling_thread.start()
 
         http_request = Request(self._url, data=body, headers=headers, method="POST")
-        try:
-            with open_orekit_url(http_request, self._timeout_s) as response:
-                payload = response.read().decode()
-        except HTTPError as error:
-            self._emit_final_progress(telemetry_id)
-            detail = error.read().decode(errors="replace")
-            raise RuntimeError(f"Orekit sidecar HTTP {error.code}: {detail}") from error
-        except URLError as error:
-            self._emit_final_progress(telemetry_id)
-            raise RuntimeError(f"Orekit sidecar connection failed: {error.reason}") from error
-        except TimeoutError as error:
-            self._emit_final_progress(telemetry_id)
-            if self._timeout_s is None:
-                raise RuntimeError("Orekit sidecar transport timed out unexpectedly") from error
-            raise RuntimeError(
-                f"Orekit sidecar propagation exceeded configured deadline {self._timeout_s:.0f} s"
-            ) from error
-        finally:
-            if stop_polling is not None:
-                stop_polling.set()
-            if polling_thread is not None:
-                polling_thread.join(timeout=1.0)
-
+        payload = self._request_with_liveness_watchdog(http_request, telemetry_id)
         self._emit_final_progress(telemetry_id)
         result = PropagationResult.model_validate(json.loads(payload))
         if not result.backend.lower().startswith("orekit"):
@@ -123,14 +95,79 @@ class OrekitSidecarPropagator:
             )
         return result
 
-    def _poll_progress(self, telemetry_id: str, stop: Event) -> None:
-        while not stop.is_set():
+    def _request_with_liveness_watchdog(self, http_request: Request, telemetry_id: str | None) -> str:
+        if telemetry_id is None:
+            return self._read_propagation_response(http_request)
+
+        completed = Event()
+        outcome: dict[str, object] = {}
+
+        def worker() -> None:
+            try:
+                outcome["payload"] = self._read_propagation_response(http_request)
+            except BaseException as error:  # noqa: BLE001 - re-raised on caller thread
+                outcome["error"] = error
+            finally:
+                completed.set()
+
+        worker_thread = Thread(
+            target=worker,
+            name=f"orekit-request-{telemetry_id[:8]}",
+            daemon=True,
+        )
+        worker_thread.start()
+
+        started_at = monotonic()
+        last_movement_at = started_at
+        last_signature: tuple[object, ...] | None = None
+        telemetry_seen = False
+
+        while not completed.wait(0.25):
             snapshot = self._read_progress(telemetry_id)
             if snapshot is not None:
                 self._emit_progress(snapshot)
-                if snapshot.get("state") in {"completed", "failed"}:
-                    return
-            stop.wait(0.25)
+                signature = _progress_signature(snapshot)
+                if signature != last_signature:
+                    telemetry_seen = True
+                    last_signature = signature
+                    last_movement_at = monotonic()
+
+            now = monotonic()
+            if not telemetry_seen and now - started_at > self._progress_startup_grace_s:
+                raise RuntimeError(
+                    "Orekit sidecar liveness watchdog: no authoritative progress telemetry "
+                    f"for {self._progress_startup_grace_s:.0f} s after request start"
+                )
+            if telemetry_seen and now - last_movement_at > self._progress_stall_timeout_s:
+                raise RuntimeError(
+                    "Orekit sidecar liveness watchdog: authoritative progress stopped changing "
+                    f"for {self._progress_stall_timeout_s:.0f} s"
+                )
+
+        worker_thread.join(timeout=1.0)
+        error = outcome.get("error")
+        if isinstance(error, BaseException):
+            raise error
+        payload = outcome.get("payload")
+        if not isinstance(payload, str):
+            raise RuntimeError("Orekit sidecar returned no propagation payload")
+        return payload
+
+    def _read_propagation_response(self, http_request: Request) -> str:
+        try:
+            with open_orekit_url(http_request, self._timeout_s) as response:
+                return response.read().decode()
+        except HTTPError as error:
+            detail = error.read().decode(errors="replace")
+            raise RuntimeError(f"Orekit sidecar HTTP {error.code}: {detail}") from error
+        except URLError as error:
+            raise RuntimeError(f"Orekit sidecar connection failed: {error.reason}") from error
+        except TimeoutError as error:
+            if self._timeout_s is None:
+                raise RuntimeError("Orekit sidecar transport timed out unexpectedly") from error
+            raise RuntimeError(
+                f"Orekit sidecar propagation exceeded configured deadline {self._timeout_s:.0f} s"
+            ) from error
 
     def _emit_final_progress(self, telemetry_id: str | None) -> None:
         if telemetry_id is None:
@@ -160,6 +197,20 @@ class OrekitSidecarPropagator:
             callback(_preview_progress_payload(snapshot))
         except Exception:  # noqa: BLE001 - telemetry must never change numerical authority
             return
+
+
+def _progress_signature(snapshot: dict[str, object]) -> tuple[object, ...]:
+    """Return physical work coordinates whose change proves calculation liveness."""
+    return (
+        snapshot.get("state"),
+        snapshot.get("phase"),
+        snapshot.get("satellite_id"),
+        snapshot.get("satellite_index"),
+        snapshot.get("point_index"),
+        snapshot.get("time_s"),
+        snapshot.get("epoch"),
+        snapshot.get("error"),
+    )
 
 
 def _preview_progress_payload(snapshot: dict[str, object]) -> dict[str, object]:
