@@ -7,7 +7,12 @@ _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def open_orekit_url(request: Request | str, timeout_s: float | None):
-    """Open an Orekit HTTP endpoint, never proxying loopback traffic."""
+    """Open an Orekit endpoint, never proxying loopback traffic.
+
+    ``None`` deliberately means no total transport deadline. Long authoritative
+    propagation is supervised by progress-liveness telemetry instead. Callers for
+    short control/progress requests continue to pass explicit finite timeouts.
+    """
     raw_url = request.full_url if isinstance(request, Request) else request
     host = (urlparse(raw_url).hostname or "").lower()
     if host in _LOOPBACK_HOSTS:
