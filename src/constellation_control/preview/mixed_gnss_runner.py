@@ -125,8 +125,8 @@ def build_mixed_gnss_scenario(root: Path, request: MixedGnssBuildRequest) -> dic
     glo_ids: list[str] = []
     gps_ids: list[str] = []
 
-    for record in glo_almanac.records:
-        authority_record = iac_glonass_to_authority_record(record, supplement)
+    for glo_record in glo_almanac.records:
+        authority_record = iac_glonass_to_authority_record(glo_record, supplement)
         result = glo_client.convert(
             source_name=source_name,
             slot=authority_record.slot,
@@ -149,9 +149,9 @@ def build_mixed_gnss_scenario(root: Path, request: MixedGnssBuildRequest) -> dic
             spacecraft=template.spacecraft,
             force_model=source.force_model,
         )
-        if result.backend_metadata.get("glonass_slot") != str(record.slot):
-            raise RuntimeError(f"Orekit GLONASS authority returned a different slot for {record.slot}")
-        satellite_id = f"GLO-{record.slot:02d}"
+        if result.backend_metadata.get("glonass_slot") != str(glo_record.slot):
+            raise RuntimeError(f"Orekit GLONASS authority returned a different slot for {glo_record.slot}")
+        satellite_id = f"GLO-{glo_record.slot:02d}"
         glo_ids.append(satellite_id)
         satellites.append(
             SatelliteSpec(
@@ -163,21 +163,21 @@ def build_mixed_gnss_scenario(root: Path, request: MixedGnssBuildRequest) -> dic
             )
         )
 
-    for record in gps_records:
+    for gps_record in gps_records:
         result = gps_client.convert(
             source_format=_gps_sidecar_format(request.gps_source_format),
             source_name=gps_url,
             source_text=gps_text,
-            prn=record.prn,
+            prn=gps_record.prn,
             frame=source.frame,
             target_epoch=source.epoch,
             target_time_scale=source.time_scale,
             spacecraft=template.spacecraft,
             force_model=source.force_model,
         )
-        if result.backend_metadata.get("gps_prn") != str(record.prn):
-            raise RuntimeError(f"Orekit GPS authority returned a different PRN for {record.prn}")
-        satellite_id = f"GPS-{record.prn:02d}"
+        if result.backend_metadata.get("gps_prn") != str(gps_record.prn):
+            raise RuntimeError(f"Orekit GPS authority returned a different PRN for {gps_record.prn}")
+        satellite_id = f"GPS-{gps_record.prn:02d}"
         gps_ids.append(satellite_id)
         satellites.append(
             SatelliteSpec(
@@ -193,7 +193,7 @@ def build_mixed_gnss_scenario(root: Path, request: MixedGnssBuildRequest) -> dic
         "iac_glonass": {
             "source_url": glo_table.source_url,
             "source_sha256": glo_table.source_sha256,
-            "slots": [record.slot for record in glo_almanac.records],
+            "slots": [item.slot for item in glo_almanac.records],
             "operator_health": request.glonass_health,
             "glo_to_utc_s": request.glo_to_utc_s,
             "gps_to_glo_s": request.gps_to_glo_s,
@@ -204,7 +204,7 @@ def build_mixed_gnss_scenario(root: Path, request: MixedGnssBuildRequest) -> dic
             "source_sha256": gps_preview.source_sha256,
             "format": request.gps_source_format,
             "selection": request.gps_selection,
-            "prns": [record.prn for record in gps_records],
+            "prns": [item.prn for item in gps_records],
         },
         "template_satellite_id": template.satellite_id,
         "plane_assignment": "ALMANAC-UNASSIGNED",
