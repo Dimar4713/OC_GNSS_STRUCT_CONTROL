@@ -20,14 +20,35 @@ OPERATOR_TABS_CARD = r"""
 </div>
 <nav class="operator-tabs" id="operatorTabs" aria-label="Operator workspace tabs">
   <button type="button" data-tab="scenarios" onclick="showOperatorTab('scenarios')">Сценарии / Scenarios</button>
-  <button type="button" data-tab="inputs" onclick="showOperatorTab('inputs')">Входные данные и импорт / Inputs & Import</button>
+  <button type="button" data-tab="inputs" onclick="showOperatorTab('inputs')">Исходные данные / Inputs</button>
   <button type="button" data-tab="design" onclick="showOperatorTab('design')">Design / Проектирование</button>
   <button type="button" data-tab="robustness" onclick="showOperatorTab('robustness')">Robustness / Робастность</button>
-  <button type="button" data-tab="results" onclick="showOperatorTab('results')">Результаты / Results</button>
+  <button type="button" data-tab="results" onclick="showOperatorTab('results')">Расчёт и результаты / Run & Results</button>
   <button type="button" data-tab="expert" onclick="showOperatorTab('expert')">Эксперт / Expert</button>
 </nav>
 <div id="operatorTabScenarios" class="operator-tab-pane" data-tab-pane="scenarios"></div>
-<div id="operatorTabInputs" class="operator-tab-pane" data-tab-pane="inputs"></div>
+<div id="operatorTabInputs" class="operator-tab-pane" data-tab-pane="inputs">
+  <div class="operator-input-intro">
+    <h2>Исходные данные сценария / Scenario source data</h2>
+    <p class="hint">Выберите способ формирования исходного состояния. Импорт и генераторы создают данные сценария; расчётная телеметрия и результаты здесь не отображаются.</p>
+  </div>
+  <section class="operator-input-group" id="operatorInputOfficialSources">
+    <h3>1. Официальные внешние источники / Official external sources</h3>
+    <p class="hint">GNSS almanac, IAC/NAVCEN, Galileo GSC и NORAD/TLE.</p>
+  </section>
+  <section class="operator-input-group" id="operatorInputManualState">
+    <h3>2. Явное состояние КА / Explicit spacecraft state</h3>
+    <p class="hint">Ручной ввод оскулирующих элементов или другого явно заданного состояния.</p>
+  </section>
+  <section class="operator-input-group" id="operatorInputSynthesis">
+    <h3>3. Генерация орбитальной группировки / Constellation synthesis</h3>
+    <p class="hint">Walker и другие генераторы исходной структуры.</p>
+  </section>
+  <section class="operator-input-group" id="operatorInputBulk">
+    <h3>4. Табличный ввод / Bulk tabular input</h3>
+    <p class="hint">XLS/workbook для пакетного задания параметров КА, массы, топлива и групповых данных.</p>
+  </section>
+</div>
 <div id="operatorTabDesign" class="operator-tab-pane" data-tab-pane="design"></div>
 <div id="operatorTabRobustness" class="operator-tab-pane" data-tab-pane="robustness"></div>
 <div id="operatorTabResults" class="operator-tab-pane" data-tab-pane="results"></div>
@@ -43,6 +64,7 @@ OPERATOR_TABS_STYLE = r"""
 .active-run-card{border-width:2px}.active-run-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}
 .active-run-grid>div{min-width:0}.active-run-grid code{word-break:break-all;font-size:11px}
 .workflow-split-card{border-left:4px solid #d9dee3}
+.operator-input-intro{margin:0 0 12px 0}.operator-input-group{border:1px solid #d9dee3;border-radius:8px;padding:12px 14px;margin:0 0 14px 0;background:#f8fafb}.operator-input-group>h3{margin:0 0 4px 0}.operator-input-group>.card{margin-top:12px;margin-bottom:0;background:white}.operator-input-group:empty{display:none}
 @media(max-width:900px){.active-run-grid{grid-template-columns:1fr}.operator-tabs{position:static}}
 </style>
 """
@@ -74,6 +96,7 @@ function activeRunRefresh(){
   }
 }
 function operatorMoveCard(id,target){const card=operatorById(id),pane=operatorById(target);if(card&&pane)pane.appendChild(card);}
+function operatorAdoptCardByChild(childId,cardId){const child=operatorById(childId);if(!child)return;const card=child.closest('.card');if(card&&!card.id)card.id=cardId;}
 function splitWorkflowCard(){
   const card=operatorById('workflowCard');if(!card)return;
   const nodes=Array.from(card.childNodes);let robust=false;
@@ -85,34 +108,30 @@ function splitWorkflowCard(){
   }
   card.replaceWith(design,robustness);
 }
-function operatorFallbackTarget(card){
-  const text=String(card.textContent||'').toLowerCase();
-  if(/galileo|iac|almanac|альманах|norad|tle|walker|osculating|оскул|workbook|xls|импорт|import/.test(text))return 'operatorTabInputs';
-  if(/robustness|робаст/.test(text))return 'operatorTabRobustness';
-  if(/design|optimal operations|проектир/.test(text))return 'operatorTabDesign';
-  if(/promotion|promot|result|результ|drift consistency/.test(text))return 'operatorTabResults';
-  if(/normalized|нормализ|эксперт|expert/.test(text))return 'operatorTabExpert';
-  return 'operatorTabScenarios';
-}
 function arrangeOperatorTabs(){
   const section=document.querySelector('main section');if(!section)return;
   splitWorkflowCard();
-  const panes=['operatorTabScenarios','operatorTabInputs','operatorTabDesign','operatorTabRobustness','operatorTabResults','operatorTabExpert'];
-  for(const p of panes){const pane=operatorById(p);if(pane&&pane.parentElement!==section)section.appendChild(pane);}
-  const unassigned=Array.from(section.children).filter(x=>x.classList&&x.classList.contains('card')&&!x.id);
-  if(unassigned[0])operatorById('operatorTabScenarios').appendChild(unassigned[0]);
-  if(unassigned[1])operatorById('operatorTabScenarios').appendChild(unassigned[1]);
-  if(unassigned[2])operatorById('operatorTabScenarios').appendChild(unassigned[2]);
-  if(unassigned[3])operatorById('operatorTabResults').appendChild(unassigned[3]);
-  if(unassigned[4])operatorById('operatorTabExpert').appendChild(unassigned[4]);
-  if(unassigned[5])operatorById('operatorTabExpert').appendChild(unassigned[5]);
-  ['scenarioEditorCard','gravityModelCard','constellationEditorCard','perturbationCard','spacecraftCatalogCard','resourceStateCard'].forEach(id=>operatorMoveCard(id,'operatorTabScenarios'));
-  ['galileoGscCard','iacGnssCard','glonassAlmanacCard','gnssAlmanacCard','noradCard','osculatingCard','walkerCard','workbookCard'].forEach(id=>operatorMoveCard(id,'operatorTabInputs'));
+  ['operatorTabScenarios','operatorTabInputs','operatorTabDesign','operatorTabRobustness','operatorTabResults','operatorTabExpert'].forEach(id=>{const pane=operatorById(id);if(pane&&pane.parentElement!==section)section.appendChild(pane);});
+
+  operatorAdoptCardByChild('title','scenarioSummaryCard');
+  operatorAdoptCardByChild('fleet','constellationSummaryCard');
+  operatorAdoptCardByChild('geometry','geometrySummaryCard');
+  operatorAdoptCardByChild('operations','operationsSummaryCard');
+  operatorAdoptCardByChild('yaml','expertYamlCard');
+  operatorAdoptCardByChild('normalized','normalizedScenarioCard');
+
+  ['scenarioSummaryCard','constellationSummaryCard','geometrySummaryCard','scenarioEditorCard','gravityModelCard','constellationEditorCard','perturbationCard','spacecraftCatalogCard','resourceStateCard'].forEach(id=>operatorMoveCard(id,'operatorTabScenarios'));
+
+  ['galileoGscCard','iacGnssCard','glonassAlmanacCard','gnssAlmanacCard','noradCard'].forEach(id=>operatorMoveCard(id,'operatorInputOfficialSources'));
+  ['osculatingCard'].forEach(id=>operatorMoveCard(id,'operatorInputManualState'));
+  ['walkerCard'].forEach(id=>operatorMoveCard(id,'operatorInputSynthesis'));
+  ['workbookCard'].forEach(id=>operatorMoveCard(id,'operatorInputBulk'));
+
   ['designWorkflowCard','optimalOperationsCard'].forEach(id=>operatorMoveCard(id,'operatorTabDesign'));
   ['robustnessWorkflowCard'].forEach(id=>operatorMoveCard(id,'operatorTabRobustness'));
-  ['runPromotionCard','driftConsistencyCard'].forEach(id=>operatorMoveCard(id,'operatorTabResults'));
-  const leftovers=Array.from(section.children).filter(x=>x.classList&&x.classList.contains('card')&&x.id!=='activeRunConfigurationCard');
-  for(const card of leftovers){const pane=operatorById(operatorFallbackTarget(card));if(pane)pane.appendChild(card);}
+  ['operationsSummaryCard','runProgressCard','runPromotionCard','driftConsistencyCard'].forEach(id=>operatorMoveCard(id,'operatorTabResults'));
+  ['expertYamlCard','normalizedScenarioCard'].forEach(id=>operatorMoveCard(id,'operatorTabExpert'));
+
   const active=localStorage.getItem('operator-tab')||'scenarios';showOperatorTab(active);
 }
 function showOperatorTab(name){
