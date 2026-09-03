@@ -9,7 +9,12 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, model_validator
 
-from constellation_control.adapters.gnss_almanac import GnssAlmanacFormat, GpsSemRecord, GpsYumaRecord, preview_gnss_almanac
+from constellation_control.adapters.gnss_almanac import (
+    GnssAlmanacFormat,
+    GpsSemRecord,
+    GpsYumaRecord,
+    preview_gnss_almanac,
+)
 from constellation_control.adapters.iac_glonass_almanac import normalize_iac_glonass_almanac
 from constellation_control.adapters.iac_glonass_authority_bridge import (
     IacGlonassAuthoritySupplement,
@@ -23,7 +28,7 @@ from constellation_control.adapters.orekit.mean_conversion import (
 from constellation_control.application.run import load_scenario
 from constellation_control.domain.digital_twin import DigitalTwinConfig, ScenarioLineage
 from constellation_control.domain.models import ConstellationSpec, SatelliteSpec, ScenarioConfig
-from constellation_control.preview.navcen_gps_runner import NAVCEN_GPS_ALMANAC_URLS, fetch_navcen_gps_almanac
+from constellation_control.preview.navcen_gps_runner import fetch_navcen_gps_almanac
 
 
 class MixedGnssBuildRequest(BaseModel):
@@ -39,7 +44,7 @@ class MixedGnssBuildRequest(BaseModel):
     new_scenario_id: str
 
     @model_validator(mode="after")
-    def validate_health(self) -> "MixedGnssBuildRequest":
+    def validate_health(self) -> MixedGnssBuildRequest:
         if self.glonass_health < 0:
             raise ValueError("glonass_health must be non-negative")
         return self
