@@ -15,6 +15,26 @@ from constellation_control.preview.gravity_model_ui import (
     GRAVITY_MODEL_SCRIPT,
     install_gravity_model_routes,
 )
+from constellation_control.preview.iac_glonass_constellation_runner import (
+    IAC_GLONASS_CONSTELLATION_CARD,
+    IAC_GLONASS_CONSTELLATION_SCRIPT,
+    install_iac_glonass_constellation_routes,
+)
+from constellation_control.preview.iac_glonass_runner import (
+    IAC_GLONASS_RUNNER_CARD,
+    IAC_GLONASS_RUNNER_SCRIPT,
+    install_iac_glonass_runner_routes,
+)
+from constellation_control.preview.mixed_gnss_runner import (
+    MIXED_GNSS_RUNNER_CARD,
+    MIXED_GNSS_RUNNER_SCRIPT,
+    install_mixed_gnss_runner_routes,
+)
+from constellation_control.preview.navcen_gps_runner import (
+    NAVCEN_GPS_RUNNER_CARD,
+    NAVCEN_GPS_RUNNER_SCRIPT,
+    install_navcen_gps_runner_routes,
+)
 from constellation_control.preview.operator_tabs import (
     OPERATOR_TABS_CARD,
     OPERATOR_TABS_SCRIPT,
@@ -31,12 +51,34 @@ def render_preview_page_for_test() -> str:
     )
     page = page.replace("</head>", f"{OPERATOR_TABS_STYLE}</head>", 1)
     page = page.replace("<section>", f"<section>{OPERATOR_TABS_CARD}", 1)
-    page = page.replace("</section></main>", f"{GRAVITY_MODEL_CARD}</section></main>", 1)
+    page = page.replace(
+        "</section></main>",
+        (
+            f"{IAC_GLONASS_RUNNER_CARD}"
+            f"{IAC_GLONASS_CONSTELLATION_CARD}"
+            f"{NAVCEN_GPS_RUNNER_CARD}"
+            f"{MIXED_GNSS_RUNNER_CARD}"
+            f"{GRAVITY_MODEL_CARD}</section></main>"
+        ),
+        1,
+    )
     page = page.replace(
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
+        f"{IAC_GLONASS_RUNNER_SCRIPT}\n"
+        f"{IAC_GLONASS_CONSTELLATION_SCRIPT}\n"
+        f"{NAVCEN_GPS_RUNNER_SCRIPT}\n"
+        f"{MIXED_GNSS_RUNNER_SCRIPT}\n"
         f"{GRAVITY_MODEL_SCRIPT}\n"
         "const gravityBootstrap=bootstrap;"
-        "bootstrap=async function(){await gravityBootstrap();if(typeof syncGravityModel==='function')syncGravityModel();};\n"
+        "bootstrap=async function(){"
+        "await gravityBootstrap();"
+        "if(typeof syncGravityModel==='function')syncGravityModel();"
+        "if(typeof syncIacGlonassRunnerSatellites==='function')syncIacGlonassRunnerSatellites();"
+        "if(typeof syncIacGloConstTemplate==='function')syncIacGloConstTemplate();"
+        "if(typeof installIacGloIntakeBridge==='function')installIacGloIntakeBridge();"
+        "if(typeof syncNavcenGpsSatellites==='function')syncNavcenGpsSatellites();"
+        "if(typeof syncMixedGnssTemplateSatellites==='function')syncMixedGnssTemplateSatellites();"
+        "};\n"
         f"{OPERATOR_TABS_SCRIPT}\n"
         "bootstrap().catch(e=>setStatus(String(e),'danger'));",
         1,
@@ -59,5 +101,9 @@ def create_preview_app(scenario_root: Path = Path("scenarios"), output_root: Pat
     def health() -> dict[str, str]:
         return {"status": "ok", "preview": PREVIEW_VERSION}
 
+    install_iac_glonass_runner_routes(app, scenario_root)
+    install_iac_glonass_constellation_routes(app, scenario_root)
+    install_navcen_gps_runner_routes(app, scenario_root)
+    install_mixed_gnss_runner_routes(app, scenario_root)
     install_gravity_model_routes(app, scenario_root)
     return app
